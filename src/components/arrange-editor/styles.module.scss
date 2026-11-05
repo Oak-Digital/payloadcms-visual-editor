@@ -231,19 +231,22 @@
   }
 }
 
-.tabs {
+.headerActions {
   display: flex;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid #9995;
-  border-radius: 10px;
-  margin-bottom: 20px;
-  button {
-    flex: 1;
-  }
-  button[aria-pressed='true'] {
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.panel .revisionToggle {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 8px;
+  &[aria-pressed='true'] {
     background: #202020;
     color: #fff;
+    border-color: currentColor;
   }
 }
 .count {

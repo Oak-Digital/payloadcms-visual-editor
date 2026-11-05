@@ -571,75 +571,78 @@ export function ArrangeEditor({
                 <small>VISUAL EDITOR</small>
                 <h2>{tab === 'revisions' ? 'Revision history' : 'Edit content'}</h2>
               </div>
-              <button aria-label="Close content editor" onClick={onClose} type="button">
-                ×
-              </button>
+              <div className={styles.headerActions}>
+                <button
+                  aria-label="Revision history"
+                  aria-pressed={tab === 'revisions'}
+                  className={styles.revisionToggle}
+                  onClick={() =>
+                    setTab((current) => (current === 'content' ? 'revisions' : 'content'))
+                  }
+                  title={tab === 'revisions' ? 'Show content' : 'Show revisions'}
+                  type="button"
+                >
+                  <svg
+                    aria-hidden="true"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M3 11a9 9 0 1 1 2.6 7.4M3 4v7h7" />
+                    <path d="M12 7v5l3 2" />
+                  </svg>
+                </button>
+                <button aria-label="Close content editor" onClick={onClose} type="button">
+                  ×
+                </button>
+              </div>
             </header>
             <div className={styles.content}>
-              <nav aria-label="Editor panel" className={styles.tabs}>
-                <button
-                  aria-pressed={tab === 'content'}
-                  onClick={() => setTab('content')}
-                  type="button"
-                >
-                  Content
-                </button>
-                <button
-                  aria-pressed={tab === 'revisions'}
-                  onClick={() => setTab('revisions')}
-                  type="button"
-                >
-                  Revisions
-                </button>
-              </nav>
               {!ready && <p role="status">Loading editable content…</p>}
               <div hidden={tab !== 'content'}>
-                <section aria-label="Selected content">
-                  <h3>{field ? (field.type === 'upload' ? 'Image' : 'Text') : 'Select content'}</h3>
-                  {!field && (
-                    <p>
-                      Click outlined text or an image on the page. Your changes stay here as you
-                      move between items.
-                    </p>
-                  )}
-                  {field && target && (
-                    <>
-                      <small className={styles.path}>
-                        {session && fieldLabel(target.path, session)}
-                      </small>
-                      {(field.type === 'text' || field.type === 'textarea') && (
-                        <label>
-                          Replacement text
-                          <textarea
-                            aria-label="Replacement text"
-                            disabled={busy || needsSync}
-                            onChange={(event) => stage(target, event.target.value)}
-                            rows={5}
-                            value={typeof value === 'string' ? value : ''}
-                          />
-                        </label>
-                      )}
-                      {field.type === 'upload' && (
-                        <button
+                {field && target && (
+                  <section aria-label="Selected content">
+                    <h3>{field.type === 'upload' ? 'Image' : 'Text'}</h3>
+                    <small className={styles.path}>
+                      {session && fieldLabel(target.path, session)}
+                    </small>
+                    {(field.type === 'text' || field.type === 'textarea') && (
+                      <label>
+                        Replacement text
+                        <textarea
+                          aria-label="Replacement text"
                           disabled={busy || needsSync}
-                          onClick={() => setPicker(target)}
-                          type="button"
-                        >
-                          Replace image
-                        </button>
-                      )}
-                      {field.type === 'richText' && (
-                        <button
-                          disabled={busy || needsSync}
-                          onClick={() => setRichText(target)}
-                          type="button"
-                        >
-                          Edit formatted text
-                        </button>
-                      )}
-                    </>
-                  )}
-                </section>
+                          onChange={(event) => stage(target, event.target.value)}
+                          rows={5}
+                          value={typeof value === 'string' ? value : ''}
+                        />
+                      </label>
+                    )}
+                    {field.type === 'upload' && (
+                      <button
+                        disabled={busy || needsSync}
+                        onClick={() => setPicker(target)}
+                        type="button"
+                      >
+                        Replace image
+                      </button>
+                    )}
+                    {field.type === 'richText' && (
+                      <button
+                        disabled={busy || needsSync}
+                        onClick={() => setRichText(target)}
+                        type="button"
+                      >
+                        Edit formatted text
+                      </button>
+                    )}
+                  </section>
+                )}
                 {Object.entries(sessions).flatMap(([key, session]) =>
                   Object.entries(session.snapshot.fields).map(([path, field]) =>
                     field.type === 'array' ? (

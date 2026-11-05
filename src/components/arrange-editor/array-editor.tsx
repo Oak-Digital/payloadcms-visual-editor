@@ -25,7 +25,6 @@ export function ArrayEditor({
   return (
     <section aria-label={field.label}>
       <h3>{field.label}</h3>
-      <p>Add, remove or move a product. Save draft to update the preview.</p>
       <ol className={styles.pending}>
         {value.map((row, index) => (
           <li key={'id' in row ? row.id : `new-${index}`}>
