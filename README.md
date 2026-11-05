@@ -72,3 +72,11 @@ The Blocks list supports drag handles and move up/down buttons. Hosts opt in by 
 **Save draft** saves pending content and order changes together, reloads the preview, and reopens the panel. **Publish all** publishes the changed documents' full drafts, including drafts saved through this panel. Closing the panel retains pending changes in memory; leaving or reloading warns before discarding them. Pending work is not persisted across browser reloads.
 
 The `/payload-visual-editor/arrange` endpoint validates collection/field access, upload restrictions, Lexical round trips, and exact block-ID permutations. Each document uses a version check and transaction; field edits apply before block reordering. A stale snapshot is rejected without saving. Multiple owning documents save sequentially, not atomically; partial failures report completed documents and require reloading before further edits.
+
+## Workspace
+
+`VisualEditorWorkspace` from the `/client` export surrounds an authenticated preview with a persistent frame, searchable content navigation, desktop/mobile preview widths, editing tools, and the existing contextual editor. Supply `documentInfo` and `sources` (`slug`, `label`, optional `titleField` and `previewURL(document)`). Sources without a preview resolver open the native collection editor in a new tab; `global: true` opens that Global's native editor. Listing uses Payload's REST API and its access checks.
+
+The workspace renders a same-origin iframe so responsive styles and fixed elements use the preview's actual viewport. The canvas portals its editing panel and save actions into the surrounding frame; media and rich-text dialogs stay inside the canvas. Host the component only in authenticated draft previews. The `visual-editor-canvas=1` query parameter provides the standalone toolbar for integration tests; it does not grant preview access.
+
+Switching pages with pending changes offers **Keep editing** or **Discard and switch**. Save first to retain changes across pages. Navigating while saving is blocked. Drafts are still saved per owning document through the existing editor; navigation does not batch-publish the site. Revision management, inline Global editing, and agent chat are outside this phase.

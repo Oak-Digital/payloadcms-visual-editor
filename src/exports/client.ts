@@ -1,2 +1,4 @@
-export { VisualEditorToolbar } from '../components/toolbar/index.js'
 export { RichTextEditorView } from '../components/rich-text-editor/index.js'
+export { VisualEditorToolbar } from '../components/toolbar/index.js'
+export { VisualEditorWorkspace } from '../components/workspace/index.js'
+export type { WorkspaceSource } from '../components/workspace/index.js'

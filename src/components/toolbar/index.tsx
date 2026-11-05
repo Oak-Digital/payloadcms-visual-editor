@@ -1,13 +1,12 @@
 'use client'
 
-import { ArrangeEditor } from '../arrange-editor/index.js'
-import { RichTextDialog } from '../rich-text-editor/dialog.js'
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 
 import type { Annotation, PayloadCMSDocument, PendingAnnotation } from '../../types.js'
 import type { AnnotationPopupCSSHandle } from '../annotation-popup-css/index.js'
 
+import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
 import {
   closestCrossingShadow,
   getAccessibilityInfo,
@@ -20,11 +19,9 @@ import {
   identifyElement,
   parseComputedStylesString,
 } from '../../utils/element-identification.js'
+import { documentKey, fieldDocument } from '../../utils/field-target.js'
 import { originalRequestAnimationFrame, originalSetTimeout } from '../../utils/freeze-animations.js'
 import { generateOutput } from '../../utils/generate-output.js'
-import { MediaPicker } from '../media-picker/index.js'
-import { imageFieldAt, previewImages } from '../media-picker/preview.js'
-import { documentKey, fieldDocument } from '../../utils/field-target.js'
 import { generatePatches } from '../../utils/payloodcms-patches.js'
 import { getReactComponentName } from '../../utils/react-detection.js'
 import {
@@ -53,6 +50,7 @@ import {
   updateAnnotation as updateAnnotationOnServer,
 } from '../../utils/sync.js'
 import { AnnotationPopupCSS } from '../annotation-popup-css/index.js'
+import { ArrangeEditor } from '../arrange-editor/index.js'
 import {
   IconCopyAnimated,
   IconEdit,
@@ -63,6 +61,9 @@ import {
   IconTrashAlt,
   IconXmarkLarge,
 } from '../icons/index.js'
+import { MediaPicker } from '../media-picker/index.js'
+import { imageFieldAt, previewImages } from '../media-picker/preview.js'
+import { RichTextDialog } from '../rich-text-editor/dialog.js'
 import { AnnotationMarker, ExitingMarker, PendingMarker } from './annotation-marker/index.js'
 import { SettingsPanel } from './settings-panel/index.js'
 import styles from './styles.module.scss'
@@ -293,8 +294,9 @@ function isSameAnnotationElement(
   left: Pick<Annotation, 'elementPath' | 'fullPath' | 'payloadCMS'>,
   right: Pick<Annotation, 'elementPath' | 'fullPath' | 'payloadCMS'>,
 ) {
-  if (JSON.stringify(left.payloadCMS.document) !== JSON.stringify(right.payloadCMS.document))
+  if (JSON.stringify(left.payloadCMS.document) !== JSON.stringify(right.payloadCMS.document)) {
     return false
+  }
   if (left.fullPath && right.fullPath) {
     return left.fullPath === right.fullPath
   }
@@ -313,6 +315,8 @@ export type DemoAnnotation = {
 }
 
 export type VisualEditorToolbarProps = {
+  adminRoute?: string
+  apiRoute?: string
   /** Custom class name applied to the toolbar container. Use to adjust positioning or z-index. */
   className?: string
   /** Whether to copy to clipboard when the copy button is clicked. Defaults to true. */
@@ -321,8 +325,6 @@ export type VisualEditorToolbarProps = {
   demoDelay?: number
   /** PayloadCMS document metadata. */
   documentInfo: PayloadCMSDocument
-  adminRoute?: string
-  apiRoute?: string
   enableDemoMode?: boolean
   /** Server URL for sync (e.g., "http://localhost:4747"). If not provided, uses localStorage only. */
   endpoint?: string
@@ -340,11 +342,17 @@ export type VisualEditorToolbarProps = {
   onSessionCreated?: (sessionId: string) => void
   /** Callback fired when "Send to Agent" is clicked. Receives the markdown output and annotations. */
   onSubmit?: (output: string, annotations: Annotation[]) => void
-
   /** Pre-existing session ID to join. If not provided with endpoint, creates a new session. */
   sessionId?: string
+
   /** Webhook URL to receive annotation events. */
   webhookUrl?: string
+  workspace?: {
+    actionsContainer: HTMLElement
+    onModeChange: (mode: 'annotate' | 'browse' | 'edit') => void
+    onPendingChange: (pending: boolean, busy: boolean) => void
+    panelContainer: HTMLElement
+  }
 }
 
 // =============================================================================
@@ -352,13 +360,13 @@ export type VisualEditorToolbarProps = {
 // =============================================================================
 
 export function VisualEditorToolbar({
+  adminRoute = '/admin',
+  apiRoute = '/api',
   className: userClassName,
   copyToClipboard = true,
   demoAnnotations,
   demoDelay = 1000,
   documentInfo,
-  adminRoute = '/admin',
-  apiRoute = '/api',
   enableDemoMode = false,
   endpoint,
   onAnnotationAdd,
@@ -370,30 +378,35 @@ export function VisualEditorToolbar({
   onSubmit,
   sessionId: initialSessionId,
   webhookUrl,
+  workspace,
 }: VisualEditorToolbarProps) {
   const [richTextTarget, setRichTextTarget] = useState<{
-    path: string
     document: PayloadCMSDocument
+    path: string
   } | null>(null)
   const [selectionNotice, setSelectionNotice] = useState('')
-  const [isActive, setIsActive] = useState(false)
+  const [isActive, setIsActive] = useState(Boolean(workspace))
+  const [mode, setMode] = useState<'annotate' | 'arrange' | 'editCMS'>('arrange')
+  const refreshPreview = usePreviewRefresh()
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [mediaTarget, setMediaTarget] = useState<{
-    path: string
-    element: HTMLElement
     document: PayloadCMSDocument
+    element: HTMLElement
+    path: string
   } | null>(null)
   useEffect(() => previewImages(annotations, document, documentInfo), [annotations, documentInfo])
   useEffect(() => {
-    if (!isActive) return
+    if (!isActive || mode !== 'editCMS') {
+      return
+    }
     const images = Array.from(
       document.querySelectorAll<HTMLElement>('img[data-payload-type="upload"]'),
     )
     const originals = images.map((image) => ({
       image,
-      tabIndex: image.getAttribute('tabindex'),
-      role: image.getAttribute('role'),
       label: image.getAttribute('aria-label'),
+      role: image.getAttribute('role'),
+      tabIndex: image.getAttribute('tabindex'),
     }))
     for (const image of images) {
       image.tabIndex = 0
@@ -412,16 +425,18 @@ export function VisualEditorToolbar({
     document.addEventListener('keydown', activate)
     return () => {
       document.removeEventListener('keydown', activate)
-      originals.forEach(({ image, tabIndex, role, label }) => {
+      originals.forEach(({ image, label, role, tabIndex }) => {
         for (const [name, value] of [
           ['tabindex', tabIndex],
           ['role', role],
           ['aria-label', label],
-        ])
-          value === null ? image.removeAttribute(name!) : image.setAttribute(name!, value!)
+        ]) {
+          if (value === null) image.removeAttribute(name!)
+          else image.setAttribute(name!, value)
+        }
       })
     }
-  }, [isActive])
+  }, [isActive, mode])
   const [showMarkers, setShowMarkers] = useState(true)
   const [isToolbarHidden, setIsToolbarHidden] = useState(() => loadToolbarHidden())
   const [isToolbarHiding, setIsToolbarHiding] = useState(false)
@@ -482,21 +497,9 @@ export function VisualEditorToolbar({
   const [tooltipsHidden, setTooltipsHidden] = useState(false)
 
   // Toolbar mode state
-  const [mode, setMode] = useState<'annotate' | 'editCMS' | 'arrange'>('editCMS')
   const isEditCmsMode = mode === 'editCMS'
   const isAnnotateMode = mode === 'annotate'
   const isArrangeMode = mode === 'arrange'
-  useEffect(() => {
-    try {
-      if (sessionStorage.getItem('visual-editor-reopen-arrange') === window.location.href) {
-        sessionStorage.removeItem('visual-editor-reopen-arrange')
-        setMode('arrange')
-        setIsActive(true)
-      }
-    } catch {
-      /* Storage is optional. */
-    }
-  }, [])
 
   // Draw mode state
   const [drawStrokes, setDrawStrokes] = useState<
@@ -1268,12 +1271,13 @@ export function VisualEditorToolbar({
             documentKey(fieldDocument(el, documentInfo)) ===
               documentKey(annotation.payloadCMS.document ?? documentInfo),
         )
-        if (element)
+        if (element) {
           setMediaTarget({
-            path: annotation.payloadCMS.path,
-            element,
             document: annotation.payloadCMS.document ?? documentInfo,
+            element,
+            path: annotation.payloadCMS.path,
           })
+        }
         return
       }
       setPendingAnnotation({ ...annotation, state: 'edit' })
@@ -1331,8 +1335,12 @@ export function VisualEditorToolbar({
         return
       }
 
-      if (richTextTarget) return
-      if (mediaTarget) return
+      if (richTextTarget) {
+        return
+      }
+      if (mediaTarget) {
+        return
+      }
       const owner = fieldDocument(target, documentInfo)
       if (isEditCmsMode && !owner) {
         e.preventDefault()
@@ -1354,8 +1362,8 @@ export function VisualEditorToolbar({
         e.stopPropagation()
         setSelectionNotice('')
         setRichTextTarget({
-          path: payloadField.path,
           document: owner ?? documentInfo,
+          path: payloadField.path,
         })
         setHoverInfo(null)
         return
@@ -1472,8 +1480,8 @@ export function VisualEditorToolbar({
         nearbyElements: getNearbyElements(elementUnder),
         nearbyText: getNearbyText(elementUnder),
         payloadCMS: {
-          path: isEditCmsMode ? path : '',
           document: isEditCmsMode ? (owner ?? undefined) : undefined,
+          path: isEditCmsMode ? path : '',
           value: '',
         },
         reactComponents: reactComponents ?? undefined,
@@ -1706,7 +1714,7 @@ export function VisualEditorToolbar({
       // Fire callback
       if (deletedAnnotation) {
         onAnnotationDelete?.(deletedAnnotation)
-        fireWebhook('annotation.delete', { annotation: deletedAnnotation })
+        void fireWebhook('annotation.delete', { annotation: deletedAnnotation })
       }
 
       // Sync delete to server (non-blocking)
@@ -1954,16 +1962,20 @@ export function VisualEditorToolbar({
   // Send to Payload
   const sendToPayload = useCallback(
     async (action: 'publish' | 'save' | null) => {
-      const groups = new Map<string, { owner: PayloadCMSDocument; annotations: Annotation[] }>()
+      const groups = new Map<string, { annotations: Annotation[]; owner: PayloadCMSDocument }>()
       for (const annotation of annotations) {
-        if (!annotation.payloadCMS.path) continue
+        if (!annotation.payloadCMS.path) {
+          continue
+        }
         const owner = annotation.payloadCMS.document ?? documentInfo
         const key = documentKey(owner)
-        const group = groups.get(key) ?? { owner, annotations: [] }
+        const group = groups.get(key) ?? { annotations: [], owner }
         group.annotations.push(annotation)
         groups.set(key, group)
       }
-      if (!groups.size) return
+      if (!groups.size) {
+        return
+      }
       const output = JSON.stringify(annotations)
       const requestAction = hasDrafts ? action : 'save'
       if (!output) {
@@ -1985,7 +1997,7 @@ export function VisualEditorToolbar({
       await new Promise((resolve) => originalSetTimeout(resolve, 150))
 
       try {
-        for (const { owner, annotations: changes } of groups.values()) {
+        for (const { annotations: changes, owner } of groups.values()) {
           const response = await fetch(`${apiRoute}/payload-visual-editor`, {
             body: JSON.stringify({
               id: owner.id,
@@ -2008,20 +2020,20 @@ export function VisualEditorToolbar({
           }
         }
 
-        // Show result
         setSendState({ state: 'sent' })
-        // Reset state and refresh page with updates
-        originalSetTimeout(() => {
-          setSendState({ action: null, state: 'idle' })
-          window.location.reload()
-        }, 2500)
-
-        // Keep annotations after draft saves so users can still publish the same changes.
-        if (requestAction === 'publish' && settings.autoClearAfterCopy) {
-          originalSetTimeout(() => clearAll(), 500)
-        }
-
-        // originalSetTimeout(() => window.location.reload(), 600)
+        // Release image previews before the server component merge.
+        flushSync(() =>
+          setAnnotations((current) =>
+            current.flatMap((item) => {
+              if (!annotations.includes(item) || !item.payloadCMS.path) {
+                return [item]
+              }
+              return requestAction === 'publish' ? [] : [{ ...item, media: undefined }]
+            }),
+          ),
+        )
+        await refreshPreview()
+        originalSetTimeout(() => setSendState({ action: null, state: 'idle' }), 2500)
       } catch (error) {
         console.warn('Failed to send visual editor patches:', error)
         setSelectionNotice(error instanceof Error ? error.message : 'Unable to save changes')
@@ -2031,15 +2043,7 @@ export function VisualEditorToolbar({
         }, 2500)
       }
     },
-    [
-      onSubmit,
-      apiRoute,
-      annotations,
-      documentInfo,
-      hasDrafts,
-      settings.autoClearAfterCopy,
-      clearAll,
-    ],
+    [onSubmit, apiRoute, annotations, documentInfo, hasDrafts, refreshPreview],
   )
 
   // Toolbar dragging - mousemove and mouseup
@@ -2193,7 +2197,7 @@ export function VisualEditorToolbar({
 
       if (e.key === 'Escape') {
         // Reset mode first
-        setMode('editCMS')
+        setMode('arrange')
         // Clear multi-select if active
         if (pendingMultiSelectElements.length > 0) {
           setPendingMultiSelectElements([])
@@ -2228,7 +2232,7 @@ export function VisualEditorToolbar({
       if (e.key === 'p' || e.key === 'P') {
         e.preventDefault()
         hideTooltipsUntilMouseLeave()
-        setMode('editCMS')
+        setMode('arrange')
       }
 
       // "H" to toggle marker visibility
@@ -2284,6 +2288,33 @@ export function VisualEditorToolbar({
     clearAll,
     pendingMultiSelectElements,
   ])
+
+  useEffect(() => {
+    if (!workspace) {
+      return
+    }
+    const receive = (event: MessageEvent) => {
+      if (
+        event.origin !== window.location.origin ||
+        event.source !== window.parent ||
+        event.data?.type !== 'visual-editor:set-mode'
+      ) {
+        return
+      }
+      const next = event.data.mode
+      if (!['annotate', 'browse', 'edit'].includes(next)) {
+        return
+      }
+      setIsActive(next !== 'browse')
+      setMode(next === 'annotate' ? 'annotate' : 'arrange')
+    }
+    window.addEventListener('message', receive)
+    return () => window.removeEventListener('message', receive)
+  }, [workspace])
+
+  useEffect(() => {
+    workspace?.onModeChange(!isActive ? 'browse' : isArrangeMode ? 'edit' : 'annotate')
+  }, [isActive, isArrangeMode, workspace])
 
   if (!mounted) {
     return null
@@ -2353,18 +2384,21 @@ export function VisualEditorToolbar({
       style={{ display: 'contents' }}
     >
       <ArrangeEditor
+        actionsContainer={workspace?.actionsContainer}
         active={isActive && isArrangeMode}
-        documentInfo={documentInfo}
-        apiRoute={apiRoute}
         adminRoute={adminRoute}
-        onClose={() => setMode('editCMS')}
+        apiRoute={apiRoute}
+        documentInfo={documentInfo}
+        onClose={() => setIsActive(false)}
+        onPendingChange={workspace?.onPendingChange}
+        panelContainer={workspace?.panelContainer}
       />
       {richTextTarget && (
         <RichTextDialog
-          path={richTextTarget.path}
-          documentInfo={richTextTarget.document}
           adminRoute={adminRoute}
+          documentInfo={richTextTarget.document}
           onClose={() => setRichTextTarget(null)}
+          path={richTextTarget.path}
         />
       )}
 
@@ -2373,10 +2407,9 @@ export function VisualEditorToolbar({
           adminRoute={adminRoute}
           apiRoute={apiRoute}
           documentInfo={mediaTarget.document}
-          path={mediaTarget.path}
           onClose={() => setMediaTarget(null)}
           onSelect={(media) => {
-            const { path, element, document: owner } = mediaTarget
+            const { document: owner, element, path } = mediaTarget
             const matches = (item: Annotation) =>
               item.payloadCMS.path === path &&
               documentKey(item.payloadCMS.document ?? documentInfo) === documentKey(owner)
@@ -2384,18 +2417,19 @@ export function VisualEditorToolbar({
             const existing = annotations.find(matches)
             const annotation: Annotation = {
               id: existing?.id || `media-${Date.now()}`,
-              timestamp: Date.now(),
+              comment: media.filename || 'Replace image',
               element: `Image ${path}`,
               elementPath: path,
-              comment: media.filename || 'Replace image',
-              payloadCMS: { path, value: String(media.id), document: owner },
               media,
+              payloadCMS: { document: owner, path, value: String(media.id) },
+              timestamp: Date.now(),
               x: (rect.left / window.innerWidth) * 100,
               y: rect.top + window.scrollY,
             }
             setAnnotations((current) => [...current.filter((item) => !matches(item)), annotation])
             setMediaTarget(null)
           }}
+          path={mediaTarget.path}
         />
       )}
       {selectionNotice && (
@@ -2403,24 +2437,24 @@ export function VisualEditorToolbar({
           data-annotation-popup
           role="status"
           style={{
-            position: 'fixed',
-            bottom: 90,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 100001,
             background: '#171717',
-            color: '#fff',
-            padding: 16,
             borderRadius: 8,
-            width: 'min(420px, 90vw)',
+            bottom: 90,
+            color: '#fff',
             fontSize: 14,
+            left: '50%',
+            padding: 16,
+            position: 'fixed',
+            transform: 'translateX(-50%)',
+            width: 'min(420px, 90vw)',
+            zIndex: 100001,
           }}
         >
           {selectionNotice}
           <button
-            type="button"
             onClick={() => setSelectionNotice('')}
             style={{ display: 'block', marginTop: 8 }}
+            type="button"
           >
             Dismiss
           </button>
@@ -2432,6 +2466,7 @@ export function VisualEditorToolbar({
         data-agentation-toolbar
         data-feedback-toolbar
         style={{
+          display: workspace && (!isActive || isArrangeMode) ? 'none' : undefined,
           ...(toolbarPosition
             ? {
                 bottom: 'auto',
@@ -2466,7 +2501,7 @@ export function VisualEditorToolbar({
             width: isActive ? (isEditCmsMode ? '420px' : '301px') : undefined,
           }}
           tabIndex={!isActive ? 0 : -1}
-          title={!isActive ? 'Start feedback mode' : undefined}
+          title={!isActive ? 'Edit content' : undefined}
         >
           {/* Toggle content - visible when collapsed */}
           <div className={`${styles.toggleContent} ${!isActive ? styles.visible : styles.hidden}`}>
@@ -2505,7 +2540,7 @@ export function VisualEditorToolbar({
                 onClick={(e) => {
                   e.stopPropagation()
                   hideTooltipsUntilMouseLeave()
-                  setMode((prev) => (prev === 'annotate' ? 'editCMS' : 'annotate'))
+                  setMode((prev) => (prev === 'annotate' ? 'arrange' : 'annotate'))
                 }}
                 type="button"
               >
@@ -2519,32 +2554,34 @@ export function VisualEditorToolbar({
 
             <div className={styles.buttonWrapper}>
               <button
-                type="button"
+                aria-label={isArrangeMode ? 'Inline editing' : 'Edit content'}
+                aria-pressed={isArrangeMode}
                 className={styles.controlButton}
                 data-active={isArrangeMode}
-                aria-label="Arrange and edit"
-                aria-pressed={isArrangeMode}
                 onClick={() => {
                   setPendingAnnotation(null)
                   setHoverInfo(null)
-                  setMode(isArrangeMode ? 'editCMS' : 'arrange')
+                  setMode(isArrangeMode && !workspace ? 'editCMS' : 'arrange')
                 }}
+                type="button"
               >
                 <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
+                  aria-hidden="true"
                   fill="none"
+                  height="24"
                   stroke="currentColor"
                   strokeWidth="1.7"
-                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  width="24"
                 >
-                  <rect x="8" y="3" width="13" height="7" rx="2" />
-                  <rect x="8" y="14" width="13" height="7" rx="2" />
+                  <rect height="7" rx="2" width="13" x="8" y="3" />
+                  <rect height="7" rx="2" width="13" x="8" y="14" />
                   <path d="M3 4v5m-2-3 2-2 2 2M3 15v5m-2-2 2 2 2-2" />
                 </svg>
               </button>
-              <span className={styles.buttonTooltip}>Arrange &amp; edit</span>
+              <span className={styles.buttonTooltip}>
+                {isArrangeMode ? 'Inline editing' : 'Edit content'}
+              </span>
             </div>
             <div className={styles.buttonWrapper} id="toggle-marker-visibility">
               <button
@@ -2698,7 +2735,7 @@ export function VisualEditorToolbar({
                 onClick={(e) => {
                   e.stopPropagation()
                   hideTooltipsUntilMouseLeave()
-                  setMode('editCMS')
+                  setMode('arrange')
                   setShowSettings(!showSettings)
                 }}
                 type="button"
