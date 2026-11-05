@@ -1,0 +1,38 @@
+import { describe, expect, it } from 'vitest'
+import { previewImages } from './preview.js'
+import type { Annotation } from '../../types.js'
+
+describe('pending image preview', () => {
+  it('updates only the selected field and restores responsive sources', () => {
+    document.body.innerHTML =
+      '<picture><source data-payload-type="upload" data-payload-path="mobile" srcset="mobile.jpg"><img data-payload-type="upload" data-payload-path="desktop" src="old.jpg" srcset="old-2x.jpg 2x" sizes="100vw" alt="Original"></picture><img data-payload-type="upload" data-payload-path="other" src="old.jpg">'
+    const restore = previewImages([
+      {
+        payloadCMS: { path: 'desktop', value: 'id' },
+        media: { id: 'id', url: '/new.jpg', alt: 'New' },
+      },
+    ] as Annotation[])
+    const image = document.querySelector('img')!
+    expect(image.getAttribute('src')).toBe('/new.jpg')
+    expect(image.hasAttribute('srcset')).toBe(false)
+    expect(document.querySelector('source')?.getAttribute('srcset')).toBe('mobile.jpg')
+    expect(document.querySelector('[data-payload-path="other"]')?.getAttribute('src')).toBe(
+      'old.jpg',
+    )
+    restore()
+    expect(image.getAttribute('src')).toBe('old.jpg')
+    expect(image.getAttribute('srcset')).toBe('old-2x.jpg 2x')
+    expect(image.alt).toBe('Original')
+  })
+  it('updates mobile picture sources without changing desktop fallbacks', () => {
+    document.body.innerHTML =
+      '<picture><source data-payload-type="upload" data-payload-path="mobile" srcset="old.jpg"><img src="desktop.jpg"></picture>'
+    const restore = previewImages([
+      { payloadCMS: { path: 'mobile', value: 'id' }, media: { id: 'id', url: '/new.jpg' } },
+    ] as Annotation[])
+    expect(document.querySelector('source')?.getAttribute('srcset')).toBe('/new.jpg')
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('desktop.jpg')
+    restore()
+    expect(document.querySelector('source')?.getAttribute('srcset')).toBe('old.jpg')
+  })
+})

@@ -5,6 +5,7 @@
 // =============================================================================
 
 export interface Annotation {
+  media?: { id: string | number; url: string; alt?: string; focalX?: number; focalY?: number }
   // Local-only sync tracking (not sent to server)
   _syncedTo?: string // Session ID this annotation was synced to
   accessibility?: string
@@ -110,7 +111,7 @@ export type PayloadCMSDocument = {
   id: number | string
 }
 
-export type PayloadCMSPatch = { path: string; value: string }
+export type PayloadCMSPatch = { path: string; value: string | number | null }
 
 // -----------------------------------------------------------------------------
 // Session

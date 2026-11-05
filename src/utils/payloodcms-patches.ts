@@ -1,6 +1,6 @@
 import type { Annotation, PayloadCMSPatch } from '../types.js'
 
-type JsonLike = { [key: string]: JsonLike } | JsonLike[] | null | string
+type JsonLike = { [key: string]: JsonLike } | JsonLike[] | null | string | number
 
 function cloneValue<T>(value: T): T {
   if (typeof structuredClone === 'function') {
@@ -30,8 +30,8 @@ function validatePatch(patch: Record<string, unknown>): PayloadCMSPatch {
     throw new Error('PayloadCMSPatch path is required')
   }
 
-  if (typeof value !== 'string') {
-    throw new Error(`PayloadCMSPatch value for "${path}" must be a string`)
+  if (value !== null && typeof value !== 'string' && typeof value !== 'number') {
+    throw new Error(`PayloadCMSPatch value for "${path}" must be a string, number or null`)
   }
 
   return { path, value }
@@ -59,7 +59,7 @@ function getValueAtPath(value: JsonLike, path: string): JsonLike | undefined {
   return current
 }
 
-function setValueAtPath(target: JsonLike, path: string, nextValue: string): void {
+function setValueAtPath(target: JsonLike, path: string, nextValue: string | number | null): void {
   const segments = getPathSegments(path)
 
   if (!segments.length) {
@@ -124,9 +124,13 @@ export function applyPatchesToDocument<T extends Record<string, unknown>>(
   for (const patch of validPatches) {
     const currentValue = getValueAtPath(nextDocument as JsonLike, patch.path)
 
-    if (typeof currentValue !== 'string') {
+    if (
+      currentValue !== null &&
+      typeof currentValue !== 'string' &&
+      typeof currentValue !== 'number'
+    ) {
       throw new Error(
-        `PayloadCMSPatch path "${patch.path}" must resolve to an existing string field`,
+        `PayloadCMSPatch path "${patch.path}" must resolve to an existing scalar field`,
       )
     }
 
@@ -160,7 +164,7 @@ export function generatePatches(annotations: Annotation[]) {
   const patches: PayloadCMSPatch[] = []
   annotations.forEach((a) => {
     if (a.payloadCMS?.path && a.payloadCMS.path !== 'Path not found') {
-      patches.push({ path: a.payloadCMS.path, value: a.payloadCMS.value })
+      patches.push({ path: a.payloadCMS.path, value: a.media?.id ?? a.payloadCMS.value })
     }
   })
   return patches
