@@ -1,6 +1,8 @@
 import type { CollectionSlug, PayloadHandler, TypedLocale } from 'payload'
 import type { PayloadCMSPatch } from '../types.js'
 import { buildPatchedUpdateData } from '../utils/payloodcms-patches.js'
+import { uploadTargets, validateMedia } from '../utils/upload-fields.js'
+import { applyPatchesToDocument } from '../utils/payloodcms-patches.js'
 import { buildSourceMap } from '../utils/source-map.js'
 
 type Mutation = {
@@ -22,7 +24,12 @@ function isMutation(value: unknown): value is Mutation {
     Array.isArray(body.patches) &&
     body.patches.length > 0 &&
     body.patches.every(
-      (patch) => patch && typeof patch.path === 'string' && typeof patch.value === 'string',
+      (patch) =>
+        patch &&
+        typeof patch.path === 'string' &&
+        (patch.value === null ||
+          typeof patch.value === 'string' ||
+          typeof patch.value === 'number'),
     )
   )
 }
@@ -57,6 +64,7 @@ export const createVisualEditorMutationHandler =
       return Response.json({ error: 'Visual editing requires drafts' }, { status: 400 })
     }
     try {
+      if (body.locale) req.locale = body.locale as TypedLocale
       const currentDocument = await req.payload.findByID({
         id: body.id,
         collection: body.collection,
@@ -68,8 +76,26 @@ export const createVisualEditorMutationHandler =
         req,
       })
       const sourceMap = buildSourceMap(collection.fields, currentDocument)
-      if (body.patches.some(({ path }) => !Object.hasOwn(sourceMap, path))) {
-        return Response.json({ error: 'Only editable text fields may be changed' }, { status: 400 })
+      if (
+        body.patches.some(
+          ({ path }) =>
+            !Object.hasOwn(sourceMap, path) ||
+            (typeof sourceMap[path] === 'object' && sourceMap[path].type === 'richText'),
+        )
+      ) {
+        return Response.json(
+          { error: 'Only supported editable fields may be changed' },
+          { status: 400 },
+        )
+      }
+      const patched = applyPatchesToDocument(currentDocument, body.patches)
+      const targets = uploadTargets(collection.fields, patched)
+      for (const patch of body.patches) {
+        if (typeof sourceMap[patch.path] === 'object') {
+          const target = targets.get(patch.path)
+          if (!target) throw new Error('Unsupported upload field')
+          await validateMedia(target, patch.value, req, patched, body.id)
+        } else if (typeof patch.value !== 'string') throw new Error('Text values must be strings')
       }
       const data = buildPatchedUpdateData(currentDocument, body.patches)
       await req.payload.update({

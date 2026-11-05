@@ -1,5 +1,12 @@
 import type { Field } from 'payload'
 
+import { uploadTargets } from './upload-fields.js'
+
+export type SourceMap = Record<
+  string,
+  string | { type: 'richText' } | { type: 'upload'; value: string | number | null }
+>
+
 // =============================================================================
 // PayloadCMS Content Source Map Utilities
 //
@@ -56,7 +63,7 @@ function addEditableFields({
   fields: Field[]
   path: string
   source: unknown
-  sourceMap: Record<string, string>
+  sourceMap: SourceMap
 }): void {
   for (const field of fields) {
     if ('name' in field && ['id', 'blockType', 'blockName'].includes(field.name)) continue
@@ -140,6 +147,14 @@ function addEditableFields({
         break
       }
 
+      case 'richText': {
+        const value = getNamedValue(source, field.name)
+        if (isRecord(value) && isRecord(value.root)) {
+          sourceMap[appendPath(path, field.name)] = { type: 'richText' }
+        }
+        break
+      }
+
       case 'text':
       case 'textarea': {
         const value = getNamedValue(source, field.name)
@@ -161,8 +176,8 @@ function addEditableFields({
  * @param document - The document object to extract values from
  * @returns Record mapping field paths to their string values
  */
-export function buildSourceMap(fields: Field[], document: unknown): Record<string, string> {
-  const sourceMap: Record<string, string> = {}
+export function buildSourceMap(fields: Field[], document: unknown): SourceMap {
+  const sourceMap: SourceMap = {}
 
   addEditableFields({
     fields,
@@ -171,5 +186,13 @@ export function buildSourceMap(fields: Field[], document: unknown): Record<strin
     sourceMap,
   })
 
-  return sourceMap
+  const result: SourceMap = sourceMap
+  if (isRecord(document))
+    for (const [path, { field, siblingData }] of uploadTargets(fields, document)) {
+      const value = siblingData[field.name]
+      const id = isRecord(value) ? value.id : value
+      if (id === null || typeof id === 'string' || typeof id === 'number')
+        result[path] = { type: 'upload', value: id }
+    }
+  return result
 }

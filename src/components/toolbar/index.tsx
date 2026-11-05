@@ -1,5 +1,6 @@
 'use client'
 
+import { RichTextDialog } from '../rich-text-editor/dialog.js'
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -20,6 +21,8 @@ import {
 } from '../../utils/element-identification.js'
 import { originalRequestAnimationFrame, originalSetTimeout } from '../../utils/freeze-animations.js'
 import { generateOutput } from '../../utils/generate-output.js'
+import { MediaPicker } from '../media-picker/index.js'
+import { imageFieldAt, previewImages } from '../media-picker/preview.js'
 import { generatePatches } from '../../utils/payloodcms-patches.js'
 import { getReactComponentName } from '../../utils/react-detection.js'
 import {
@@ -312,6 +315,8 @@ export type VisualEditorToolbarProps = {
   demoDelay?: number
   /** PayloadCMS document metadata. */
   documentInfo: PayloadCMSDocument
+  adminRoute?: string
+  apiRoute?: string
   enableDemoMode?: boolean
   /** Server URL for sync (e.g., "http://localhost:4747"). If not provided, uses localStorage only. */
   endpoint?: string
@@ -346,6 +351,8 @@ export function VisualEditorToolbar({
   demoAnnotations,
   demoDelay = 1000,
   documentInfo,
+  adminRoute = '/admin',
+  apiRoute = '/api',
   enableDemoMode = false,
   endpoint,
   onAnnotationAdd,
@@ -358,8 +365,51 @@ export function VisualEditorToolbar({
   sessionId: initialSessionId,
   webhookUrl,
 }: VisualEditorToolbarProps) {
+  const [richTextPath, setRichTextPath] = useState<string | null>(null)
   const [isActive, setIsActive] = useState(false)
   const [annotations, setAnnotations] = useState<Annotation[]>([])
+  const [mediaTarget, setMediaTarget] = useState<{ path: string; element: HTMLElement } | null>(
+    null,
+  )
+  useEffect(() => previewImages(annotations), [annotations])
+  useEffect(() => {
+    if (!isActive) return
+    const images = Array.from(
+      document.querySelectorAll<HTMLElement>('img[data-payload-type="upload"]'),
+    )
+    const originals = images.map((image) => ({
+      image,
+      tabIndex: image.getAttribute('tabindex'),
+      role: image.getAttribute('role'),
+      label: image.getAttribute('aria-label'),
+    }))
+    for (const image of images) {
+      image.tabIndex = 0
+      image.setAttribute('role', 'button')
+      image.setAttribute('aria-label', 'Replace image')
+    }
+    const activate = (event: KeyboardEvent) => {
+      if (
+        (event.key === 'Enter' || event.key === ' ') &&
+        images.includes(event.target as HTMLElement)
+      ) {
+        event.preventDefault()
+        ;(event.target as HTMLElement).click()
+      }
+    }
+    document.addEventListener('keydown', activate)
+    return () => {
+      document.removeEventListener('keydown', activate)
+      originals.forEach(({ image, tabIndex, role, label }) => {
+        for (const [name, value] of [
+          ['tabindex', tabIndex],
+          ['role', role],
+          ['aria-label', label],
+        ])
+          value === null ? image.removeAttribute(name!) : image.setAttribute(name!, value!)
+      })
+    }
+  }, [isActive])
   const [showMarkers, setShowMarkers] = useState(true)
   const [isToolbarHidden, setIsToolbarHidden] = useState(() => loadToolbarHidden())
   const [isToolbarHiding, setIsToolbarHiding] = useState(false)
@@ -1184,6 +1234,13 @@ export function VisualEditorToolbar({
 
   // Start editing an annotation (right-click or click on drawing stroke)
   const startEditAnnotation = useCallback((annotation: Annotation) => {
+    if (annotation.media) {
+      const element = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-payload-path]'),
+      ).find((el) => el.dataset.payloadPath === annotation.payloadCMS.path)
+      if (element) setMediaTarget({ path: annotation.payloadCMS.path, element })
+      return
+    }
     setPendingAnnotation({ ...annotation, state: 'edit' })
     setHoveredMarkerId(null)
     setHoveredTargetElement(null)
@@ -1237,7 +1294,23 @@ export function VisualEditorToolbar({
         return
       }
 
+      if (richTextPath) return
+      if (mediaTarget) return
+      const imageField = imageFieldAt(target)
+      if (isEditCmsMode && imageField) {
+        e.preventDefault()
+        e.stopPropagation()
+        setMediaTarget(imageField)
+        return
+      }
       const payloadField = identifyPayloadField(target)
+      if (isEditCmsMode && payloadField?.path && target.closest('[data-payload-type="richText"]')) {
+        e.preventDefault()
+        e.stopPropagation()
+        setRichTextPath(payloadField.path)
+        setHoverInfo(null)
+        return
+      }
 
       if (isEditCmsMode && !payloadField?.path) {
         return
@@ -1366,6 +1439,8 @@ export function VisualEditorToolbar({
     isEditCmsMode,
     pendingAnnotation,
     startEditAnnotation,
+    mediaTarget,
+    richTextPath,
     settings.blockInteractions,
     effectiveReactMode,
     pendingMultiSelectElements,
@@ -1841,7 +1916,7 @@ export function VisualEditorToolbar({
       await new Promise((resolve) => originalSetTimeout(resolve, 150))
 
       try {
-        const response = await fetch(`/api/payload-visual-editor`, {
+        const response = await fetch(`${apiRoute}/payload-visual-editor`, {
           body: JSON.stringify({
             id: documentInfo.id,
             action: requestAction,
@@ -1884,6 +1959,7 @@ export function VisualEditorToolbar({
     },
     [
       onSubmit,
+      apiRoute,
       annotations,
       documentInfo.id,
       documentInfo.collection,
@@ -2204,6 +2280,45 @@ export function VisualEditorToolbar({
       ref={portalWrapperRef}
       style={{ display: 'contents' }}
     >
+      {richTextPath && (
+        <RichTextDialog
+          path={richTextPath}
+          documentInfo={documentInfo}
+          adminRoute={adminRoute}
+          onClose={() => setRichTextPath(null)}
+        />
+      )}
+
+      {mediaTarget && (
+        <MediaPicker
+          adminRoute={adminRoute}
+          apiRoute={apiRoute}
+          documentInfo={documentInfo}
+          path={mediaTarget.path}
+          onClose={() => setMediaTarget(null)}
+          onSelect={(media) => {
+            const { path, element } = mediaTarget
+            const rect = element.getBoundingClientRect()
+            const existing = annotations.find((annotation) => annotation.payloadCMS.path === path)
+            const annotation: Annotation = {
+              id: existing?.id || `media-${Date.now()}`,
+              timestamp: Date.now(),
+              element: `Image ${path}`,
+              elementPath: path,
+              comment: media.filename || 'Replace image',
+              payloadCMS: { path, value: String(media.id) },
+              media,
+              x: (rect.left / window.innerWidth) * 100,
+              y: rect.top + window.scrollY,
+            }
+            setAnnotations((current) => [
+              ...current.filter((item) => item.payloadCMS.path !== path),
+              annotation,
+            ])
+            setMediaTarget(null)
+          }}
+        />
+      )}
       {/* Toolbar */}
       <div
         className={`${styles.toolbar} ${userClassName ? ` ${userClassName}` : ''}`}

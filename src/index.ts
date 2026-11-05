@@ -1,6 +1,8 @@
 import type { CollectionAfterReadHook, CollectionSlug, Config, Field, FieldHook } from 'payload'
 
 import { createVisualEditorMutationHandler } from './endpoints/visualEditorMutationHandler.js'
+import { createMediaHandler } from './endpoints/mediaHandler.js'
+import { createRichTextHandler } from './endpoints/richTextHandler.js'
 import { buildSourceMap } from './utils/source-map.js'
 
 const populateSourceMap =
@@ -29,6 +31,19 @@ export type PayloadVisualEditorConfig = {
 const payloadVisualEditor =
   (pluginOptions: PayloadVisualEditorConfig) =>
   (config: Config): Config => {
+    config = {
+      ...config,
+      collections: config.collections?.map((collection) => ({
+        ...collection,
+        fields: [...collection.fields],
+        hooks: { ...collection.hooks, afterRead: [...(collection.hooks?.afterRead ?? [])] },
+      })),
+      endpoints: [...(config.endpoints ?? [])],
+      admin: {
+        ...config.admin,
+        components: { ...config.admin?.components, views: { ...config.admin?.components?.views } },
+      },
+    }
     if (!config.collections) {
       config.collections = []
     }
@@ -74,6 +89,25 @@ const payloadVisualEditor =
     if (!config.endpoints) {
       config.endpoints = []
     }
+
+    config.admin ??= {}
+    config.admin.components ??= {}
+    config.admin.components.views ??= {}
+    config.admin.components.views.visualRichText = {
+      Component: '@oak-digital/payload-visual-editor/client#RichTextEditorView',
+      path: '/visual-rich-text',
+    }
+    config.endpoints.push({
+      handler: createRichTextHandler(pluginOptions.collections ?? {}),
+      method: 'post',
+      path: '/payload-visual-editor/rich-text',
+    })
+
+    config.endpoints.push({
+      handler: createMediaHandler(pluginOptions.collections ?? {}),
+      method: 'post',
+      path: '/payload-visual-editor/media',
+    })
 
     config.endpoints.push({
       handler: createVisualEditorMutationHandler(pluginOptions.collections ?? {}),
