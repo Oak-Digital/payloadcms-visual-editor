@@ -241,3 +241,78 @@ describe('arrange editor batch', () => {
     expect(payload.update).not.toHaveBeenCalled()
   })
 })
+
+describe('relationship array editing', () => {
+  function arrayFixture() {
+    const fixtureData = fixture()
+    const { block, doc, payload } = fixtureData
+    block.blocks[0].fields.push({
+      name: 'slides',
+      type: 'array',
+      minRows: 1,
+      maxRows: 3,
+      custom: { visualEditorRelationship: 'product' },
+      fields: [
+        { name: 'product', type: 'relationship', relationTo: 'products' },
+        { name: 'caption', type: 'text' },
+      ],
+    })
+    ;(doc.layout[0] as any).slides = [
+      { id: 'one', product: 'new', caption: 'Keep me' },
+      { id: 'two', product: 'new', caption: 'Remove me' },
+    ]
+    payload.config.collections.push({ slug: 'products', admin: { useAsTitle: 'title' } } as any)
+    const paths = ['layout.0.slides', 'layout.0.slides.0.caption']
+    const read = async () => (await fixtureData.call({ paths })).json()
+    const save = (revision: string, value: unknown, extra: any[] = []) =>
+      fixtureData.call({
+        action: 'save',
+        paths,
+        revision,
+        changes: [{ path: paths[0], value }, ...extra],
+        orders: [{ path: 'layout', ids: ['b', 'a'] }],
+      })
+    return { ...fixtureData, read, save }
+  }
+  it('adds and removes rows while preserving edited overrides through block reordering', async () => {
+    const { read, save, payload } = arrayFixture()
+    const { revision, fields } = await read()
+    expect(fields['layout.0.slides'].value).toEqual([{ id: 'one' }, { id: 'two' }])
+    const response = await save(
+      revision,
+      [{ relationship: 'new' }, { id: 'one' }],
+      [{ path: 'layout.0.slides.0.caption', value: 'Edited override' }],
+    )
+    expect(await response.json()).toEqual({ success: true })
+    expect(payload.update.mock.calls[0][0].data.layout[1].slides).toEqual([
+      { product: 'new' },
+      { id: 'one', product: 'new', caption: 'Edited override' },
+    ])
+    expect(payload.find).toHaveBeenCalledWith(
+      expect.objectContaining({ collection: 'products', overrideAccess: false }),
+    )
+  })
+  it.each([
+    [],
+    [{ id: 'missing' }],
+    [{ id: 'one' }, { id: 'one' }],
+    [{ relationship: 'inaccessible' }],
+    [{ id: 'one', caption: 'Injected' }],
+    Array.from({ length: 4 }, () => ({ relationship: 'new' })),
+  ])('rejects invalid array operations: %j', async (...args) => {
+    // it.each spreads array cases; reconstruct the proposed row list.
+    const { read, save, payload } = arrayFixture()
+    const { revision } = await read()
+    expect((await save(revision, args)).status).toBe(400)
+    expect(payload.update).not.toHaveBeenCalled()
+  })
+  it('requires explicit schema opt-in and field access', async () => {
+    const { block, read } = arrayFixture()
+    const array = block.blocks[0].fields.at(-1)
+    array.access = { update: () => false }
+    expect((await read()).fields).not.toHaveProperty('layout.0.slides')
+    delete array.access
+    delete array.custom
+    expect((await read()).fields).not.toHaveProperty('layout.0.slides')
+  })
+})

@@ -6,13 +6,14 @@ import { createPortal, flushSync } from 'react-dom'
 import type { Annotation, PayloadCMSDocument } from '../../types.js'
 
 import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
-import { type ArrangeSnapshot, remapArrangePath } from '../../utils/arrange.js'
+import { type ArrayRow, type ArrangeSnapshot, remapArrangePath } from '../../utils/arrange.js'
 import { documentKey, fieldDocument } from '../../utils/field-target.js'
 import { type MediaChoice, MediaPicker } from '../media-picker/index.js'
 import { imageFieldAt, previewImages } from '../media-picker/preview.js'
 import { RevisionHistory } from '../revision-history/index.js'
 import { RichTextDialog } from '../rich-text-editor/dialog.js'
 import styles from './styles.module.scss'
+import { ArrayEditor } from './array-editor.js'
 
 type Session = {
   changes: Record<string, unknown>
@@ -138,12 +139,14 @@ export function ArrangeEditor({
       const paths = new Set<string>()
       const orderPaths = new Set<string>()
       for (const element of document.querySelectorAll(
-        '[data-payload-path], [data-payload-block-list]',
+        '[data-payload-path], [data-payload-block-list], [data-payload-array-path]',
       )) {
         if (documentKey(fieldDocument(element, documentInfo)) !== key) {
           continue
         }
-        const path = element.getAttribute('data-payload-path')
+        const path =
+          element.getAttribute('data-payload-path') ||
+          element.getAttribute('data-payload-array-path')
         const orderPath = element.getAttribute('data-payload-block-list')
         if (path) {
           paths.add(path)
@@ -194,7 +197,7 @@ export function ArrangeEditor({
     initialised.current = true
     const owners = new Map<string, PayloadCMSDocument>()
     for (const element of document.querySelectorAll(
-      '[data-payload-path], [data-payload-block-list]',
+      '[data-payload-path], [data-payload-block-list], [data-payload-array-path]',
     )) {
       const owner = fieldDocument(element, documentInfo)
       if (owner) {
@@ -325,6 +328,7 @@ export function ArrangeEditor({
         continue
       }
       const field = current.snapshot.fields[path]
+      if (!field) continue
       if (field.type === 'text' || field.type === 'textarea') {
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
         const nodes: Text[] = []
@@ -512,7 +516,14 @@ export function ArrangeEditor({
         completed++
         setRevisionRefresh((value) => value + 1)
         committed.current.add(key)
-        if (target?.key === key) {
+        if (
+          Object.keys(session.changes).some(
+            (path) => session.snapshot.fields[path].type === 'array',
+          )
+        ) {
+          setTarget(undefined)
+          nextTarget.current = undefined
+        } else if (target?.key === key) {
           nextTarget.current = {
             key,
             path: remapArrangePath(target.path, session.snapshot.orders, session.orders),
@@ -629,6 +640,19 @@ export function ArrangeEditor({
                     </>
                   )}
                 </section>
+                {Object.entries(sessions).flatMap(([key, session]) =>
+                  Object.entries(session.snapshot.fields).map(([path, field]) =>
+                    field.type === 'array' ? (
+                      <ArrayEditor
+                        key={`${key}:${path}`}
+                        field={field}
+                        value={(session.changes[path] ?? field.value) as ArrayRow[]}
+                        disabled={busy || needsSync}
+                        onChange={(rows) => stage({ key, path }, rows)}
+                      />
+                    ) : null,
+                  ),
+                )}
                 {Object.values(sessions).some(
                   (session) => Object.keys(session.snapshot.orders).length > 0,
                 ) && (
@@ -725,11 +749,13 @@ export function ArrangeEditor({
                         >
                           {fieldLabel(path, session)}
                           <small>
-                            {session.snapshot.fields[path].type === 'upload'
-                              ? 'Image replaced'
-                              : session.snapshot.fields[path].type === 'richText'
-                                ? 'Formatted text edited'
-                                : String(session.changes[path])}
+                            {session.snapshot.fields[path].type === 'array'
+                              ? 'Products changed'
+                              : session.snapshot.fields[path].type === 'upload'
+                                ? 'Image replaced'
+                                : session.snapshot.fields[path].type === 'richText'
+                                  ? 'Formatted text edited'
+                                  : String(session.changes[path])}
                           </small>
                         </button>
                         <button

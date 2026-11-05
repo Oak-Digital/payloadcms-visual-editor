@@ -13,6 +13,7 @@ import {
   type ArrangeChange,
   type ArrangeOrder,
   type ArrangeSnapshot,
+  arrangeArrayRows,
   reorderRows,
   safePath,
   setPath,
@@ -91,12 +92,68 @@ export const createArrangeHandler =
       const snapshot: ArrangeSnapshot = { fields: {}, orders: {}, revision }
       for (const path of body.paths as string[]) {
         const resolved = resolveField(collection.fields, visible, path)
-        if (!resolved || !Object.hasOwn(sourceMap, path)) {
+        if (!resolved || (!Object.hasOwn(sourceMap, path) && resolved.field.type !== 'array')) {
           continue
         }
         try {
           await assertFieldAccess(resolved, visible, req)
           const type = resolved.field.type
+          if (resolved.field.type === 'array') {
+            const array = resolved.field
+            const relationship = array.custom?.visualEditorRelationship
+            const related = array.fields.find(
+              (field) => 'name' in field && field.name === relationship,
+            )
+            if (
+              !related ||
+              related.type !== 'relationship' ||
+              related.hasMany ||
+              typeof related.relationTo !== 'string'
+            )
+              continue
+            const rows = resolved.value ?? []
+            if (!Array.isArray(rows) || rows.some((row) => !row.id)) continue
+            for (let index = 0; index < rows.length; index++) {
+              await assertFieldAccess(
+                resolveField(collection.fields, visible, `${path}.${index}.${relationship}`)!,
+                visible,
+                req,
+              )
+            }
+            const relatedCollection = req.payload.config.collections.find(
+              (item) => item.slug === related.relationTo,
+            )
+            const title = relatedCollection?.admin?.useAsTitle || 'id'
+            const choices = await req.payload.find({
+              collection: related.relationTo,
+              depth: 0,
+              pagination: false,
+              limit: 0,
+              locale: body.locale,
+              fallbackLocale: false,
+              overrideAccess: false,
+              req,
+            })
+            const options = choices.docs.map((doc) => ({
+              id: String(doc.id),
+              label: String(doc[title] || doc.id),
+            }))
+            snapshot.fields[path] = {
+              type: 'array',
+              value: rows.map((row) => ({ id: String(row.id) })),
+              label: typeof array.label === 'string' ? array.label : array.name,
+              minRows: array.minRows ?? (array.required ? 1 : 0),
+              maxRows: array.maxRows,
+              choices: options,
+              labels: Object.fromEntries(
+                rows.map((row) => [
+                  String(row.id),
+                  options.find((option) => option.id === String(row[relationship]))?.label ||
+                    'Unavailable product',
+                ]),
+              ),
+            }
+          }
           if (type === 'richText') {
             assertSupportedRichText(resolved.field, resolved.value)
           }
@@ -186,6 +243,9 @@ export const createArrangeHandler =
         ) {
           throw new Error('Field contains protected content')
         }
+        if (field.type === 'array') {
+          continue // Apply row edits after child field edits, at their original paths.
+        }
         if (field.type === 'richText') {
           assertSupportedRichText(resolved.field, change.value)
         } else if (field.type !== 'upload' && typeof change.value !== 'string') {
@@ -216,6 +276,35 @@ export const createArrangeHandler =
             body.id,
           )
         }
+      }
+      for (const change of body.changes as ArrangeChange[]) {
+        const field = snapshot.fields[change.path]
+        if (field.type !== 'array') continue
+        const resolved = resolveField(collection.fields, proposed, change.path)!
+        const relationship = resolved.field.custom!.visualEditorRelationship as string
+        setPath(
+          proposed,
+          change.path,
+          arrangeArrayRows(resolved.value ?? [], change.value, field, relationship),
+        )
+        await assertFieldAccess(
+          resolveField(collection.fields, proposed, change.path)!,
+          complete,
+          req,
+          proposed,
+          ['update'],
+        )
+        const rows = resolveField(collection.fields, proposed, change.path)!.value
+        for (let index = 0; index < rows.length; index++) {
+          await assertFieldAccess(
+            resolveField(collection.fields, proposed, `${change.path}.${index}.${relationship}`)!,
+            complete,
+            req,
+            proposed,
+            ['update'],
+          )
+        }
+        roots.add(change.path.split('.')[0])
       }
       // Nested reorders use original paths, deepest first; field edits always precede reordering.
       for (const order of [...(body.orders as ArrangeOrder[])].sort(

@@ -1,6 +1,49 @@
 export type ArrangeChange = { path: string; value: unknown }
 export type ArrangeOrder = { ids: string[]; path: string }
-export type ArrangeField = { type: 'richText' | 'text' | 'textarea' | 'upload'; value: unknown }
+export type ArrayRow = { id: string } | { relationship: string }
+export type ArrangeArrayField = {
+  type: 'array'
+  value: ArrayRow[]
+  label: string
+  minRows: number
+  maxRows?: number
+  choices: { id: string; label: string }[]
+  labels: Record<string, string>
+}
+export type ArrangeField =
+  | { type: 'richText' | 'text' | 'textarea' | 'upload'; value: unknown }
+  | ArrangeArrayField
+
+/** Retained rows come from the server, never from client-supplied content. */
+export function arrangeArrayRows(
+  rows: Record<string, unknown>[],
+  value: unknown,
+  field: ArrangeArrayField,
+  relationship: string,
+) {
+  if (
+    !Array.isArray(value) ||
+    value.length < field.minRows ||
+    (field.maxRows !== undefined && value.length > field.maxRows)
+  ) {
+    throw new Error('Invalid number of rows')
+  }
+  const used = new Set<string>()
+  return value.map((item) => {
+    if (!item || typeof item !== 'object' || Object.keys(item).length !== 1) {
+      throw new Error('Invalid array row')
+    }
+    if (typeof item.id === 'string') {
+      const row = rows.find((row) => String(row.id) === item.id)
+      if (!row || used.has(item.id)) throw new Error('Invalid existing row')
+      used.add(item.id)
+      return row
+    }
+    const choice = field.choices.find((choice) => choice.id === item.relationship)
+    if (!choice) throw new Error('Select an available product')
+    return { [relationship]: choice.id }
+  })
+}
 export type ArrangeSnapshot = {
   fields: Record<string, ArrangeField>
   orders: Record<string, { id: string; label: string }[]>
