@@ -1,10 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal, flushSync } from 'react-dom'
 
 import type { Annotation, PayloadCMSDocument } from '../../types.js'
-import type { ArrangeSnapshot } from '../../utils/arrange.js'
 
+import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
+import { type ArrangeSnapshot, remapArrangePath } from '../../utils/arrange.js'
 import { documentKey, fieldDocument } from '../../utils/field-target.js'
 import { type MediaChoice, MediaPicker } from '../media-picker/index.js'
 import { imageFieldAt, previewImages } from '../media-picker/preview.js'
@@ -40,18 +42,28 @@ function fieldLabel(path: string, session: Session) {
   return label
 }
 
+function Portal({ children, container }: { children: ReactNode; container?: HTMLElement }) {
+  return container ? createPortal(children, container) : children
+}
+
 export function ArrangeEditor({
+  actionsContainer,
   active,
   adminRoute,
   apiRoute,
   documentInfo,
   onClose,
+  onPendingChange,
+  panelContainer,
 }: {
+  actionsContainer?: HTMLElement
   active: boolean
   adminRoute: string
   apiRoute: string
   documentInfo: PayloadCMSDocument
   onClose: () => void
+  onPendingChange?: (pending: boolean, busy: boolean) => void
+  panelContainer?: HTMLElement
 }) {
   const [sessions, setSessions] = useState<Record<string, Session>>({})
   const [target, setTarget] = useState<Target>()
@@ -61,14 +73,25 @@ export function ArrangeEditor({
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [ready, setReady] = useState(false)
-  const [needsReload, setNeedsReload] = useState(false)
+  const [needsSync, setNeedsSync] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const refreshPreview = usePreviewRefresh()
+  const committed = useRef(new Set<string>())
+  const nextTarget = useRef<Target | undefined>(undefined)
+  const saving = useRef(false)
   const [dragging, setDragging] = useState<{ id: string; key: string; path: string }>()
   const initialised = useRef(false)
   const count = Object.values(sessions).reduce(
     (total, session) =>
-      total + Object.keys(session.changes).length + Object.keys(session.orders).length,
+      total +
+      (committed.current.has(documentKey(session.owner))
+        ? 0
+        : Object.keys(session.changes).length + Object.keys(session.orders).length),
     0,
   )
+  useEffect(() => {
+    onPendingChange?.(count > 0 || needsSync, busy)
+  }, [count, needsSync, busy, onPendingChange])
   const session = target && sessions[target.key]
   const field = target && session?.snapshot.fields[target.path]
   const value =
@@ -93,68 +116,83 @@ export function ArrangeEditor({
     [apiRoute],
   )
 
+  const readSession = useCallback(
+    async (owner: PayloadCMSDocument) => {
+      const key = documentKey(owner)
+      const paths = new Set<string>()
+      const orderPaths = new Set<string>()
+      for (const element of document.querySelectorAll(
+        '[data-payload-path], [data-payload-block-list]',
+      )) {
+        if (documentKey(fieldDocument(element, documentInfo)) !== key) {
+          continue
+        }
+        const path = element.getAttribute('data-payload-path')
+        const orderPath = element.getAttribute('data-payload-block-list')
+        if (path) {
+          paths.add(path)
+        }
+        if (orderPath) {
+          orderPaths.add(orderPath)
+        }
+      }
+      const snapshot = await request(owner, {
+        action: 'read',
+        orderPaths: [...orderPaths],
+        paths: [...paths],
+      })
+      for (const list of document.querySelectorAll<HTMLElement>('[data-payload-block-list]')) {
+        if (documentKey(fieldDocument(list, documentInfo)) !== key) {
+          continue
+        }
+        const rows = snapshot.orders[list.dataset.payloadBlockList!]
+        const rendered = [...list.children].map(
+          (child) => (child as HTMLElement).dataset.payloadBlockId,
+        )
+        if (
+          rows &&
+          !same(
+            rows.map((row: { id: string }) => row.id),
+            rendered,
+          )
+        ) {
+          throw new Error('The page layout changed. Reload the preview before editing.')
+        }
+      }
+      return { changes: {}, media: {}, orders: {}, owner, snapshot } as Session
+    },
+    [documentInfo, request],
+  )
+
   useEffect(() => {
-    if (!active || initialised.current) {
+    if (!active) {
+      // Inline editing can save the same document while this panel is closed.
+      if (!count && !busy) {
+        initialised.current = false
+      }
+      return
+    }
+    if (initialised.current) {
       return
     }
     initialised.current = true
-    const owners = new Map<
-      string,
-      { orderPaths: Set<string>; owner: PayloadCMSDocument; paths: Set<string> }
-    >()
+    const owners = new Map<string, PayloadCMSDocument>()
     for (const element of document.querySelectorAll(
       '[data-payload-path], [data-payload-block-list]',
     )) {
       const owner = fieldDocument(element, documentInfo)
-      if (!owner) {
-        continue
+      if (owner) {
+        owners.set(documentKey(owner), owner)
       }
-      const key = documentKey(owner)
-      const item = owners.get(key) ?? {
-        orderPaths: new Set<string>(),
-        owner,
-        paths: new Set<string>(),
-      }
-      const path = element.getAttribute('data-payload-path')
-      const orderPath = element.getAttribute('data-payload-block-list')
-      if (path) {
-        item.paths.add(path)
-      }
-      if (orderPath) {
-        item.orderPaths.add(orderPath)
-      }
-      owners.set(key, item)
     }
     setBusy(true)
     void (async () => {
       const loaded: Record<string, Session> = {}
       const failures: string[] = []
-      for (const [key, item] of owners) {
+      for (const [key, owner] of owners) {
         try {
-          const snapshot = await request(item.owner, {
-            action: 'read',
-            orderPaths: [...item.orderPaths],
-            paths: [...item.paths],
-          })
-          for (const list of document.querySelectorAll<HTMLElement>('[data-payload-block-list]')) {
-            if (documentKey(fieldDocument(list, documentInfo)) !== key) {
-              continue
-            }
-            const rows = snapshot.orders[list.dataset.payloadBlockList!]
-            const rendered = [...list.children].map(
-              (child) => (child as HTMLElement).dataset.payloadBlockId,
-            )
-            if (
-              rows &&
-              !same(
-                rows.map((row: { id: string }) => row.id),
-                rendered,
-              )
-            ) {
-              throw new Error('The page layout changed. Reload the preview before editing.')
-            }
-          }
-          loaded[key] = { changes: {}, media: {}, orders: {}, owner: item.owner, snapshot }
+          const loadedSession = await readSession(owner)
+          loaded[key] = loadedSession
         } catch (cause) {
           failures.push(cause instanceof Error ? cause.message : 'Unable to load content')
         }
@@ -164,7 +202,7 @@ export function ArrangeEditor({
       setReady(true)
       setBusy(false)
     })()
-  }, [active, documentInfo, request])
+  }, [active, busy, count, documentInfo, readSession])
 
   useEffect(() => {
     if (!count) {
@@ -202,7 +240,7 @@ export function ArrangeEditor({
       }
       event.preventDefault()
       event.stopImmediatePropagation()
-      if (busy || needsReload) {
+      if (busy || needsSync) {
         return
       }
       const editable = element.closest('[data-payload-path]')
@@ -250,10 +288,13 @@ export function ArrangeEditor({
       document.removeEventListener('keydown', keyboard, true)
       document.removeEventListener('click', select, true)
     }
-  }, [active, busy, needsReload, sessions, documentInfo])
+  }, [active, busy, needsSync, sessions, documentInfo])
 
-  // Preview only; the original DOM and field paths stay intact until the saved page reloads.
+  // Release DOM previews before React merges the saved server-rendered content.
   useEffect(() => {
+    if (refreshing) {
+      return
+    }
     const restore: (() => void)[] = []
     for (const element of document.querySelectorAll<HTMLElement>('[data-payload-path]')) {
       const key = documentKey(fieldDocument(element, documentInfo))
@@ -263,7 +304,7 @@ export function ArrangeEditor({
         element.setAttribute('data-arrange-selected', '')
         restore.push(() => element.removeAttribute('data-arrange-selected'))
       }
-      if (!current || !Object.hasOwn(current.changes, path)) {
+      if (!current || committed.current.has(key) || !Object.hasOwn(current.changes, path)) {
         continue
       }
       const field = current.snapshot.fields[path]
@@ -288,20 +329,22 @@ export function ArrangeEditor({
         })
       }
     }
-    const mediaAnnotations = Object.values(sessions).flatMap((session) =>
-      Object.entries(session.media).map(
-        ([path, media]) =>
-          ({
-            media,
-            payloadCMS: { document: session.owner, path, value: String(media.id) },
-          }) as Annotation,
-      ),
-    )
+    const mediaAnnotations = Object.values(sessions)
+      .filter((session) => !committed.current.has(documentKey(session.owner)))
+      .flatMap((session) =>
+        Object.entries(session.media).map(
+          ([path, media]) =>
+            ({
+              media,
+              payloadCMS: { document: session.owner, path, value: String(media.id) },
+            }) as Annotation,
+        ),
+      )
     restore.push(previewImages(mediaAnnotations, document, documentInfo))
     for (const list of document.querySelectorAll<HTMLElement>('[data-payload-block-list]')) {
       const current = sessions[documentKey(fieldDocument(list, documentInfo))]
       const ids = current?.orders[list.dataset.payloadBlockList!]
-      if (!ids) {
+      if (!ids || committed.current.has(documentKey(current.owner))) {
         continue
       }
       for (const element of list.children) {
@@ -316,9 +359,10 @@ export function ArrangeEditor({
       }
     }
     return () => restore.reverse().forEach((undo) => undo())
-  }, [active, sessions, target, documentInfo])
+  }, [active, sessions, target, documentInfo, refreshing])
 
   function stage(target: Target, value: unknown, media?: MediaChoice) {
+    setError('')
     setSessions((previous) => {
       const session = previous[target.key]
       const changes = { ...session.changes }
@@ -338,6 +382,8 @@ export function ArrangeEditor({
   }
 
   function move(key: string, path: string, id: string, destination: number) {
+    setStatus('')
+    setError('')
     setSessions((previous) => {
       const session = previous[key]
       const original = session.snapshot.orders[path].map((row) => row.id)
@@ -358,12 +404,54 @@ export function ArrangeEditor({
     })
   }
 
-  async function submit(action: 'publish' | 'save') {
-    if (busy || needsReload) {
+  async function syncPreview() {
+    // Flush cleanup before React touches the same text, image and order attributes.
+    flushSync(() => setRefreshing(true))
+    try {
+      await refreshPreview()
+      const loaded = await Promise.all(
+        [...committed.current].map(
+          async (key) => [key, await readSession(sessions[key].owner)] as const,
+        ),
+      )
+      setSessions((previous) => ({ ...previous, ...Object.fromEntries(loaded) }))
+      committed.current.clear()
+      if (nextTarget.current) {
+        setTarget(nextTarget.current)
+        nextTarget.current = undefined
+      }
+      setNeedsSync(false)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  async function retryPreview() {
+    if (saving.current) {
       return
     }
+    saving.current = true
     setBusy(true)
     setError('')
+    try {
+      await syncPreview()
+      setStatus('Preview updated.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to update preview')
+    } finally {
+      saving.current = false
+      setBusy(false)
+    }
+  }
+
+  async function submit(action: 'publish' | 'save') {
+    if (saving.current || busy || needsSync) {
+      return
+    }
+    saving.current = true
+    setBusy(true)
+    setError('')
+    setStatus('')
     let completed = 0
     const savedKey = `visual-editor-drafts:${documentKey(documentInfo)}`
     let savedOwners: string[] = []
@@ -405,32 +493,41 @@ export function ArrangeEditor({
           revision: session.snapshot.revision,
         })
         completed++
+        committed.current.add(key)
+        if (target?.key === key) {
+          nextTarget.current = {
+            key,
+            path: remapArrangePath(target.path, session.snapshot.orders, session.orders),
+          }
+        }
         savedOwners =
           action === 'save'
             ? [...new Set([key, ...savedOwners])]
             : savedOwners.filter((owner) => owner !== key)
         remember()
-        // Remove committed operations immediately, so a partial failure cannot replay them.
         setSessions((previous) => ({
           ...previous,
           [key]: { ...previous[key], changes: {}, media: {}, orders: {} },
         }))
       }
-      setStatus(action === 'publish' ? 'All changes published.' : 'Draft saved. Reloading preview…')
-      // State cleanup removes the unload warning before navigation.
-      try {
-        sessionStorage.setItem('visual-editor-reopen-arrange', window.location.href)
-      } catch {
-        /* Storage is optional. */
-      }
-      window.setTimeout(() => window.location.reload(), 100)
+      setStatus(action === 'publish' ? 'All changes published.' : 'Draft saved.')
     } catch (cause) {
       setError(
-        `${cause instanceof Error ? cause.message : 'Unable to save changes'}${completed ? ` ${completed} document(s) already saved. Reload before continuing.` : ''}`,
+        `${cause instanceof Error ? cause.message : 'Unable to save changes'}${completed ? ` ${completed} document(s) already saved. Remaining changes can be retried.` : ' Your changes are still here. Try saving again.'}`,
       )
-      if (completed) {
-        setNeedsReload(true)
+    } finally {
+      if (committed.current.size) {
+        // Committed operations must never be replayed, even if refreshing fails.
+        setNeedsSync(true)
+        try {
+          await syncPreview()
+        } catch (cause) {
+          setError(
+            `Changes saved, but the preview could not update. ${cause instanceof Error ? cause.message : ''}`,
+          )
+        }
       }
+      saving.current = false
       setBusy(false)
     }
   }
@@ -438,217 +535,231 @@ export function ArrangeEditor({
   return (
     <>
       {active && (
-        <aside aria-label="Arrange and edit" className={styles.panel} data-feedback-toolbar>
-          <header>
-            <div>
-              <small>VISUAL EDITOR</small>
-              <h2>Arrange & edit</h2>
-            </div>
-            <button aria-label="Close arrange editor" onClick={onClose} type="button">
-              ×
-            </button>
-          </header>
-          <div className={styles.content}>
-            {!ready && <p role="status">Loading editable content…</p>}
-            <section aria-label="Selected content">
-              <h3>{field ? (field.type === 'upload' ? 'Image' : 'Text') : 'Select content'}</h3>
-              {!field && (
-                <p>
-                  Click outlined text or an image on the page. Your changes stay here as you move
-                  between items.
-                </p>
-              )}
-              {field && target && (
-                <>
-                  <small className={styles.path}>
-                    {session && fieldLabel(target.path, session)}
-                  </small>
-                  {(field.type === 'text' || field.type === 'textarea') && (
-                    <label>
-                      Replacement text
-                      <textarea
-                        aria-label="Replacement text"
-                        disabled={busy || needsReload}
-                        onChange={(event) => stage(target, event.target.value)}
-                        rows={5}
-                        value={typeof value === 'string' ? value : ''}
-                      />
-                    </label>
-                  )}
-                  {field.type === 'upload' && (
-                    <button
-                      disabled={busy || needsReload}
-                      onClick={() => setPicker(target)}
-                      type="button"
-                    >
-                      Replace image
-                    </button>
-                  )}
-                  {field.type === 'richText' && (
-                    <button
-                      disabled={busy || needsReload}
-                      onClick={() => setRichText(target)}
-                      type="button"
-                    >
-                      Edit formatted text
-                    </button>
-                  )}
-                </>
-              )}
-            </section>
-            {Object.values(sessions).some(
-              (session) => Object.keys(session.snapshot.orders).length > 0,
-            ) && (
-              <section aria-label="Blocks">
-                <h3>Blocks</h3>
-                <p>Drag a handle or use the arrows to move a block.</p>
-                {Object.entries(sessions).flatMap(([key, session]) =>
-                  Object.entries(session.snapshot.orders).map(([path, rows]) => {
-                    const ids = session.orders[path] ?? rows.map((row) => row.id)
-                    return (
-                      <ol
-                        aria-label={`${path} block order`}
-                        className={styles.blocks}
-                        key={`${key}:${path}`}
+        <Portal container={panelContainer}>
+          <aside aria-label="Edit content" className={styles.panel} data-feedback-toolbar>
+            <header>
+              <div>
+                <small>VISUAL EDITOR</small>
+                <h2>Edit content</h2>
+              </div>
+              <button aria-label="Close content editor" onClick={onClose} type="button">
+                ×
+              </button>
+            </header>
+            <div className={styles.content}>
+              {!ready && <p role="status">Loading editable content…</p>}
+              <section aria-label="Selected content">
+                <h3>{field ? (field.type === 'upload' ? 'Image' : 'Text') : 'Select content'}</h3>
+                {!field && (
+                  <p>
+                    Click outlined text or an image on the page. Your changes stay here as you move
+                    between items.
+                  </p>
+                )}
+                {field && target && (
+                  <>
+                    <small className={styles.path}>
+                      {session && fieldLabel(target.path, session)}
+                    </small>
+                    {(field.type === 'text' || field.type === 'textarea') && (
+                      <label>
+                        Replacement text
+                        <textarea
+                          aria-label="Replacement text"
+                          disabled={busy || needsSync}
+                          onChange={(event) => stage(target, event.target.value)}
+                          rows={5}
+                          value={typeof value === 'string' ? value : ''}
+                        />
+                      </label>
+                    )}
+                    {field.type === 'upload' && (
+                      <button
+                        disabled={busy || needsSync}
+                        onClick={() => setPicker(target)}
+                        type="button"
                       >
-                        {ids.map((id, index) => (
-                          <li
-                            key={id}
-                            onDragOver={(event) => {
-                              if (dragging?.key === key && dragging.path === path) {
-                                event.preventDefault()
-                              }
-                            }}
-                            onDrop={(event) => {
-                              event.preventDefault()
-                              if (
-                                !busy &&
-                                !needsReload &&
-                                dragging?.key === key &&
-                                dragging.path === path
-                              ) {
-                                move(key, path, dragging.id, index)
-                              }
-                              setDragging(undefined)
-                            }}
-                          >
-                            <button
-                              aria-label={`Drag ${humanize(rows.find((row) => row.id === id)?.label || 'Block')}`}
-                              className={styles.handle}
-                              draggable={!busy && !needsReload}
-                              onDragEnd={() => setDragging(undefined)}
-                              onDragStart={(event) => {
-                                event.dataTransfer.setData('text/plain', id)
-                                event.dataTransfer.effectAllowed = 'move'
-                                setDragging({ id, key, path })
-                              }}
-                              type="button"
-                            >
-                              ⠿
-                            </button>
-                            <span>
-                              {humanize(rows.find((row) => row.id === id)?.label || 'Block')}
-                            </span>
-                            <button
-                              aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} up`}
-                              disabled={busy || needsReload || index === 0}
-                              onClick={() => move(key, path, id, index - 1)}
-                              type="button"
-                            >
-                              ↑
-                            </button>
-                            <button
-                              aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} down`}
-                              disabled={busy || needsReload || index === ids.length - 1}
-                              onClick={() => move(key, path, id, index + 1)}
-                              type="button"
-                            >
-                              ↓
-                            </button>
-                          </li>
-                        ))}
-                      </ol>
-                    )
-                  }),
+                        Replace image
+                      </button>
+                    )}
+                    {field.type === 'richText' && (
+                      <button
+                        disabled={busy || needsSync}
+                        onClick={() => setRichText(target)}
+                        type="button"
+                      >
+                        Edit formatted text
+                      </button>
+                    )}
+                  </>
                 )}
               </section>
-            )}
-            <section aria-label="Pending changes">
-              <h3>
-                Pending changes <span>{count}</span>
-              </h3>
-              {count === 0 && <p>No pending changes.</p>}
-              <ul className={styles.pending}>
-                {Object.entries(sessions).flatMap(([key, session]) => [
-                  ...Object.keys(session.changes).map((path) => (
-                    <li key={`${key}:${path}`}>
-                      <button onClick={() => setTarget({ key, path })} type="button">
-                        {fieldLabel(path, session)}
-                        <small>
-                          {session.snapshot.fields[path].type === 'upload'
-                            ? 'Image replaced'
-                            : session.snapshot.fields[path].type === 'richText'
-                              ? 'Formatted text edited'
-                              : String(session.changes[path])}
-                        </small>
-                      </button>
-                      <button
-                        aria-label={`Undo ${fieldLabel(path, session)}`}
-                        disabled={busy || needsReload}
-                        onClick={() => stage({ key, path }, session.snapshot.fields[path].value)}
-                        type="button"
-                      >
-                        Undo
-                      </button>
-                    </li>
-                  )),
-                  ...Object.keys(session.orders).map((path) => (
-                    <li key={`${key}:order:${path}`}>
-                      <span>{humanize(path)}: blocks reordered</span>
-                      <button
-                        disabled={busy || needsReload}
-                        onClick={() =>
-                          setSessions((previous) => {
-                            const orders = { ...previous[key].orders }
-                            delete orders[path]
-                            return { ...previous, [key]: { ...previous[key], orders } }
-                          })
-                        }
-                        type="button"
-                      >
-                        Undo
-                      </button>
-                    </li>
-                  )),
-                ])}
-              </ul>
-            </section>
-            {error && (
-              <p className={styles.error} role="alert">
-                {error}
+              {Object.values(sessions).some(
+                (session) => Object.keys(session.snapshot.orders).length > 0,
+              ) && (
+                <section aria-label="Blocks">
+                  <h3>Blocks</h3>
+                  <p>Drag a handle or use the arrows to move a block.</p>
+                  {Object.entries(sessions).flatMap(([key, session]) =>
+                    Object.entries(session.snapshot.orders).map(([path, rows]) => {
+                      const ids = session.orders[path] ?? rows.map((row) => row.id)
+                      return (
+                        <ol
+                          aria-label={`${path} block order`}
+                          className={styles.blocks}
+                          key={`${key}:${path}`}
+                        >
+                          {ids.map((id, index) => (
+                            <li
+                              key={id}
+                              onDragOver={(event) => {
+                                if (dragging?.key === key && dragging.path === path) {
+                                  event.preventDefault()
+                                }
+                              }}
+                              onDrop={(event) => {
+                                event.preventDefault()
+                                if (
+                                  !busy &&
+                                  !needsSync &&
+                                  dragging?.key === key &&
+                                  dragging.path === path
+                                ) {
+                                  move(key, path, dragging.id, index)
+                                }
+                                setDragging(undefined)
+                              }}
+                            >
+                              <button
+                                aria-label={`Drag ${humanize(rows.find((row) => row.id === id)?.label || 'Block')}`}
+                                className={styles.handle}
+                                draggable={!busy && !needsSync}
+                                onDragEnd={() => setDragging(undefined)}
+                                onDragStart={(event) => {
+                                  event.dataTransfer.setData('text/plain', id)
+                                  event.dataTransfer.effectAllowed = 'move'
+                                  setDragging({ id, key, path })
+                                }}
+                                type="button"
+                              >
+                                ⠿
+                              </button>
+                              <span>
+                                {humanize(rows.find((row) => row.id === id)?.label || 'Block')}
+                              </span>
+                              <button
+                                aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} up`}
+                                disabled={busy || needsSync || index === 0}
+                                onClick={() => move(key, path, id, index - 1)}
+                                type="button"
+                              >
+                                ↑
+                              </button>
+                              <button
+                                aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} down`}
+                                disabled={busy || needsSync || index === ids.length - 1}
+                                onClick={() => move(key, path, id, index + 1)}
+                                type="button"
+                              >
+                                ↓
+                              </button>
+                            </li>
+                          ))}
+                        </ol>
+                      )
+                    }),
+                  )}
+                </section>
+              )}
+              <section aria-label="Pending changes">
+                <h3>
+                  Pending changes <span>{count}</span>
+                </h3>
+                {count === 0 && <p>No pending changes.</p>}
+                <ul className={styles.pending}>
+                  {Object.entries(sessions).flatMap(([key, session]) => [
+                    ...Object.keys(session.changes).map((path) => (
+                      <li key={`${key}:${path}`}>
+                        <button onClick={() => setTarget({ key, path })} type="button">
+                          {fieldLabel(path, session)}
+                          <small>
+                            {session.snapshot.fields[path].type === 'upload'
+                              ? 'Image replaced'
+                              : session.snapshot.fields[path].type === 'richText'
+                                ? 'Formatted text edited'
+                                : String(session.changes[path])}
+                          </small>
+                        </button>
+                        <button
+                          aria-label={`Undo ${fieldLabel(path, session)}`}
+                          disabled={busy || needsSync}
+                          onClick={() => stage({ key, path }, session.snapshot.fields[path].value)}
+                          type="button"
+                        >
+                          Undo
+                        </button>
+                      </li>
+                    )),
+                    ...Object.keys(session.orders).map((path) => (
+                      <li key={`${key}:order:${path}`}>
+                        <span>{humanize(path)}: blocks reordered</span>
+                        <button
+                          disabled={busy || needsSync}
+                          onClick={() =>
+                            setSessions((previous) => {
+                              const orders = { ...previous[key].orders }
+                              delete orders[path]
+                              return { ...previous, [key]: { ...previous[key], orders } }
+                            })
+                          }
+                          type="button"
+                        >
+                          Undo
+                        </button>
+                      </li>
+                    )),
+                  ])}
+                </ul>
+              </section>
+              {error && (
+                <p className={styles.error} role="alert">
+                  {error}
+                </p>
+              )}
+              {needsSync && !busy && (
+                <button onClick={() => void retryPreview()} type="button">
+                  Retry preview update
+                </button>
+              )}
+              <p>Publish all publishes the full draft of each changed document.</p>
+              <p role="status">
+                {busy && ready ? (refreshing ? 'Updating preview…' : 'Saving…') : status}
               </p>
-            )}
-            <p>Publish all publishes the full draft of each changed document.</p>
-            <p role="status">{busy && ready ? 'Saving changes…' : status}</p>
-          </div>
-          <footer aria-label="Save or publish the document draft">
-            <button
-              disabled={busy || needsReload || !count}
-              onClick={() => void submit('save')}
-              type="button"
-            >
-              Save draft
-            </button>
-            <button
-              className={styles.primary}
-              disabled={busy || needsReload || !ready || !Object.keys(sessions).length}
-              onClick={() => void submit('publish')}
-              type="button"
-            >
-              Publish all
-            </button>
-          </footer>
-        </aside>
+            </div>
+            <Portal container={actionsContainer}>
+              <footer
+                aria-label="Save or publish the document draft"
+                className={actionsContainer ? styles.actions : undefined}
+              >
+                <button
+                  disabled={busy || needsSync || !count}
+                  onClick={() => void submit('save')}
+                  type="button"
+                >
+                  Save draft
+                </button>
+                <button
+                  className={styles.primary}
+                  disabled={busy || needsSync || !ready || !Object.keys(sessions).length}
+                  onClick={() => void submit('publish')}
+                  type="button"
+                >
+                  Publish all
+                </button>
+              </footer>
+            </Portal>
+          </aside>
+        </Portal>
       )}
       {picker && (
         <MediaPicker

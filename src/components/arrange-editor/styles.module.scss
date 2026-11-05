@@ -189,3 +189,33 @@
     font-size: 17px;
   }
 }
+
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font:
+    14px/1.5 system-ui,
+    sans-serif;
+  button {
+    border: 1px solid #555;
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: #f4f4f4;
+    background: #303030;
+    font: inherit;
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  button:focus-visible {
+    outline: 2px solid #27baff;
+    outline-offset: 2px;
+  }
+  .primary {
+    background: #007cae;
+    border-color: #27baff;
+  }
+}

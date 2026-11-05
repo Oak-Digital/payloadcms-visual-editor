@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 
 import type { PayloadCMSDocument } from '../../types.js'
 
+import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
 import styles from './styles.module.scss'
 
 export function RichTextDialog({
@@ -21,6 +22,7 @@ export function RichTextDialog({
   path: string
   stagedValue?: unknown
 }) {
+  const refreshPreview = usePreviewRefresh()
   const dialog = useRef<HTMLDialogElement>(null)
   const frame = useRef<HTMLIFrameElement>(null)
   const saved = useRef(false)
@@ -59,9 +61,10 @@ export function RichTextDialog({
     if (dirty.current && !window.confirm('Discard unsaved rich-text changes?')) {
       return
     }
-    onClose()
     if (saved.current) {
-      window.location.reload()
+      void refreshPreview().then(onClose)
+    } else {
+      onClose()
     }
   }
   return (

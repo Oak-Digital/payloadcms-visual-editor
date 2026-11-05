@@ -46,3 +46,24 @@ export function reorderRows(rows: Record<string, unknown>[], ids: string[]) {
   }
   return ids.map((id) => byID.get(id)!)
 }
+
+/** Keep selection attached to the same block when saved rows acquire new field paths. */
+export function remapArrangePath(
+  path: string,
+  original: ArrangeSnapshot['orders'],
+  orders: Record<string, string[]>,
+) {
+  const parts = path.split('.')
+  for (const [orderPath, ids] of Object.entries(orders)) {
+    if (!path.startsWith(`${orderPath}.`)) {
+      continue
+    }
+    const depth = orderPath.split('.').length
+    const row = original[orderPath]?.[Number(path.split('.')[depth])]
+    const index = row ? ids.indexOf(row.id) : -1
+    if (index >= 0) {
+      parts[depth] = String(index)
+    }
+  }
+  return parts.join('.')
+}
