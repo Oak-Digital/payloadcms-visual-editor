@@ -237,18 +237,6 @@
   gap: 8px;
   flex-shrink: 0;
 }
-.panel .revisionToggle {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  padding: 8px;
-  &[aria-pressed='true'] {
-    background: #202020;
-    color: #fff;
-    border-color: currentColor;
-  }
-}
 .count {
   display: inline-grid;
   place-items: center;
@@ -373,18 +361,6 @@
   padding: 0;
 }
 
-.blockModes {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-  button {
-    flex: 1;
-    &[aria-pressed='true'] {
-      background: #007cae;
-      border-color: #27baff;
-    }
-  }
-}
 .blocks .blockLabel {
   min-width: 0;
   white-space: nowrap;
