@@ -444,7 +444,7 @@ function WorkspaceShell({
             onClick={() => setPickerOpen(!pickerOpen)}
             type="button"
           >
-            {activeLabel || 'Choose content'} <span aria-hidden>⌄</span>
+            {activeLabel || 'Choose content'}
           </button>
           {pickerOpen && (
             <section

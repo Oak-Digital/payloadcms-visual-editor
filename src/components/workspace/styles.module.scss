@@ -74,8 +74,18 @@
   display: flex;
   gap: 6px;
   min-width: 0;
+  > select,
   > button {
-    max-width: 250px;
+    appearance: none;
+    width: 180px;
+    min-width: 0;
+    height: 38px;
+    padding-right: 40px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23202020' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px 16px;
+    text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -164,6 +174,7 @@
     small {
       color: #686865;
     }
+    details,
     section + section {
       border-color: #dededb;
     }
@@ -171,6 +182,7 @@
       border-color: #dededb;
     }
     button,
+    select,
     textarea {
       background: #fff;
       color: #202020;
@@ -314,8 +326,9 @@
   }
   .navigation {
     width: 100%;
-    > * {
-      flex: 1;
+    > select,
+    > button {
+      flex: 1 1 0;
     }
   }
   .actions {
