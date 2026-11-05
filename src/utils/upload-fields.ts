@@ -36,8 +36,7 @@ export function uploadTargets(
     const path = 'name' in field ? `${prefix}${field.name}` : prefix.slice(0, -1)
     const parents = [...ancestors, { field, siblingData: data }]
     if (field.type === 'upload' && !field.hasMany && typeof field.relationTo === 'string') {
-      if (Object.hasOwn(data, field.name))
-        result.set(path, { field, siblingData: data, ancestors: parents, blockData })
+      result.set(path, { field, siblingData: data, ancestors: parents, blockData })
     } else if (field.type === 'group') {
       const source = 'name' in field ? data[field.name] : data
       if (source && typeof source === 'object') visit(field.fields, source, `${path}.`, parents)

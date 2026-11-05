@@ -19,6 +19,11 @@
       "types": "./dist/exports/rsc.d.ts",
       "import": "./dist/exports/rsc.js",
       "default": "./dist/exports/rsc.js"
+    },
+    "./utilities": {
+      "types": "./dist/utilities.d.ts",
+      "import": "./dist/utilities.js",
+      "default": "./dist/utilities.js"
     }
   },
   "main": "./dist/index.js",
@@ -89,6 +94,11 @@
         "types": "./dist/exports/rsc.d.ts",
         "import": "./dist/exports/rsc.js",
         "default": "./dist/exports/rsc.js"
+      },
+      "./utilities": {
+        "types": "./dist/utilities.d.ts",
+        "import": "./dist/utilities.js",
+        "default": "./dist/utilities.js"
       }
     },
     "main": "./dist/index.js",

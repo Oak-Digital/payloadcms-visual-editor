@@ -159,8 +159,8 @@ function addEditableFields({
       case 'textarea': {
         const value = getNamedValue(source, field.name)
 
-        if (typeof value === 'string') {
-          sourceMap[appendPath(path, field.name)] = value
+        if (isRecord(source) && (value == null || typeof value === 'string')) {
+          sourceMap[appendPath(path, field.name)] = value ?? ''
         }
 
         break
@@ -191,8 +191,8 @@ export function buildSourceMap(fields: Field[], document: unknown): SourceMap {
     for (const [path, { field, siblingData }] of uploadTargets(fields, document)) {
       const value = siblingData[field.name]
       const id = isRecord(value) ? value.id : value
-      if (id === null || typeof id === 'string' || typeof id === 'number')
-        result[path] = { type: 'upload', value: id }
+      if (id == null || typeof id === 'string' || typeof id === 'number')
+        result[path] = { type: 'upload', value: id ?? null }
     }
   return result
 }

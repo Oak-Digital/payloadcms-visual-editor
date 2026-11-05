@@ -36,6 +36,7 @@ export interface Annotation {
   nearbyText?: string
   // PayloadCMS annotation data
   payloadCMS: {
+    document?: PayloadCMSDocument
     path: string
     value: string
   }

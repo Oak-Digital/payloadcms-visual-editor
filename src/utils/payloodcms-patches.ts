@@ -117,6 +117,7 @@ function setNestedValue(target: Record<string, unknown>, path: string, value: un
 export function applyPatchesToDocument<T extends Record<string, unknown>>(
   document: T,
   patches: PayloadCMSPatch[],
+  allowedMissingPaths: readonly string[] = [],
 ): T {
   const nextDocument = cloneValue(document)
   const validPatches = patches.map((patch) => validatePatch(patch))
@@ -125,6 +126,7 @@ export function applyPatchesToDocument<T extends Record<string, unknown>>(
     const currentValue = getValueAtPath(nextDocument as JsonLike, patch.path)
 
     if (
+      !(currentValue === undefined && allowedMissingPaths.includes(patch.path)) &&
       currentValue !== null &&
       typeof currentValue !== 'string' &&
       typeof currentValue !== 'number'
@@ -144,9 +146,10 @@ export function applyPatchesToDocument<T extends Record<string, unknown>>(
 export function buildPatchedUpdateData<T extends Record<string, unknown>>(
   document: T,
   patches: PayloadCMSPatch[],
+  allowedMissingPaths: readonly string[] = [],
 ): Record<string, unknown> {
   const validPatches = patches.map((patch) => validatePatch(patch))
-  const patchedDocument = applyPatchesToDocument(document, validPatches)
+  const patchedDocument = applyPatchesToDocument(document, validPatches, allowedMissingPaths)
   const updateData: Record<string, unknown> = {}
   // extract root-level fields that were modified
   const rootPaths = new Set(

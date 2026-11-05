@@ -1,13 +1,21 @@
-import type { Annotation } from '../../types.js'
+import { documentKey, fieldDocument } from '../../utils/field-target.js'
+import type { Annotation, PayloadCMSDocument } from '../../types.js'
 
 /** Restore every responsive source on cleanup, including Next Image's generated srcset. */
-export function previewImages(annotations: Annotation[], root: ParentNode = document) {
+export function previewImages(
+  annotations: Annotation[],
+  root: ParentNode = document,
+  fallback?: PayloadCMSDocument,
+) {
   const restore: (() => void)[] = []
   for (const annotation of annotations) {
     if (!annotation.media) continue
     const { path } = annotation.payloadCMS
     for (const marker of root.querySelectorAll<HTMLElement>('[data-payload-type="upload"]')) {
       if (marker.dataset.payloadPath !== path) continue
+      const owner = annotation.payloadCMS.document ?? fallback
+      if (owner && documentKey(fieldDocument(marker, fallback ?? owner)) !== documentKey(owner))
+        continue
       const image =
         marker instanceof HTMLImageElement || marker instanceof HTMLSourceElement
           ? marker

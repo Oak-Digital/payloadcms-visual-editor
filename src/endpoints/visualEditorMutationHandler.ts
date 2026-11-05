@@ -88,7 +88,7 @@ export const createVisualEditorMutationHandler =
           { status: 400 },
         )
       }
-      const patched = applyPatchesToDocument(currentDocument, body.patches)
+      const patched = applyPatchesToDocument(currentDocument, body.patches, Object.keys(sourceMap))
       const targets = uploadTargets(collection.fields, patched)
       for (const patch of body.patches) {
         if (typeof sourceMap[patch.path] === 'object') {
@@ -97,7 +97,7 @@ export const createVisualEditorMutationHandler =
           await validateMedia(target, patch.value, req, patched, body.id)
         } else if (typeof patch.value !== 'string') throw new Error('Text values must be strings')
       }
-      const data = buildPatchedUpdateData(currentDocument, body.patches)
+      const data = buildPatchedUpdateData(currentDocument, body.patches, Object.keys(sourceMap))
       await req.payload.update({
         id: body.id,
         collection: body.collection,

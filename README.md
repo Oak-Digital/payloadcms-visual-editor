@@ -32,6 +32,23 @@ The fork adds block/array source maps, locale-aware saving, collection allowlist
 
 Saving and publishing use the host's normal Payload hooks and validation. Host publication policies still apply: REC's `publishStatus` must already be Public for a published document to appear publicly. No webhook or agent endpoint is configured by REC.
 
+## Bind shared renderers
+
+Import `bindSourceMap`, `editableField`, and `editableValue` from `@oak-digital/payload-visual-editor/utilities`:
+
+```tsx
+const owner = { id: page.id, collection: 'pages', locale: 'en', hasDrafts: true }
+const content = bindSourceMap(page, page._sourceMap, owner)
+<h2 {...editableField(content.layout[0], 'heading')}>{content.layout[0].heading}</h2>
+<img {...editableValue(content.layout[0].image)} src={content.layout[0].image.url} />
+```
+
+Bind before filtering or transforming rows. Every occurrence keeps its original field path, even when several fields reference the same media record. Shared image and rich-text renderers can spread `editableValue(resource)`; scalar text uses `editableField(parent, fieldName)`. For a displayed fallback image, spread `editableField(slide, 'imageOverride')` explicitly so replacement creates the override. Optional scalar fields are writable only when the server schema resolves their existing parent.
+
+Bindings include the owning document and locale. The toolbar groups pending changes by owner, and image previews distinguish identical paths in different documents. Saving several documents is sequential, not atomic; an error reports that earlier documents may already have saved. Only bind referenced documents whose collections are enabled and support drafts. Never attach a parent page's path to unrelated content.
+
+Without a source map, binding leaves content unchanged. Unmapped preview selections explain that they cannot be edited here. Hardcoded copy, calculated commerce values and unbound shared content require host integration; the editor never guesses ownership from text or an image URL.
+
 ## Git workflow
 
 The development branch is `codex/rec-integration`. Commit and push changes here first, then commit the updated submodule pointer in REC. To compare upstream:

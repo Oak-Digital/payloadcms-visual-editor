@@ -23,6 +23,7 @@ import { originalRequestAnimationFrame, originalSetTimeout } from '../../utils/f
 import { generateOutput } from '../../utils/generate-output.js'
 import { MediaPicker } from '../media-picker/index.js'
 import { imageFieldAt, previewImages } from '../media-picker/preview.js'
+import { documentKey, fieldDocument } from '../../utils/field-target.js'
 import { generatePatches } from '../../utils/payloodcms-patches.js'
 import { getReactComponentName } from '../../utils/react-detection.js'
 import {
@@ -111,7 +112,9 @@ export function identifyPayloadField(element: HTMLElement) {
   const path = marker.dataset.payloadPath
   const { name } = identifyElement(element)
   return {
-    name: path ? `${element.tagName.toLowerCase()} ${path}` : name,
+    name: path
+      ? `${marker.dataset.payloadType === 'upload' ? 'Replace image' : marker.dataset.payloadType === 'richText' ? 'Edit rich text' : 'Edit text'} · ${path}`
+      : name,
     path: path ?? 'Path not found',
   }
 }
@@ -289,6 +292,8 @@ function isSameAnnotationElement(
   left: Pick<Annotation, 'elementPath' | 'fullPath' | 'payloadCMS'>,
   right: Pick<Annotation, 'elementPath' | 'fullPath' | 'payloadCMS'>,
 ) {
+  if (JSON.stringify(left.payloadCMS.document) !== JSON.stringify(right.payloadCMS.document))
+    return false
   if (left.fullPath && right.fullPath) {
     return left.fullPath === right.fullPath
   }
@@ -365,13 +370,19 @@ export function VisualEditorToolbar({
   sessionId: initialSessionId,
   webhookUrl,
 }: VisualEditorToolbarProps) {
-  const [richTextPath, setRichTextPath] = useState<string | null>(null)
+  const [richTextTarget, setRichTextTarget] = useState<{
+    path: string
+    document: PayloadCMSDocument
+  } | null>(null)
+  const [selectionNotice, setSelectionNotice] = useState('')
   const [isActive, setIsActive] = useState(false)
   const [annotations, setAnnotations] = useState<Annotation[]>([])
-  const [mediaTarget, setMediaTarget] = useState<{ path: string; element: HTMLElement } | null>(
-    null,
-  )
-  useEffect(() => previewImages(annotations), [annotations])
+  const [mediaTarget, setMediaTarget] = useState<{
+    path: string
+    element: HTMLElement
+    document: PayloadCMSDocument
+  } | null>(null)
+  useEffect(() => previewImages(annotations, document, documentInfo), [annotations, documentInfo])
   useEffect(() => {
     if (!isActive) return
     const images = Array.from(
@@ -1233,46 +1244,59 @@ export function VisualEditorToolbar({
   }, [isActive, pendingAnnotation, effectiveReactMode, drawStrokes])
 
   // Start editing an annotation (right-click or click on drawing stroke)
-  const startEditAnnotation = useCallback((annotation: Annotation) => {
-    if (annotation.media) {
-      const element = Array.from(
-        document.querySelectorAll<HTMLElement>('[data-payload-path]'),
-      ).find((el) => el.dataset.payloadPath === annotation.payloadCMS.path)
-      if (element) setMediaTarget({ path: annotation.payloadCMS.path, element })
-      return
-    }
-    setPendingAnnotation({ ...annotation, state: 'edit' })
-    setHoveredMarkerId(null)
-    setHoveredTargetElement(null)
+  const startEditAnnotation = useCallback(
+    (annotation: Annotation) => {
+      if (annotation.media) {
+        const element = Array.from(
+          document.querySelectorAll<HTMLElement>('[data-payload-path]'),
+        ).find(
+          (el) =>
+            el.dataset.payloadPath === annotation.payloadCMS.path &&
+            documentKey(fieldDocument(el, documentInfo)) ===
+              documentKey(annotation.payloadCMS.document ?? documentInfo),
+        )
+        if (element)
+          setMediaTarget({
+            path: annotation.payloadCMS.path,
+            element,
+            document: annotation.payloadCMS.document ?? documentInfo,
+          })
+        return
+      }
+      setPendingAnnotation({ ...annotation, state: 'edit' })
+      setHoveredMarkerId(null)
+      setHoveredTargetElement(null)
 
-    // Try to find elements at the annotation's position(s) for live tracking (removed multi support)
-    if (annotation.boundingBox) {
-      // Single element
-      const bb = annotation.boundingBox
-      const centerX = bb.x + bb.width / 2
-      // Convert document coords to viewport coords (unless fixed)
-      const centerY = annotation.isFixed
-        ? bb.y + bb.height / 2
-        : bb.y + bb.height / 2 - window.scrollY
-      const el = deepElementFromPoint(centerX, centerY)
+      // Try to find elements at the annotation's position(s) for live tracking (removed multi support)
+      if (annotation.boundingBox) {
+        // Single element
+        const bb = annotation.boundingBox
+        const centerX = bb.x + bb.width / 2
+        // Convert document coords to viewport coords (unless fixed)
+        const centerY = annotation.isFixed
+          ? bb.y + bb.height / 2
+          : bb.y + bb.height / 2 - window.scrollY
+        const el = deepElementFromPoint(centerX, centerY)
 
-      // Validate found element's size roughly matches stored bounding box
-      if (el) {
-        const elRect = el.getBoundingClientRect()
-        const widthRatio = elRect.width / bb.width
-        const heightRatio = elRect.height / bb.height
-        if (widthRatio < 0.5 || heightRatio < 0.5) {
-          setEditingTargetElement(null)
+        // Validate found element's size roughly matches stored bounding box
+        if (el) {
+          const elRect = el.getBoundingClientRect()
+          const widthRatio = elRect.width / bb.width
+          const heightRatio = elRect.height / bb.height
+          if (widthRatio < 0.5 || heightRatio < 0.5) {
+            setEditingTargetElement(null)
+          } else {
+            setEditingTargetElement(el)
+          }
         } else {
-          setEditingTargetElement(el)
+          setEditingTargetElement(null)
         }
       } else {
         setEditingTargetElement(null)
       }
-    } else {
-      setEditingTargetElement(null)
-    }
-  }, [])
+    },
+    [documentInfo],
+  )
 
   // Handle click
   useEffect(() => {
@@ -1294,28 +1318,48 @@ export function VisualEditorToolbar({
         return
       }
 
-      if (richTextPath) return
+      if (richTextTarget) return
       if (mediaTarget) return
+      const owner = fieldDocument(target, documentInfo)
+      if (isEditCmsMode && !owner) {
+        e.preventDefault()
+        e.stopPropagation()
+        setSelectionNotice('This field has invalid document information and cannot be edited.')
+        return
+      }
       const imageField = imageFieldAt(target)
       if (isEditCmsMode && imageField) {
         e.preventDefault()
         e.stopPropagation()
-        setMediaTarget(imageField)
+        setSelectionNotice('')
+        setMediaTarget({ ...imageField, document: owner ?? documentInfo })
         return
       }
       const payloadField = identifyPayloadField(target)
       if (isEditCmsMode && payloadField?.path && target.closest('[data-payload-type="richText"]')) {
         e.preventDefault()
         e.stopPropagation()
-        setRichTextPath(payloadField.path)
+        setSelectionNotice('')
+        setRichTextTarget({
+          path: payloadField.path,
+          document: owner ?? documentInfo,
+        })
         setHoverInfo(null)
         return
       }
 
       if (isEditCmsMode && !payloadField?.path) {
+        if (target.closest('img, picture, h1, h2, h3, h4, p, a, span, blockquote')) {
+          e.preventDefault()
+          e.stopPropagation()
+          setSelectionNotice(
+            'This content has no editable CMS field on this page. It may come from shared content, commerce, or the site design.',
+          )
+        }
         return
       }
 
+      setSelectionNotice('')
       const isInteractive = closestCrossingShadow(
         target,
         "button, a, input, select, textarea, [role='button'], [onclick]",
@@ -1416,6 +1460,7 @@ export function VisualEditorToolbar({
         nearbyText: getNearbyText(elementUnder),
         payloadCMS: {
           path: isEditCmsMode ? path : '',
+          document: isEditCmsMode ? (owner ?? undefined) : undefined,
           value: '',
         },
         reactComponents: reactComponents ?? undefined,
@@ -1440,7 +1485,8 @@ export function VisualEditorToolbar({
     pendingAnnotation,
     startEditAnnotation,
     mediaTarget,
-    richTextPath,
+    richTextTarget,
+    documentInfo,
     settings.blockInteractions,
     effectiveReactMode,
     pendingMultiSelectElements,
@@ -1502,7 +1548,7 @@ export function VisualEditorToolbar({
         isMultiSelect: pendingAnnotation.isMultiSelect,
         nearbyElements: pendingAnnotation.nearbyElements,
         nearbyText: pendingAnnotation.nearbyText,
-        payloadCMS: { path: pendingAnnotation.payloadCMS.path, value: comment },
+        payloadCMS: { ...pendingAnnotation.payloadCMS, value: comment },
         reactComponents: pendingAnnotation.reactComponents,
         selectedText: pendingAnnotation.selectedText,
         sourceFile: pendingAnnotation.sourceFile,
@@ -1894,7 +1940,16 @@ export function VisualEditorToolbar({
   // Send to Payload
   const sendToPayload = useCallback(
     async (action: 'publish' | 'save' | null) => {
-      const patches = generatePatches(annotations)
+      const groups = new Map<string, { owner: PayloadCMSDocument; annotations: Annotation[] }>()
+      for (const annotation of annotations) {
+        if (!annotation.payloadCMS.path) continue
+        const owner = annotation.payloadCMS.document ?? documentInfo
+        const key = documentKey(owner)
+        const group = groups.get(key) ?? { owner, annotations: [] }
+        group.annotations.push(annotation)
+        groups.set(key, group)
+      }
+      if (!groups.size) return
       const output = JSON.stringify(annotations)
       const requestAction = hasDrafts ? action : 'save'
       if (!output) {
@@ -1916,23 +1971,27 @@ export function VisualEditorToolbar({
       await new Promise((resolve) => originalSetTimeout(resolve, 150))
 
       try {
-        const response = await fetch(`${apiRoute}/payload-visual-editor`, {
-          body: JSON.stringify({
-            id: documentInfo.id,
-            action: requestAction,
-            collection: documentInfo.collection,
-            locale: documentInfo.locale,
-            patches,
-          }),
-          credentials: 'same-origin',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          method: 'POST',
-        })
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as { error?: string } | null
-          throw new Error(payload?.error ?? 'Unable to send visual editor patches')
+        for (const { owner, annotations: changes } of groups.values()) {
+          const response = await fetch(`${apiRoute}/payload-visual-editor`, {
+            body: JSON.stringify({
+              id: owner.id,
+              action: requestAction,
+              collection: owner.collection,
+              locale: owner.locale,
+              patches: generatePatches(changes),
+            }),
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            method: 'POST',
+          })
+          if (!response.ok) {
+            const payload = (await response.json().catch(() => null)) as { error?: string } | null
+            throw new Error(
+              `${owner.collection}: ${payload?.error ?? 'Unable to send visual editor patches'}. Earlier documents may already have been saved.`,
+            )
+          }
         }
 
         // Show result
@@ -1951,6 +2010,7 @@ export function VisualEditorToolbar({
         // originalSetTimeout(() => window.location.reload(), 600)
       } catch (error) {
         console.warn('Failed to send visual editor patches:', error)
+        setSelectionNotice(error instanceof Error ? error.message : 'Unable to save changes')
         setSendState({ state: 'failed' })
         originalSetTimeout(() => {
           setSendState({ action: null, state: 'idle' })
@@ -1961,9 +2021,7 @@ export function VisualEditorToolbar({
       onSubmit,
       apiRoute,
       annotations,
-      documentInfo.id,
-      documentInfo.collection,
-      documentInfo.locale,
+      documentInfo,
       hasDrafts,
       settings.autoClearAfterCopy,
       clearAll,
@@ -2280,12 +2338,12 @@ export function VisualEditorToolbar({
       ref={portalWrapperRef}
       style={{ display: 'contents' }}
     >
-      {richTextPath && (
+      {richTextTarget && (
         <RichTextDialog
-          path={richTextPath}
-          documentInfo={documentInfo}
+          path={richTextTarget.path}
+          documentInfo={richTextTarget.document}
           adminRoute={adminRoute}
-          onClose={() => setRichTextPath(null)}
+          onClose={() => setRichTextTarget(null)}
         />
       )}
 
@@ -2293,31 +2351,59 @@ export function VisualEditorToolbar({
         <MediaPicker
           adminRoute={adminRoute}
           apiRoute={apiRoute}
-          documentInfo={documentInfo}
+          documentInfo={mediaTarget.document}
           path={mediaTarget.path}
           onClose={() => setMediaTarget(null)}
           onSelect={(media) => {
-            const { path, element } = mediaTarget
+            const { path, element, document: owner } = mediaTarget
+            const matches = (item: Annotation) =>
+              item.payloadCMS.path === path &&
+              documentKey(item.payloadCMS.document ?? documentInfo) === documentKey(owner)
             const rect = element.getBoundingClientRect()
-            const existing = annotations.find((annotation) => annotation.payloadCMS.path === path)
+            const existing = annotations.find(matches)
             const annotation: Annotation = {
               id: existing?.id || `media-${Date.now()}`,
               timestamp: Date.now(),
               element: `Image ${path}`,
               elementPath: path,
               comment: media.filename || 'Replace image',
-              payloadCMS: { path, value: String(media.id) },
+              payloadCMS: { path, value: String(media.id), document: owner },
               media,
               x: (rect.left / window.innerWidth) * 100,
               y: rect.top + window.scrollY,
             }
-            setAnnotations((current) => [
-              ...current.filter((item) => item.payloadCMS.path !== path),
-              annotation,
-            ])
+            setAnnotations((current) => [...current.filter((item) => !matches(item)), annotation])
             setMediaTarget(null)
           }}
         />
+      )}
+      {selectionNotice && (
+        <div
+          data-annotation-popup
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: 90,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 100001,
+            background: '#171717',
+            color: '#fff',
+            padding: 16,
+            borderRadius: 8,
+            width: 'min(420px, 90vw)',
+            fontSize: 14,
+          }}
+        >
+          {selectionNotice}
+          <button
+            type="button"
+            onClick={() => setSelectionNotice('')}
+            style={{ display: 'block', marginTop: 8 }}
+          >
+            Dismiss
+          </button>
+        </div>
       )}
       {/* Toolbar */}
       <div

@@ -36,3 +36,27 @@ describe('pending image preview', () => {
     expect(document.querySelector('source')?.getAttribute('srcset')).toBe('old.jpg')
   })
 })
+
+it('isolates the same field path in different documents', () => {
+  const page = { id: 'page', collection: 'pages', locale: 'en', hasDrafts: true }
+  const shared = { ...page, id: 'shared', collection: 'layouts' }
+  document.body.innerHTML =
+    '<img data-payload-type="upload" data-payload-path="image" src="page.jpg"><img data-payload-type="upload" data-payload-path="image" src="shared.jpg">'
+  const images = document.querySelectorAll('img')
+  images[0].dataset.payloadDocument = JSON.stringify(page)
+  images[1].dataset.payloadDocument = JSON.stringify(shared)
+  const restore = previewImages(
+    [
+      {
+        payloadCMS: { path: 'image', value: 'new', document: shared },
+        media: { id: 'new', url: '/new.jpg' },
+      },
+    ] as Annotation[],
+    document,
+    page,
+  )
+  expect(images[0].getAttribute('src')).toBe('page.jpg')
+  expect(images[1].getAttribute('src')).toBe('/new.jpg')
+  restore()
+  expect(images[1].getAttribute('src')).toBe('shared.jpg')
+})
