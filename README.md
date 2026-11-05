@@ -16,7 +16,7 @@ pnpm --filter @oak-digital/payload-visual-editor typecheck
 pnpm --filter @oak-digital/payload-visual-editor build
 ```
 
-For a standalone clone, use `pnpm install --frozen-lockfile`, then the same package scripts without `--filter`. The upstream demo is retained under `dev/` as a reference; REC is the verified integration target.
+For a standalone clone, use `pnpm install --frozen-lockfile`, then the same package scripts without `--filter`. The upstream demo is retained under `dev/` as a reference, with its own dependencies in `dev/package.json`. Install them separately inside `dev/` using `pnpm install --ignore-workspace` if working on that demo. REC is the verified integration target. The plugin workspace deliberately does not install the demo's Next/Payload UI stack.
 
 ## Configure
 

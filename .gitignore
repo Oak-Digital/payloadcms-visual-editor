@@ -51,3 +51,5 @@ next-env.d.ts
 /playwright/.cache/
 
 .turbo/
+
+/dev/node_modules/
