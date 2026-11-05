@@ -259,3 +259,116 @@
   background: #f0ba54;
   color: #202020;
 }
+
+.drawerView {
+  animation: drawerEnter 180ms ease-out;
+}
+@keyframes drawerEnter {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawerView {
+    animation: none;
+  }
+}
+.panel .back {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0;
+}
+.panel .blockSelect {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+.panel .fieldLink {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  margin-top: 6px;
+}
+.changes {
+  margin-top: 24px;
+  border-top: 1px solid #383838;
+  padding-top: 16px;
+  summary {
+    cursor: pointer;
+  }
+}
+
+.headingGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.panel h2 {
+  min-width: 0;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.blocks,
+.productRows {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  li {
+    height: 56px;
+    min-width: 0;
+    margin: 0;
+    padding: 8px;
+    gap: 8px;
+    align-items: center;
+    border: 1px solid #414141;
+    border-radius: 10px;
+  }
+}
+.productRows li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 36px);
+  button {
+    min-width: 0;
+    height: 36px;
+    padding: 0;
+  }
+  button:not(:first-child) {
+    display: grid;
+    place-items: center;
+  }
+}
+.panel .addProduct {
+  margin-top: 16px;
+}
+.addProduct button + button {
+  margin-left: 8px;
+}
+
+.panel .headerActions > button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}

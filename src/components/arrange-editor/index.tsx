@@ -84,6 +84,62 @@ export function ArrangeEditor({
   }, [])
   const [sessions, setSessions] = useState<Record<string, Session>>({})
   const [target, setTarget] = useState<Target>()
+  const [selectedRow, setSelectedRow] = useState<string>()
+  const [selectedBlock, setSelectedBlock] = useState<{ key: string; path: string; id: string }>()
+  const heading = useRef<HTMLHeadingElement>(null)
+  const selectedSession = selectedBlock && sessions[selectedBlock.key]
+  const selectedIndex =
+    selectedBlock &&
+    selectedSession?.snapshot.orders[selectedBlock.path]?.findIndex(
+      (row) => row.id === selectedBlock.id,
+    )
+  const blockPath =
+    selectedBlock && selectedIndex !== undefined && selectedIndex >= 0
+      ? `${selectedBlock.path}.${selectedIndex}`
+      : undefined
+  const blockLabel =
+    selectedBlock && selectedIndex !== undefined
+      ? selectedSession?.snapshot.orders[selectedBlock.path]?.[selectedIndex]?.label
+      : undefined
+  const viewKey = target
+    ? `${target.key}:${target.path}`
+    : selectedRow
+      ? selectedRow
+      : selectedBlock
+        ? `${selectedBlock.key}:${selectedBlock.id}`
+        : 'blocks'
+  useEffect(() => {
+    if (active) heading.current?.focus()
+  }, [viewKey, active, tab])
+  function selectBlock(key: string, path: string, id: string) {
+    setSelectedRow(undefined)
+    setSelectedBlock({ key, path, id })
+    setTarget(undefined)
+    setTab('content')
+    setStatus('')
+  }
+  function selectField(key: string, path: string) {
+    const order = Object.entries(sessions[key].snapshot.orders)
+      .filter(([orderPath]) => path.startsWith(`${orderPath}.`))
+      .sort(([a], [b]) => b.length - a.length)[0]
+    const row = order?.[1][Number(path.slice(order[0].length + 1).split('.')[0])]
+    setSelectedBlock(order && row ? { key, path: order[0], id: row.id } : undefined)
+    setSelectedRow(undefined)
+    setTarget({ key, path })
+    setTab('content')
+  }
+  const blockFields =
+    selectedSession && blockPath
+      ? Object.entries(selectedSession.snapshot.fields).filter(
+          ([path, field]) =>
+            path.startsWith(`${selectedRow || blockPath}.`) &&
+            field.type !== 'array' &&
+            (Boolean(selectedRow) ||
+              !Object.entries(selectedSession.snapshot.fields).some(
+                ([arrayPath, array]) => array.type === 'array' && path.startsWith(`${arrayPath}.`),
+              )),
+        )
+      : []
   const [picker, setPicker] = useState<Target>()
   const [richText, setRichText] = useState<Target>()
   const [error, setError] = useState('')
@@ -264,12 +320,15 @@ export function ArrangeEditor({
       }
       const editable = element.closest('[data-payload-path]')
       if (!editable) {
-        setTarget(undefined)
-        setStatus(
-          element.closest('[data-payload-block-id]')
-            ? 'Move this block using the Blocks list.'
-            : 'Select outlined text or an image to edit.',
-        )
+        const block = element.closest<HTMLElement>('[data-payload-block-id]')
+        const list = block?.closest<HTMLElement>('[data-payload-block-list]')
+        if (block?.dataset.payloadBlockId && list?.dataset.payloadBlockList) {
+          selectBlock(
+            documentKey(fieldDocument(list, documentInfo)),
+            list.dataset.payloadBlockList,
+            block.dataset.payloadBlockId,
+          )
+        }
         return
       }
       const owner = fieldDocument(editable, documentInfo)
@@ -283,7 +342,7 @@ export function ArrangeEditor({
       setError('')
       setStatus('')
       setTab('content')
-      setTarget({ key, path })
+      selectField(key, path)
     }
     const keyboard = (event: KeyboardEvent) => {
       if (
@@ -399,7 +458,7 @@ export function ArrangeEditor({
       }
       return { ...previous, [target.key]: { ...session, changes, media: choices } }
     })
-    setStatus('Changes added. Keep editing, then save or publish all.')
+    setStatus('')
   }
 
   function move(key: string, path: string, id: string, destination: number) {
@@ -522,6 +581,7 @@ export function ArrangeEditor({
           )
         ) {
           setTarget(undefined)
+          setSelectedRow(undefined)
           nextTarget.current = undefined
         } else if (target?.key === key) {
           nextTarget.current = {
@@ -567,9 +627,47 @@ export function ArrangeEditor({
         <Portal container={panelContainer}>
           <aside aria-label="Edit content" className={styles.panel} data-feedback-toolbar>
             <header>
-              <div>
-                <small>VISUAL EDITOR</small>
-                <h2>{tab === 'revisions' ? 'Revision history' : 'Edit content'}</h2>
+              <div className={styles.headingGroup}>
+                {tab === 'content' && (selectedBlock || target) && (
+                  <button
+                    type="button"
+                    className={styles.back}
+                    aria-label="Back"
+                    title="Back"
+                    onClick={() => {
+                      if (target) setTarget(undefined)
+                      else if (selectedRow) setSelectedRow(undefined)
+                      else setSelectedBlock(undefined)
+                    }}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="m14 6-6 6 6 6" />
+                    </svg>
+                  </button>
+                )}
+                <h2
+                  ref={heading}
+                  tabIndex={-1}
+                  title={blockLabel ? humanize(blockLabel) : undefined}
+                >
+                  {tab === 'revisions'
+                    ? 'Revision history'
+                    : target
+                      ? 'Edit content'
+                      : blockLabel
+                        ? humanize(blockLabel)
+                        : 'Blocks'}
+                </h2>
               </div>
               <div className={styles.headerActions}>
                 <button
@@ -604,8 +702,8 @@ export function ArrangeEditor({
             </header>
             <div className={styles.content}>
               {!ready && <p role="status">Loading editable content…</p>}
-              <div hidden={tab !== 'content'}>
-                {field && target && (
+              <div hidden={tab !== 'content'} key={viewKey} className={styles.drawerView}>
+                {field && field.type !== 'array' && target && (
                   <section aria-label="Selected content">
                     <h3>{field.type === 'upload' ? 'Image' : 'Text'}</h3>
                     <small className={styles.path}>
@@ -645,99 +743,140 @@ export function ArrangeEditor({
                 )}
                 {Object.entries(sessions).flatMap(([key, session]) =>
                   Object.entries(session.snapshot.fields).map(([path, field]) =>
-                    field.type === 'array' ? (
+                    field.type === 'array' &&
+                    !selectedRow &&
+                    ((target?.key === key && target.path === path) ||
+                      (!target &&
+                        selectedBlock?.key === key &&
+                        blockPath &&
+                        path.startsWith(`${blockPath}.`))) ? (
                       <ArrayEditor
                         key={`${key}:${path}`}
                         field={field}
                         value={(session.changes[path] ?? field.value) as ArrayRow[]}
                         disabled={busy || needsSync}
                         onChange={(rows) => stage({ key, path }, rows)}
+                        onSelectRow={(id) => {
+                          const index = field.value.findIndex((row) => 'id' in row && row.id === id)
+                          if (index >= 0) setSelectedRow(`${path}.${index}`)
+                        }}
                       />
                     ) : null,
                   ),
                 )}
-                {Object.values(sessions).some(
-                  (session) => Object.keys(session.snapshot.orders).length > 0,
-                ) && (
-                  <section aria-label="Blocks">
-                    <h3>Blocks</h3>
-                    <p>Drag a handle or use the arrows to move a block.</p>
-                    {Object.entries(sessions).flatMap(([key, session]) =>
-                      Object.entries(session.snapshot.orders).map(([path, rows]) => {
-                        const ids = session.orders[path] ?? rows.map((row) => row.id)
-                        return (
-                          <ol
-                            aria-label={`${path} block order`}
-                            className={styles.blocks}
-                            key={`${key}:${path}`}
-                          >
-                            {ids.map((id, index) => (
-                              <li
-                                key={id}
-                                onDragOver={(event) => {
-                                  if (dragging?.key === key && dragging.path === path) {
-                                    event.preventDefault()
-                                  }
-                                }}
-                                onDrop={(event) => {
-                                  event.preventDefault()
-                                  if (
-                                    !busy &&
-                                    !needsSync &&
-                                    dragging?.key === key &&
-                                    dragging.path === path
-                                  ) {
-                                    move(key, path, dragging.id, index)
-                                  }
-                                  setDragging(undefined)
-                                }}
-                              >
-                                <button
-                                  aria-label={`Drag ${humanize(rows.find((row) => row.id === id)?.label || 'Block')}`}
-                                  className={styles.handle}
-                                  draggable={!busy && !needsSync}
-                                  onDragEnd={() => setDragging(undefined)}
-                                  onDragStart={(event) => {
-                                    event.dataTransfer.setData('text/plain', id)
-                                    event.dataTransfer.effectAllowed = 'move'
-                                    setDragging({ id, key, path })
-                                  }}
-                                  type="button"
-                                >
-                                  ⠿
-                                </button>
-                                <span>
-                                  {humanize(rows.find((row) => row.id === id)?.label || 'Block')}
-                                </span>
-                                <button
-                                  aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} up`}
-                                  disabled={busy || needsSync || index === 0}
-                                  onClick={() => move(key, path, id, index - 1)}
-                                  type="button"
-                                >
-                                  ↑
-                                </button>
-                                <button
-                                  aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} down`}
-                                  disabled={busy || needsSync || index === ids.length - 1}
-                                  onClick={() => move(key, path, id, index + 1)}
-                                  type="button"
-                                >
-                                  ↓
-                                </button>
-                              </li>
-                            ))}
-                          </ol>
-                        )
-                      }),
-                    )}
+                {!target && selectedBlock && blockPath && blockFields.length > 0 && (
+                  <section aria-label="Block fields">
+                    {blockFields.map(([path]) => (
+                      <button
+                        className={styles.fieldLink}
+                        key={path}
+                        type="button"
+                        disabled={busy || needsSync}
+                        onClick={() => setTarget({ key: selectedBlock.key, path })}
+                      >
+                        {humanize(
+                          path
+                            .slice((selectedRow || blockPath).length + 1)
+                            .replace(/\.(\d+)\./g, (_, index) => ` ${Number(index) + 1} `)
+                            .replaceAll('.', ' · '),
+                        )}{' '}
+                        <span aria-hidden="true">›</span>
+                      </button>
+                    ))}
                   </section>
                 )}
+                {!selectedBlock &&
+                  !target &&
+                  Object.values(sessions).some(
+                    (session) => Object.keys(session.snapshot.orders).length > 0,
+                  ) && (
+                    <section aria-label="Blocks">
+                      {Object.entries(sessions).flatMap(([key, session]) =>
+                        Object.entries(session.snapshot.orders).map(([path, rows]) => {
+                          const ids = session.orders[path] ?? rows.map((row) => row.id)
+                          return (
+                            <ol
+                              aria-label={`${path} block order`}
+                              className={styles.blocks}
+                              key={`${key}:${path}`}
+                            >
+                              {ids.map((id, index) => (
+                                <li
+                                  key={id}
+                                  onDragOver={(event) => {
+                                    if (dragging?.key === key && dragging.path === path) {
+                                      event.preventDefault()
+                                    }
+                                  }}
+                                  onDrop={(event) => {
+                                    event.preventDefault()
+                                    if (
+                                      !busy &&
+                                      !needsSync &&
+                                      dragging?.key === key &&
+                                      dragging.path === path
+                                    ) {
+                                      move(key, path, dragging.id, index)
+                                    }
+                                    setDragging(undefined)
+                                  }}
+                                >
+                                  <button
+                                    aria-label={`Drag ${humanize(rows.find((row) => row.id === id)?.label || 'Block')}`}
+                                    className={styles.handle}
+                                    draggable={!busy && !needsSync}
+                                    onDragEnd={() => setDragging(undefined)}
+                                    onDragStart={(event) => {
+                                      event.dataTransfer.setData('text/plain', id)
+                                      event.dataTransfer.effectAllowed = 'move'
+                                      setDragging({ id, key, path })
+                                    }}
+                                    type="button"
+                                  >
+                                    ⠿
+                                  </button>
+                                  <button
+                                    className={styles.blockSelect}
+                                    title={humanize(
+                                      rows.find((row) => row.id === id)?.label || 'Block',
+                                    )}
+                                    aria-label={`Edit ${humanize(rows.find((row) => row.id === id)?.label || 'Block')}`}
+                                    disabled={busy || needsSync}
+                                    onClick={() => selectBlock(key, path, id)}
+                                    type="button"
+                                  >
+                                    {humanize(rows.find((row) => row.id === id)?.label || 'Block')}
+                                    <span aria-hidden="true"> ›</span>
+                                  </button>
+                                  <button
+                                    aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} up`}
+                                    disabled={busy || needsSync || index === 0}
+                                    onClick={() => move(key, path, id, index - 1)}
+                                    type="button"
+                                  >
+                                    ↑
+                                  </button>
+                                  <button
+                                    aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} down`}
+                                    disabled={busy || needsSync || index === ids.length - 1}
+                                    onClick={() => move(key, path, id, index + 1)}
+                                    type="button"
+                                  >
+                                    ↓
+                                  </button>
+                                </li>
+                              ))}
+                            </ol>
+                          )
+                        }),
+                      )}
+                    </section>
+                  )}
               </div>
-              <section aria-label="Pending changes">
-                <h3>
-                  Unsaved changes <span>{count}</span>
-                </h3>
+              <details className={styles.changes} aria-label="Pending changes">
+                <summary>
+                  Changes <span>{count}</span>
+                </summary>
                 {count === 0 && <p>No pending changes.</p>}
                 <ul className={styles.pending}>
                   {Object.entries(sessions).flatMap(([key, session]) => [
@@ -746,7 +885,7 @@ export function ArrangeEditor({
                         <button
                           onClick={() => {
                             setTab('content')
-                            setTarget({ key, path })
+                            selectField(key, path)
                           }}
                           type="button"
                         >
@@ -791,7 +930,7 @@ export function ArrangeEditor({
                     )),
                   ])}
                 </ul>
-              </section>
+              </details>
               {tab === 'revisions' && (
                 <RevisionHistory
                   apiRoute={apiRoute}
@@ -810,7 +949,6 @@ export function ArrangeEditor({
                   Retry preview update
                 </button>
               )}
-              <p>Publish all publishes the full draft of each changed document.</p>
               <p role="status">
                 {busy && ready ? (refreshing ? 'Updating preview…' : 'Saving…') : status}
               </p>
