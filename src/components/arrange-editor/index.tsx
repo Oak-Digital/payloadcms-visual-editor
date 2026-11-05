@@ -10,6 +10,7 @@ import { type ArrangeSnapshot, remapArrangePath } from '../../utils/arrange.js'
 import { documentKey, fieldDocument } from '../../utils/field-target.js'
 import { type MediaChoice, MediaPicker } from '../media-picker/index.js'
 import { imageFieldAt, previewImages } from '../media-picker/preview.js'
+import { RevisionHistory } from '../revision-history/index.js'
 import { RichTextDialog } from '../rich-text-editor/dialog.js'
 import styles from './styles.module.scss'
 
@@ -65,6 +66,21 @@ export function ArrangeEditor({
   onPendingChange?: (pending: boolean, busy: boolean) => void
   panelContainer?: HTMLElement
 }) {
+  const [tab, setTab] = useState<'content' | 'revisions'>('content')
+  const [revisionRefresh, setRevisionRefresh] = useState(0)
+  useEffect(() => {
+    const receive = (event: MessageEvent) => {
+      if (
+        event.origin === window.location.origin &&
+        event.source === window.parent &&
+        event.data?.type === 'visual-editor:show-revisions'
+      ) {
+        setTab('revisions')
+      }
+    }
+    window.addEventListener('message', receive)
+    return () => window.removeEventListener('message', receive)
+  }, [])
   const [sessions, setSessions] = useState<Record<string, Session>>({})
   const [target, setTarget] = useState<Target>()
   const [picker, setPicker] = useState<Target>()
@@ -263,6 +279,7 @@ export function ArrangeEditor({
       }
       setError('')
       setStatus('')
+      setTab('content')
       setTarget({ key, path })
     }
     const keyboard = (event: KeyboardEvent) => {
@@ -493,6 +510,7 @@ export function ArrangeEditor({
           revision: session.snapshot.revision,
         })
         completed++
+        setRevisionRefresh((value) => value + 1)
         committed.current.add(key)
         if (target?.key === key) {
           nextTarget.current = {
@@ -540,147 +558,171 @@ export function ArrangeEditor({
             <header>
               <div>
                 <small>VISUAL EDITOR</small>
-                <h2>Edit content</h2>
+                <h2>{tab === 'revisions' ? 'Revision history' : 'Edit content'}</h2>
               </div>
               <button aria-label="Close content editor" onClick={onClose} type="button">
                 ×
               </button>
             </header>
             <div className={styles.content}>
+              <nav aria-label="Editor panel" className={styles.tabs}>
+                <button
+                  aria-pressed={tab === 'content'}
+                  onClick={() => setTab('content')}
+                  type="button"
+                >
+                  Content
+                </button>
+                <button
+                  aria-pressed={tab === 'revisions'}
+                  onClick={() => setTab('revisions')}
+                  type="button"
+                >
+                  Revisions
+                </button>
+              </nav>
               {!ready && <p role="status">Loading editable content…</p>}
-              <section aria-label="Selected content">
-                <h3>{field ? (field.type === 'upload' ? 'Image' : 'Text') : 'Select content'}</h3>
-                {!field && (
-                  <p>
-                    Click outlined text or an image on the page. Your changes stay here as you move
-                    between items.
-                  </p>
-                )}
-                {field && target && (
-                  <>
-                    <small className={styles.path}>
-                      {session && fieldLabel(target.path, session)}
-                    </small>
-                    {(field.type === 'text' || field.type === 'textarea') && (
-                      <label>
-                        Replacement text
-                        <textarea
-                          aria-label="Replacement text"
+              <div hidden={tab !== 'content'}>
+                <section aria-label="Selected content">
+                  <h3>{field ? (field.type === 'upload' ? 'Image' : 'Text') : 'Select content'}</h3>
+                  {!field && (
+                    <p>
+                      Click outlined text or an image on the page. Your changes stay here as you
+                      move between items.
+                    </p>
+                  )}
+                  {field && target && (
+                    <>
+                      <small className={styles.path}>
+                        {session && fieldLabel(target.path, session)}
+                      </small>
+                      {(field.type === 'text' || field.type === 'textarea') && (
+                        <label>
+                          Replacement text
+                          <textarea
+                            aria-label="Replacement text"
+                            disabled={busy || needsSync}
+                            onChange={(event) => stage(target, event.target.value)}
+                            rows={5}
+                            value={typeof value === 'string' ? value : ''}
+                          />
+                        </label>
+                      )}
+                      {field.type === 'upload' && (
+                        <button
                           disabled={busy || needsSync}
-                          onChange={(event) => stage(target, event.target.value)}
-                          rows={5}
-                          value={typeof value === 'string' ? value : ''}
-                        />
-                      </label>
-                    )}
-                    {field.type === 'upload' && (
-                      <button
-                        disabled={busy || needsSync}
-                        onClick={() => setPicker(target)}
-                        type="button"
-                      >
-                        Replace image
-                      </button>
-                    )}
-                    {field.type === 'richText' && (
-                      <button
-                        disabled={busy || needsSync}
-                        onClick={() => setRichText(target)}
-                        type="button"
-                      >
-                        Edit formatted text
-                      </button>
-                    )}
-                  </>
-                )}
-              </section>
-              {Object.values(sessions).some(
-                (session) => Object.keys(session.snapshot.orders).length > 0,
-              ) && (
-                <section aria-label="Blocks">
-                  <h3>Blocks</h3>
-                  <p>Drag a handle or use the arrows to move a block.</p>
-                  {Object.entries(sessions).flatMap(([key, session]) =>
-                    Object.entries(session.snapshot.orders).map(([path, rows]) => {
-                      const ids = session.orders[path] ?? rows.map((row) => row.id)
-                      return (
-                        <ol
-                          aria-label={`${path} block order`}
-                          className={styles.blocks}
-                          key={`${key}:${path}`}
+                          onClick={() => setPicker(target)}
+                          type="button"
                         >
-                          {ids.map((id, index) => (
-                            <li
-                              key={id}
-                              onDragOver={(event) => {
-                                if (dragging?.key === key && dragging.path === path) {
-                                  event.preventDefault()
-                                }
-                              }}
-                              onDrop={(event) => {
-                                event.preventDefault()
-                                if (
-                                  !busy &&
-                                  !needsSync &&
-                                  dragging?.key === key &&
-                                  dragging.path === path
-                                ) {
-                                  move(key, path, dragging.id, index)
-                                }
-                                setDragging(undefined)
-                              }}
-                            >
-                              <button
-                                aria-label={`Drag ${humanize(rows.find((row) => row.id === id)?.label || 'Block')}`}
-                                className={styles.handle}
-                                draggable={!busy && !needsSync}
-                                onDragEnd={() => setDragging(undefined)}
-                                onDragStart={(event) => {
-                                  event.dataTransfer.setData('text/plain', id)
-                                  event.dataTransfer.effectAllowed = 'move'
-                                  setDragging({ id, key, path })
-                                }}
-                                type="button"
-                              >
-                                ⠿
-                              </button>
-                              <span>
-                                {humanize(rows.find((row) => row.id === id)?.label || 'Block')}
-                              </span>
-                              <button
-                                aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} up`}
-                                disabled={busy || needsSync || index === 0}
-                                onClick={() => move(key, path, id, index - 1)}
-                                type="button"
-                              >
-                                ↑
-                              </button>
-                              <button
-                                aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} down`}
-                                disabled={busy || needsSync || index === ids.length - 1}
-                                onClick={() => move(key, path, id, index + 1)}
-                                type="button"
-                              >
-                                ↓
-                              </button>
-                            </li>
-                          ))}
-                        </ol>
-                      )
-                    }),
+                          Replace image
+                        </button>
+                      )}
+                      {field.type === 'richText' && (
+                        <button
+                          disabled={busy || needsSync}
+                          onClick={() => setRichText(target)}
+                          type="button"
+                        >
+                          Edit formatted text
+                        </button>
+                      )}
+                    </>
                   )}
                 </section>
-              )}
+                {Object.values(sessions).some(
+                  (session) => Object.keys(session.snapshot.orders).length > 0,
+                ) && (
+                  <section aria-label="Blocks">
+                    <h3>Blocks</h3>
+                    <p>Drag a handle or use the arrows to move a block.</p>
+                    {Object.entries(sessions).flatMap(([key, session]) =>
+                      Object.entries(session.snapshot.orders).map(([path, rows]) => {
+                        const ids = session.orders[path] ?? rows.map((row) => row.id)
+                        return (
+                          <ol
+                            aria-label={`${path} block order`}
+                            className={styles.blocks}
+                            key={`${key}:${path}`}
+                          >
+                            {ids.map((id, index) => (
+                              <li
+                                key={id}
+                                onDragOver={(event) => {
+                                  if (dragging?.key === key && dragging.path === path) {
+                                    event.preventDefault()
+                                  }
+                                }}
+                                onDrop={(event) => {
+                                  event.preventDefault()
+                                  if (
+                                    !busy &&
+                                    !needsSync &&
+                                    dragging?.key === key &&
+                                    dragging.path === path
+                                  ) {
+                                    move(key, path, dragging.id, index)
+                                  }
+                                  setDragging(undefined)
+                                }}
+                              >
+                                <button
+                                  aria-label={`Drag ${humanize(rows.find((row) => row.id === id)?.label || 'Block')}`}
+                                  className={styles.handle}
+                                  draggable={!busy && !needsSync}
+                                  onDragEnd={() => setDragging(undefined)}
+                                  onDragStart={(event) => {
+                                    event.dataTransfer.setData('text/plain', id)
+                                    event.dataTransfer.effectAllowed = 'move'
+                                    setDragging({ id, key, path })
+                                  }}
+                                  type="button"
+                                >
+                                  ⠿
+                                </button>
+                                <span>
+                                  {humanize(rows.find((row) => row.id === id)?.label || 'Block')}
+                                </span>
+                                <button
+                                  aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} up`}
+                                  disabled={busy || needsSync || index === 0}
+                                  onClick={() => move(key, path, id, index - 1)}
+                                  type="button"
+                                >
+                                  ↑
+                                </button>
+                                <button
+                                  aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} down`}
+                                  disabled={busy || needsSync || index === ids.length - 1}
+                                  onClick={() => move(key, path, id, index + 1)}
+                                  type="button"
+                                >
+                                  ↓
+                                </button>
+                              </li>
+                            ))}
+                          </ol>
+                        )
+                      }),
+                    )}
+                  </section>
+                )}
+              </div>
               <section aria-label="Pending changes">
                 <h3>
-                  Pending changes <span>{count}</span>
+                  Unsaved changes <span>{count}</span>
                 </h3>
                 {count === 0 && <p>No pending changes.</p>}
                 <ul className={styles.pending}>
                   {Object.entries(sessions).flatMap(([key, session]) => [
                     ...Object.keys(session.changes).map((path) => (
                       <li key={`${key}:${path}`}>
-                        <button onClick={() => setTarget({ key, path })} type="button">
+                        <button
+                          onClick={() => {
+                            setTab('content')
+                            setTarget({ key, path })
+                          }}
+                          type="button"
+                        >
                           {fieldLabel(path, session)}
                           <small>
                             {session.snapshot.fields[path].type === 'upload'
@@ -721,6 +763,14 @@ export function ArrangeEditor({
                   ])}
                 </ul>
               </section>
+              {tab === 'revisions' && (
+                <RevisionHistory
+                  apiRoute={apiRoute}
+                  key={documentKey(documentInfo)}
+                  owner={documentInfo}
+                  refresh={revisionRefresh}
+                />
+              )}
               {error && (
                 <p className={styles.error} role="alert">
                   {error}
@@ -746,7 +796,7 @@ export function ArrangeEditor({
                   onClick={() => void submit('save')}
                   type="button"
                 >
-                  Save draft
+                  Save draft{count > 0 && <span className={styles.count}>{count}</span>}
                 </button>
                 <button
                   className={styles.primary}

@@ -69,15 +69,6 @@
   border-bottom: 1px solid #d5d5d2;
   background: #fafaf9;
 }
-.brand {
-  font-weight: 750;
-  letter-spacing: 1px;
-  white-space: nowrap;
-  span {
-    font-size: 10px;
-    color: #686865;
-  }
-}
 .navigation {
   position: relative;
   display: flex;
@@ -91,7 +82,6 @@
   }
 }
 .draft {
-  margin-left: auto;
   color: #686865;
   font-size: 10px;
   letter-spacing: 1px;
@@ -123,7 +113,7 @@
   min-width: 0;
   position: relative;
   display: flex;
-  padding: 16px 0 0 16px;
+  padding: 16px 0 16px 16px;
   justify-content: center;
   overflow: hidden;
 }
@@ -149,7 +139,7 @@
 .panel {
   width: 350px;
   flex-shrink: 0;
-  padding: 16px 16px 0 12px;
+  padding: 16px 16px 16px 12px;
   &[hidden] {
     display: none;
   }
@@ -195,15 +185,9 @@
 .workspace[data-mode='annotate'] .stage {
   padding-right: 16px;
 }
-.footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 20px;
-  min-height: 64px;
-}
 .tools {
+  margin-left: auto;
+  flex-shrink: 0;
   display: flex;
   gap: 3px;
   background: #fafaf9;
@@ -217,6 +201,10 @@
 }
 .viewports {
   display: flex;
+  button {
+    display: grid;
+    place-items: center;
+  }
   gap: 4px;
 }
 .picker {
@@ -307,7 +295,6 @@
   }
 }
 @media (max-width: 900px) {
-  .brand,
   .draft {
     display: none;
   }
@@ -319,12 +306,6 @@
   }
   .panel {
     width: 300px;
-  }
-  .footer {
-    padding: 10px 12px;
-    > a {
-      display: none;
-    }
   }
 }
 @media (max-width: 600px) {
@@ -344,23 +325,17 @@
     flex-direction: column;
   }
   .stage {
-    padding: 8px 8px 0;
+    padding: 8px;
     min-height: 140px;
   }
   .panel {
     width: 100%;
     height: 40%;
-    padding: 8px 8px 0;
+    padding: 8px;
   }
   .workspace[data-mode='browse'] .stage,
   .workspace[data-mode='annotate'] .stage {
     padding-right: 8px;
-  }
-  .footer {
-    flex-wrap: wrap;
-    justify-content: center;
-    padding: 8px;
-    gap: 6px;
   }
   .tools button,
   .viewports button {

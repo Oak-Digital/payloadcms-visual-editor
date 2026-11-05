@@ -1,0 +1,55 @@
+.history {
+  ol {
+    list-style: none;
+    padding: 0 0 0 14px;
+    margin: 20px 0;
+  }
+  li {
+    position: relative;
+    border-left: 1px solid #999;
+    padding: 0 0 24px 20px;
+  }
+  li::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 5px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #999;
+  }
+  li:first-child::before {
+    background: #d69b25;
+  }
+  time {
+    font-weight: 600;
+  }
+  summary {
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  p,
+  strong {
+    overflow-wrap: anywhere;
+  }
+}
+.change {
+  margin-top: 16px;
+  strong,
+  small {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+  pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font: inherit;
+    max-height: 220px;
+    overflow: auto;
+    padding: 8px;
+    border: 1px solid #9995;
+    border-radius: 6px;
+    margin: 4px 0 8px;
+  }
+}

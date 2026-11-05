@@ -420,9 +420,6 @@ function WorkspaceShell({
   return createPortal(
     <div className={styles.workspace} data-mode={mode} data-visual-editor-workspace ref={root}>
       <header className={styles.header}>
-        <span className={styles.brand}>
-          OAK<span> / EDITOR</span>
-        </span>
         <div className={styles.navigation}>
           <select
             aria-label="Content source"
@@ -539,6 +536,80 @@ function WorkspaceShell({
           )}
         </div>
         <span className={styles.draft}>DRAFT PREVIEW</span>
+        <nav aria-label="Editor tools" className={styles.tools}>
+          <button
+            aria-pressed={mode === 'browse'}
+            onClick={() => changeMode('browse')}
+            type="button"
+          >
+            Browse
+          </button>
+          <button aria-pressed={mode === 'edit'} onClick={() => changeMode('edit')} type="button">
+            Edit content
+          </button>
+          <button
+            aria-pressed={mode === 'annotate'}
+            onClick={() => changeMode('annotate')}
+            type="button"
+          >
+            Annotate
+          </button>
+        </nav>
+        <div aria-label="Preview width" className={styles.viewports}>
+          <button
+            aria-label="Desktop preview"
+            aria-pressed={viewport === 'desktop'}
+            onClick={() => setViewport('desktop')}
+            title="Desktop preview"
+            type="button"
+          >
+            <svg
+              aria-hidden="true"
+              fill="none"
+              height="20"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              viewBox="0 0 24 24"
+              width="20"
+            >
+              <rect height="13" rx="1.5" width="18" x="3" y="3" />
+              <path d="M12 16v5M7 21h10" />
+            </svg>
+          </button>
+          <button
+            aria-label="Mobile preview"
+            aria-pressed={viewport === 'mobile'}
+            onClick={() => setViewport('mobile')}
+            title="Mobile preview"
+            type="button"
+          >
+            <svg
+              aria-hidden="true"
+              fill="none"
+              height="20"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              viewBox="0 0 24 24"
+              width="20"
+            >
+              <rect height="20" rx="2" width="12" x="6" y="2" />
+              <path d="M10 19h4" />
+            </svg>
+          </button>
+        </div>
+        <button
+          disabled={!ready}
+          onClick={() => {
+            changeMode('edit')
+            iframe.current?.contentWindow?.postMessage(
+              { type: 'visual-editor:show-revisions' },
+              window.location.origin,
+            )
+          }}
+          type="button"
+        >
+          Revisions
+        </button>
         <div className={styles.actions} id="visual-editor-actions" key={`actions:${src}`} />
       </header>
       <div className={styles.body}>
@@ -567,48 +638,6 @@ function WorkspaceShell({
           key={`panel:${src}`}
         />
       </div>
-      <footer className={styles.footer}>
-        <a href={adminURL} rel="noreferrer" target="_blank">
-          Open in Payload ↗
-        </a>
-        <nav aria-label="Editor tools" className={styles.tools}>
-          <button
-            aria-pressed={mode === 'browse'}
-            onClick={() => changeMode('browse')}
-            type="button"
-          >
-            Browse
-          </button>
-          <button aria-pressed={mode === 'edit'} onClick={() => changeMode('edit')} type="button">
-            Edit content
-          </button>
-          <button
-            aria-pressed={mode === 'annotate'}
-            onClick={() => changeMode('annotate')}
-            type="button"
-          >
-            Annotate
-          </button>
-        </nav>
-        <div aria-label="Preview width" className={styles.viewports}>
-          <button
-            aria-label="Desktop preview"
-            aria-pressed={viewport === 'desktop'}
-            onClick={() => setViewport('desktop')}
-            type="button"
-          >
-            Desktop
-          </button>
-          <button
-            aria-label="Mobile preview"
-            aria-pressed={viewport === 'mobile'}
-            onClick={() => setViewport('mobile')}
-            type="button"
-          >
-            Mobile
-          </button>
-        </div>
-      </footer>
       {navigation && (
         <dialog
           aria-labelledby="navigation-title"
