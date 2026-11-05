@@ -177,6 +177,7 @@
   bottom: 1.25rem;
   right: 1.25rem;
   width: 297px;
+  max-width: calc(100vw - 24px);
   z-index: 100000;
   font-family:
     system-ui,
@@ -201,6 +202,7 @@
 }
 
 .toolbarContainer {
+  max-width: 100%;
   position: relative;
   user-select: none;
   margin-left: auto;
@@ -2187,5 +2189,15 @@
 
   .divider {
     background: rgba(0, 0, 0, 0.1);
+  }
+}
+
+@media (max-width: 420px) {
+  .toolbar {
+    right: 12px;
+    bottom: 12px;
+  }
+  .controlsContent {
+    gap: 2px;
   }
 }

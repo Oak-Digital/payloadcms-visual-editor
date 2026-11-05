@@ -1,28 +1,28 @@
 {
-  "name": "payloadcms-visual-editor",
-  "version": "0.0.2",
+  "name": "@oak-digital/payload-visual-editor",
+  "version": "0.1.0",
   "description": "A Payload CMS plugin for inline editing and visual feedback.",
   "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
-      "import": "./src/index.ts",
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./client": {
-      "import": "./src/exports/client.ts",
-      "types": "./src/exports/client.ts",
-      "default": "./src/exports/client.ts"
+      "types": "./dist/exports/client.d.ts",
+      "import": "./dist/exports/client.js",
+      "default": "./dist/exports/client.js"
     },
     "./rsc": {
-      "import": "./src/exports/rsc.ts",
-      "types": "./src/exports/rsc.ts",
-      "default": "./src/exports/rsc.ts"
+      "types": "./dist/exports/rsc.d.ts",
+      "import": "./dist/exports/rsc.js",
+      "default": "./dist/exports/rsc.js"
     }
   },
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
@@ -32,39 +32,38 @@
     "build:types": "tsc --outDir dist --rootDir ./src",
     "clean": "rimraf {dist,*.tsbuildinfo}",
     "copyfiles": "copyfiles -u 1 \"src/**/*.{html,css,scss,ttf,woff,woff2,eot,svg,jpg,png,json}\" dist/",
-    "dev": "next dev dev --webpack",
     "dev:generate-importmap": "pnpm dev:payload generate:importmap",
     "dev:generate-types": "pnpm dev:payload generate:types",
     "dev:payload": "cross-env TSX_TSCONFIG_PATH=./dev/tsconfig.json PAYLOAD_CONFIG_PATH=./dev/payload.config.ts payload",
-    "generate:importmap": "pnpm dev:generate-importmap",
-    "generate:types": "pnpm dev:generate-types",
     "lint": "eslint",
     "lint:fix": "eslint ./src --fix",
-    "test": "pnpm test:int && pnpm test:e2e",
+    "test": "pnpm test:unit",
     "test:e2e": "playwright test",
     "test:int": "vitest",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p dev/tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev:demo": "next dev dev --webpack",
+    "test:unit": "vitest run --config vitest.unit.config.ts",
+    "dev": "node scripts/watch.mjs"
   },
   "devDependencies": {
-    "@ai-hero/sandcastle": "^0.5.8",
     "@base-ui/react": "^1.4.0",
     "@eslint/eslintrc": "^3.2.0",
-    "@payloadcms/db-mongodb": "3.82.1",
-    "@payloadcms/db-postgres": "3.82.1",
-    "@payloadcms/db-sqlite": "3.82.1",
+    "@payloadcms/db-mongodb": "3.79.0",
+    "@payloadcms/db-postgres": "3.79.0",
+    "@payloadcms/db-sqlite": "3.79.0",
     "@payloadcms/eslint-config": "3.28.0",
-    "@payloadcms/next": "3.82.1",
-    "@payloadcms/plugin-seo": "3.82.1",
-    "@payloadcms/richtext-lexical": "3.82.1",
-    "@payloadcms/ui": "3.82.1",
+    "@payloadcms/next": "3.79.0",
+    "@payloadcms/plugin-seo": "3.79.0",
+    "@payloadcms/richtext-lexical": "3.79.0",
+    "@payloadcms/ui": "3.79.0",
     "@playwright/test": "1.58.2",
     "@radix-ui/react-slot": "^1.2.4",
     "@swc-node/register": "1.10.9",
     "@swc/cli": "0.6.0",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "22.19.9",
-    "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
+    "@types/react": "19.0.7",
+    "@types/react-dom": "19.0.3",
     "@vercel/stega": "^1.1.0",
     "class-variance-authority": "^0.7.1",
     "copyfiles": "2.4.1",
@@ -74,9 +73,9 @@
     "graphql": "^16.8.1",
     "lucide-react": "^1.8.0",
     "mongodb-memory-server": "10.1.4",
-    "next": "16.2.3",
+    "next": "^16.3.8",
     "open": "^10.1.0",
-    "payload": "3.82.1",
+    "payload": "3.79.0",
     "postcss": "^8.5.10",
     "prettier": "^3.4.2",
     "qs-esm": "8.0.1",
@@ -85,16 +84,20 @@
     "rimraf": "3.0.2",
     "sass": "^1.99.0",
     "shadcn": "^4.3.0",
-    "sharp": "0.34.2",
+    "sharp": "0.34.5",
     "sort-package-json": "^2.10.0",
     "tailwindcss": "^4.2.2",
     "tw-animate-css": "^1.4.0",
     "typescript": "5.7.3",
     "vite-tsconfig-paths": "6.0.5",
-    "vitest": "4.0.18"
+    "vitest": "4.0.18",
+    "@swc/core": "^1.15.0",
+    "jsdom": "^26.1.0"
   },
   "peerDependencies": {
-    "payload": "^3.82.1"
+    "payload": "3.79.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   },
   "engines": {
     "node": "^18.20.2 || >=20.9.0",
@@ -103,18 +106,18 @@
   "publishConfig": {
     "exports": {
       ".": {
-        "import": "./dist/index.js",
         "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
         "default": "./dist/index.js"
       },
       "./client": {
-        "import": "./dist/exports/client.js",
         "types": "./dist/exports/client.d.ts",
+        "import": "./dist/exports/client.js",
         "default": "./dist/exports/client.js"
       },
       "./rsc": {
-        "import": "./dist/exports/rsc.js",
         "types": "./dist/exports/rsc.d.ts",
+        "import": "./dist/exports/rsc.js",
         "default": "./dist/exports/rsc.js"
       }
     },
@@ -125,8 +128,14 @@
     "onlyBuiltDependencies": [
       "sharp",
       "esbuild",
-      "unrs-resolver"
+      "unrs-resolver",
+      "@swc/core"
     ]
   },
-  "registry": "https://registry.npmjs.org/"
+  "registry": "https://registry.npmjs.org/",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Oak-Digital/payloadcms-visual-editor.git"
+  }
 }

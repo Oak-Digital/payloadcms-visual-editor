@@ -59,7 +59,42 @@ function addEditableFields({
   sourceMap: Record<string, string>
 }): void {
   for (const field of fields) {
+    if ('name' in field && ['id', 'blockType', 'blockName'].includes(field.name)) continue
+    if (
+      (field.admin && 'readOnly' in field.admin && field.admin.readOnly) ||
+      ('virtual' in field && field.virtual)
+    )
+      continue
     switch (field.type) {
+      case 'array': {
+        const rows = getNamedValue(source, field.name)
+        if (Array.isArray(rows))
+          rows.forEach((row, index) => {
+            addEditableFields({
+              fields: field.fields,
+              path: appendPath(path, `${field.name}.${index}`),
+              source: row,
+              sourceMap,
+            })
+          })
+        break
+      }
+      case 'blocks': {
+        const rows = getNamedValue(source, field.name)
+        if (Array.isArray(rows))
+          rows.forEach((row, index) => {
+            if (!isRecord(row)) return
+            const block = field.blocks.find((candidate) => candidate.slug === row.blockType)
+            if (block)
+              addEditableFields({
+                fields: block.fields,
+                path: appendPath(path, `${field.name}.${index}`),
+                source: row,
+                sourceMap,
+              })
+          })
+        break
+      }
       case 'collapsible':
       case 'row': {
         addEditableFields({

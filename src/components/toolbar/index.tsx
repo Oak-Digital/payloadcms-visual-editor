@@ -1239,7 +1239,7 @@ export function VisualEditorToolbar({
 
       const payloadField = identifyPayloadField(target)
 
-      if (!payloadField?.path) {
+      if (isEditCmsMode && !payloadField?.path) {
         return
       }
 
@@ -1278,7 +1278,7 @@ export function VisualEditorToolbar({
         selectedText = selection.toString().trim().slice(0, 500)
       }
 
-      const path = payloadField.path ?? reactPath
+      const path = payloadField?.path ?? reactPath
       const fullPath = getFullElementPath(elementUnder)
       const existingAnnotation = isEditCmsMode
         ? annotations.find((annotation) =>
@@ -1342,8 +1342,8 @@ export function VisualEditorToolbar({
         nearbyElements: getNearbyElements(elementUnder),
         nearbyText: getNearbyText(elementUnder),
         payloadCMS: {
-          path,
-          value: 'value',
+          path: isEditCmsMode ? path : '',
+          value: '',
         },
         reactComponents: reactComponents ?? undefined,
         selectedText,
@@ -1846,6 +1846,7 @@ export function VisualEditorToolbar({
             id: documentInfo.id,
             action: requestAction,
             collection: documentInfo.collection,
+            locale: documentInfo.locale,
             patches,
           }),
           credentials: 'same-origin',
@@ -1886,6 +1887,7 @@ export function VisualEditorToolbar({
       annotations,
       documentInfo.id,
       documentInfo.collection,
+      documentInfo.locale,
       hasDrafts,
       settings.autoClearAfterCopy,
       clearAll,

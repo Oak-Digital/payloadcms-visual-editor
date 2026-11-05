@@ -1,4 +1,4 @@
-import type { Annotation, PayloadCMSPatch } from 'src/types.js'
+import type { Annotation, PayloadCMSPatch } from '../types.js'
 
 type JsonLike = { [key: string]: JsonLike } | JsonLike[] | null | string
 
@@ -11,10 +11,19 @@ function cloneValue<T>(value: T): T {
 }
 
 function getPathSegments(path: string): string[] {
-  return path.split('.').filter(Boolean)
+  const segments = path.split('.')
+  if (
+    segments.some(
+      (segment) => !segment || ['__proto__', 'prototype', 'constructor'].includes(segment),
+    )
+  ) {
+    throw new Error('Invalid patch path')
+  }
+  return segments
 }
 
 function validatePatch(patch: Record<string, unknown>): PayloadCMSPatch {
+  if (!patch || typeof patch !== 'object') throw new Error('Invalid patch')
   const { path, value } = patch
 
   if (typeof path !== 'string' || !path.trim()) {
@@ -149,6 +158,10 @@ export function buildPatchedUpdateData<T extends Record<string, unknown>>(
 
 export function generatePatches(annotations: Annotation[]) {
   const patches: PayloadCMSPatch[] = []
-  annotations.forEach((a) => patches.push({ path: a.payloadCMS.path, value: a.payloadCMS.value }))
+  annotations.forEach((a) => {
+    if (a.payloadCMS?.path && a.payloadCMS.path !== 'Path not found') {
+      patches.push({ path: a.payloadCMS.path, value: a.payloadCMS.value })
+    }
+  })
   return patches
 }

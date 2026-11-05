@@ -1,12 +1,12 @@
 import type { CollectionAfterReadHook, CollectionSlug, Config, Field, FieldHook } from 'payload'
 
-import { visualEditorMutationHandler } from './endpoints/visualEditorMutationHandler.js'
+import { createVisualEditorMutationHandler } from './endpoints/visualEditorMutationHandler.js'
 import { buildSourceMap } from './utils/source-map.js'
 
 const populateSourceMap =
   (fields: Field[]): FieldHook =>
-  ({ data }) => {
-    if (!data) {
+  ({ data, context }) => {
+    if (!data || context.contentSourceMap !== true) {
       return
     }
     return buildSourceMap(fields, data)
@@ -75,25 +75,8 @@ const payloadVisualEditor =
       config.endpoints = []
     }
 
-    if (!config.admin) {
-      config.admin = {}
-    }
-
-    if (!config.admin.components) {
-      config.admin.components = {}
-    }
-
-    if (!config.admin.components.beforeDashboard) {
-      config.admin.components.beforeDashboard = []
-    }
-
-    // config.admin.components.beforeDashboard.push(
-    //   `payload-visual-editor/client#BeforeDashboardClient`,
-    // )
-    // config.admin.components.beforeDashboard.push(`payload-visual-editor/rsc#BeforeDashboardServer`)
-
     config.endpoints.push({
-      handler: visualEditorMutationHandler,
+      handler: createVisualEditorMutationHandler(pluginOptions.collections ?? {}),
       method: 'post',
       path: '/payload-visual-editor',
     })

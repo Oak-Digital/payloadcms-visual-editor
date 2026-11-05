@@ -104,6 +104,7 @@ export type AnnotationStatus = 'acknowledged' | 'dismissed' | 'pending' | 'resol
 // -----------------------------------------------------------------------------
 
 export type PayloadCMSDocument = {
+  locale?: string
   collection: string
   hasDrafts: boolean
   id: number | string
