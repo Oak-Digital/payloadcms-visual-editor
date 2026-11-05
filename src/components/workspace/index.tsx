@@ -474,12 +474,14 @@ function WorkspaceShell({
                 <>
                   <input
                     aria-label="Search content"
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape') setPickerOpen(false)
-                    }}
                     onChange={(event) => {
                       setSearch(event.target.value)
                       setPage(1)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') {
+                        setPickerOpen(false)
+                      }
                     }}
                     placeholder="Search content…"
                     value={search}
