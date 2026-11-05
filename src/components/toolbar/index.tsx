@@ -1,5 +1,6 @@
 'use client'
 
+import { ArrangeEditor } from '../arrange-editor/index.js'
 import { RichTextDialog } from '../rich-text-editor/dialog.js'
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -481,9 +482,21 @@ export function VisualEditorToolbar({
   const [tooltipsHidden, setTooltipsHidden] = useState(false)
 
   // Toolbar mode state
-  const [mode, setMode] = useState<'annotate' | 'editCMS'>('editCMS')
+  const [mode, setMode] = useState<'annotate' | 'editCMS' | 'arrange'>('editCMS')
   const isEditCmsMode = mode === 'editCMS'
   const isAnnotateMode = mode === 'annotate'
+  const isArrangeMode = mode === 'arrange'
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('visual-editor-reopen-arrange') === window.location.href) {
+        sessionStorage.removeItem('visual-editor-reopen-arrange')
+        setMode('arrange')
+        setIsActive(true)
+      }
+    } catch {
+      /* Storage is optional. */
+    }
+  }, [])
 
   // Draw mode state
   const [drawStrokes, setDrawStrokes] = useState<
@@ -1204,7 +1217,7 @@ export function VisualEditorToolbar({
 
   // Handle mouse move
   useEffect(() => {
-    if (!isActive || pendingAnnotation?.state === 'pending') {
+    if (!isActive || isArrangeMode || pendingAnnotation?.state === 'pending') {
       return
     }
 
@@ -1241,7 +1254,7 @@ export function VisualEditorToolbar({
 
     document.addEventListener('mousemove', handleMouseMove)
     return () => document.removeEventListener('mousemove', handleMouseMove)
-  }, [isActive, pendingAnnotation, effectiveReactMode, drawStrokes])
+  }, [isActive, isArrangeMode, pendingAnnotation, effectiveReactMode, drawStrokes])
 
   // Start editing an annotation (right-click or click on drawing stroke)
   const startEditAnnotation = useCallback(
@@ -1300,7 +1313,7 @@ export function VisualEditorToolbar({
 
   // Handle click
   useEffect(() => {
-    if (!isActive) {
+    if (!isActive || isArrangeMode) {
       return
     }
 
@@ -1482,6 +1495,7 @@ export function VisualEditorToolbar({
     isActive,
     annotations,
     isEditCmsMode,
+    isArrangeMode,
     pendingAnnotation,
     startEditAnnotation,
     mediaTarget,
@@ -2338,6 +2352,13 @@ export function VisualEditorToolbar({
       ref={portalWrapperRef}
       style={{ display: 'contents' }}
     >
+      <ArrangeEditor
+        active={isActive && isArrangeMode}
+        documentInfo={documentInfo}
+        apiRoute={apiRoute}
+        adminRoute={adminRoute}
+        onClose={() => setMode('editCMS')}
+      />
       {richTextTarget && (
         <RichTextDialog
           path={richTextTarget.path}
@@ -2419,7 +2440,7 @@ export function VisualEditorToolbar({
                 top: toolbarPosition.y,
               }
             : undefined),
-          width: isEditCmsMode ? '376.75px' : undefined,
+          width: isArrangeMode ? '301px' : isEditCmsMode ? '420px' : '301px',
         }}
       >
         {/* Morphing container */}
@@ -2442,7 +2463,7 @@ export function VisualEditorToolbar({
           onMouseDown={handleToolbarMouseDown}
           role={!isActive ? 'button' : undefined}
           style={{
-            width: isEditCmsMode && isActive ? '376.75px' : undefined,
+            width: isActive ? (isEditCmsMode ? '420px' : '301px') : undefined,
           }}
           tabIndex={!isActive ? 0 : -1}
           title={!isActive ? 'Start feedback mode' : undefined}
@@ -2496,6 +2517,35 @@ export function VisualEditorToolbar({
               </span>
             </div>
 
+            <div className={styles.buttonWrapper}>
+              <button
+                type="button"
+                className={styles.controlButton}
+                data-active={isArrangeMode}
+                aria-label="Arrange and edit"
+                aria-pressed={isArrangeMode}
+                onClick={() => {
+                  setPendingAnnotation(null)
+                  setHoverInfo(null)
+                  setMode(isArrangeMode ? 'editCMS' : 'arrange')
+                }}
+              >
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  aria-hidden="true"
+                >
+                  <rect x="8" y="3" width="13" height="7" rx="2" />
+                  <rect x="8" y="14" width="13" height="7" rx="2" />
+                  <path d="M3 4v5m-2-3 2-2 2 2M3 15v5m-2-2 2 2 2-2" />
+                </svg>
+              </button>
+              <span className={styles.buttonTooltip}>Arrange &amp; edit</span>
+            </div>
             <div className={styles.buttonWrapper} id="toggle-marker-visibility">
               <button
                 className={`${styles.controlButton} `}
@@ -2580,7 +2630,7 @@ export function VisualEditorToolbar({
               </div>
             )}
 
-            {isEditCmsMode ? (
+            {isArrangeMode ? null : isEditCmsMode ? (
               <div className={`${styles.buttonWrapper}`} id={hasDrafts ? 'publish' : 'save'}>
                 <button
                   aria-label={hasDrafts ? 'Publish' : 'Save'}
@@ -2797,7 +2847,7 @@ export function VisualEditorToolbar({
             .map((a) => <ExitingMarker annotation={a} fixed key={a.id} />)}
       </div>
       {/* Interactive overlay */}
-      {isActive && (
+      {isActive && !isArrangeMode && (
         <div
           className={styles.overlay}
           data-feedback-toolbar

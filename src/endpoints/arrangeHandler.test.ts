@@ -1,0 +1,243 @@
+// @vitest-environment node
+import { describe, expect, it, vi } from 'vitest'
+vi.mock('payload', () => ({
+  initTransaction: vi.fn(async () => true),
+  commitTransaction: vi.fn(),
+  killTransaction: vi.fn(),
+}))
+import { killTransaction } from 'payload'
+import { createArrangeHandler } from './arrangeHandler.js'
+
+const richText = {
+  root: {
+    type: 'root',
+    version: 1,
+    children: [
+      {
+        type: 'paragraph',
+        version: 1,
+        format: '',
+        indent: 0,
+        direction: null,
+        children: [
+          {
+            type: 'text',
+            version: 1,
+            text: 'Hello',
+            format: 1,
+            detail: 0,
+            mode: 'normal',
+            style: '',
+          },
+        ],
+      },
+    ],
+    format: '',
+    indent: 0,
+    direction: null,
+  },
+}
+function fixture() {
+  const text: any = { name: 'heading', type: 'text' }
+  const block: any = {
+    name: 'layout',
+    type: 'blocks',
+    blocks: [
+      {
+        slug: 'section',
+        fields: [
+          text,
+          { name: 'body', type: 'richText', editor: { editorConfig: { features: { nodes: [] } } } },
+          { name: 'image', type: 'upload', relationTo: 'media' },
+        ],
+      },
+    ],
+  }
+  const doc = {
+    id: 'page',
+    layout: [
+      {
+        id: 'a',
+        blockType: 'section',
+        heading: 'First',
+        body: richText,
+        image: 'old',
+        protectedSibling: 'Keep',
+      },
+      { id: 'b', blockType: 'section', heading: 'Second' },
+    ],
+    other: 'Unchanged',
+  }
+  const collection: any = {
+    slug: 'pages',
+    versions: { drafts: true },
+    access: { update: vi.fn(() => true) },
+    fields: [block],
+  }
+  const latest = { id: 'version', version: doc, updatedAt: '2026-11-05', latest: true }
+  const payload = {
+    config: {
+      localization: { localeCodes: ['en', 'da'] },
+      collections: [collection, { slug: 'media', upload: {} }],
+    },
+    findByID: vi.fn(async () => structuredClone(doc)),
+    find: vi.fn(async () => ({ docs: [{ id: 'new', mimeType: 'image/jpeg' }] })),
+    update: vi.fn(async (options: any) => ({ ...doc, ...options.data })),
+    db: { findVersions: vi.fn(async () => ({ docs: [latest] })), updateVersion: vi.fn() },
+    logger: { error: vi.fn() },
+  }
+  const handler = createArrangeHandler({ pages: true })
+  const base = {
+    id: 'page',
+    collection: 'pages',
+    locale: 'en',
+    action: 'read',
+    paths: ['layout.0.heading', 'layout.1.heading', 'layout.0.body', 'layout.0.image'],
+    orderPaths: ['layout'],
+  }
+  const call = (body: object = {}, user: object | null = { id: 'editor' }) =>
+    handler({ payload, user, json: async () => ({ ...base, ...body }) } as never)
+  return { call, payload, latest, doc, text, block, collection }
+}
+
+describe('arrange editor batch', () => {
+  it('saves text, rich text and images before reordering, preserving siblings in one update', async () => {
+    const { call, payload } = fixture()
+    const snapshot = await (await call()).json()
+    const body = structuredClone(richText)
+    body.root.children[0].children[0].text = 'Formatted edit'
+    const response = await call({
+      action: 'save',
+      revision: snapshot.revision,
+      changes: [
+        { path: 'layout.0.heading', value: 'Edited' },
+        { path: 'layout.0.body', value: body },
+        { path: 'layout.0.image', value: 'new' },
+      ],
+      orders: [{ path: 'layout', ids: ['b', 'a'] }],
+    })
+    expect(await response.json()).toEqual({ success: true })
+    expect(payload.update).toHaveBeenCalledTimes(1)
+    const options = payload.update.mock.calls[0][0]
+    expect(options).toMatchObject({
+      overrideAccess: false,
+      draft: true,
+      locale: 'en',
+      data: { _status: 'draft' },
+    })
+    expect(options.data.layout.map((row: any) => row.id)).toEqual(['b', 'a'])
+    expect(options.data.layout[1]).toMatchObject({
+      heading: 'Edited',
+      body,
+      image: 'new',
+      protectedSibling: 'Keep',
+    })
+    expect(options.data).not.toHaveProperty('other')
+  })
+  it('publishes an already saved draft without requiring new field edits', async () => {
+    const { call, payload } = fixture()
+    const { revision } = await (await call()).json()
+    expect((await call({ action: 'publish', revision, changes: [], orders: [] })).status).toBe(200)
+    expect(payload.update.mock.calls[0][0]).toMatchObject({
+      draft: false,
+      data: { _status: 'published' },
+    })
+  })
+  it('rejects stale snapshots without writing', async () => {
+    const { call, payload, latest } = fixture()
+    const { revision } = await (await call()).json()
+    latest.updatedAt = 'changed'
+    expect((await call({ action: 'publish', revision, changes: [], orders: [] })).status).toBe(409)
+    expect(payload.update).not.toHaveBeenCalled()
+  })
+  it.each([['a'], ['a', 'a'], ['a', 'unknown'], ['a', 'b', 'extra']])(
+    'rejects invalid block permutations %j',
+    async (...ids) => {
+      const { call, payload } = fixture()
+      const { revision } = await (await call()).json()
+      expect(
+        (await call({ action: 'save', revision, changes: [], orders: [{ path: 'layout', ids }] }))
+          .status,
+      ).toBe(400)
+      expect(payload.update).not.toHaveBeenCalled()
+      expect(killTransaction).toHaveBeenCalled()
+    },
+  )
+  it('enforces authentication, allowlists, locale and safe paths', async () => {
+    const { call } = fixture()
+    expect((await call({}, null)).status).toBe(401)
+    expect((await call({ collection: 'users' })).status).toBe(403)
+    expect((await call({ locale: 'xx' })).status).toBe(400)
+    expect((await call({ paths: ['__proto__.bad'] })).status).toBe(400)
+  })
+  it('excludes read-only fields and rejects forged edits and structural metadata', async () => {
+    const { call, text, payload } = fixture()
+    text.admin = { readOnly: true }
+    const snapshot = await (await call()).json()
+    expect(snapshot.fields).not.toHaveProperty('layout.0.heading')
+    for (const path of ['layout.0.heading', 'layout.0.id', '_status']) {
+      expect(
+        (
+          await call({
+            action: 'save',
+            revision: snapshot.revision,
+            changes: [{ path, value: 'bad' }],
+            orders: [],
+          })
+        ).status,
+      ).toBe(400)
+    }
+    expect(payload.update).not.toHaveBeenCalled()
+  })
+  it('checks parent access for block movements', async () => {
+    const { call, block, payload } = fixture()
+    const { revision } = await (await call()).json()
+    block.access = { update: () => false }
+    expect(
+      (
+        await call({
+          action: 'save',
+          revision,
+          changes: [],
+          orders: [{ path: 'layout', ids: ['b', 'a'] }],
+        })
+      ).status,
+    ).toBe(400)
+    expect(payload.update).not.toHaveBeenCalled()
+  })
+  it('validates proposed values against field update access', async () => {
+    const { call, text, payload } = fixture()
+    const { revision } = await (await call()).json()
+    text.access = { update: ({ data }: any) => data.layout[0].heading !== 'Forbidden' }
+    expect(
+      (
+        await call({
+          action: 'save',
+          revision,
+          changes: [{ path: 'layout.0.heading', value: 'Forbidden' }],
+          orders: [],
+        })
+      ).status,
+    ).toBe(400)
+    expect(payload.update).not.toHaveBeenCalled()
+  })
+  it('rejects inaccessible media without saving the other changes', async () => {
+    const { call, payload } = fixture()
+    const { revision } = await (await call()).json()
+    payload.find.mockResolvedValueOnce({ docs: [] })
+    expect(
+      (
+        await call({
+          action: 'publish',
+          revision,
+          changes: [
+            { path: 'layout.0.heading', value: 'Edited' },
+            { path: 'layout.0.image', value: 'missing' },
+          ],
+          orders: [],
+        })
+      ).status,
+    ).toBe(400)
+    expect(payload.update).not.toHaveBeenCalled()
+  })
+})

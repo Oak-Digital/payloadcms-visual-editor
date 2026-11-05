@@ -62,3 +62,13 @@ git diff HEAD..upstream/main
 Do not commit credentials, local database content or generated output.
 
 Restart `pnpm dev` after changing server plugin configuration or endpoint handlers: the host keeps Payload server modules outside its development bundle. Toolbar/style edits rebuild through the watcher.
+
+## Arrange & edit
+
+Choose the blocks icon in the toolbar to open a persistent editing panel. Select outlined text or images on the page (keyboard: focus a field and press Enter), edit several items, and review or undo individual pending changes. Formatted text uses the host Lexical editor's **Add to changes** action; image selections also remain pending. Plain text and images preview immediately. Formatted text refreshes on the page after saving.
+
+The Blocks list supports drag handles and move up/down buttons. Hosts opt in by wrapping a block list with `data-payload-block-list="layout"` and `data-payload-document`, then wrapping each direct child with `data-payload-block-id` containing its stable Payload row ID. The list must render all rows in source order and use a column flex/grid layout for the pending order preview. Public pages do not need these attributes or wrappers.
+
+**Save draft** saves pending content and order changes together, reloads the preview, and reopens the panel. **Publish all** publishes the changed documents' full drafts, including drafts saved through this panel. Closing the panel retains pending changes in memory; leaving or reloading warns before discarding them. Pending work is not persisted across browser reloads.
+
+The `/payload-visual-editor/arrange` endpoint validates collection/field access, upload restrictions, Lexical round trips, and exact block-ID permutations. Each document uses a version check and transaction; field edits apply before block reordering. A stale snapshot is rejected without saving. Multiple owning documents save sequentially, not atomically; partial failures report completed documents and require reloading before further edits.

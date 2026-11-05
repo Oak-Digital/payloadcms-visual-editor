@@ -2,6 +2,7 @@ import type { CollectionAfterReadHook, CollectionSlug, Config, Field, FieldHook 
 
 import { createVisualEditorMutationHandler } from './endpoints/visualEditorMutationHandler.js'
 import { createMediaHandler } from './endpoints/mediaHandler.js'
+import { createArrangeHandler } from './endpoints/arrangeHandler.js'
 import { createRichTextHandler } from './endpoints/richTextHandler.js'
 import { buildSourceMap } from './utils/source-map.js'
 
@@ -97,6 +98,12 @@ const payloadVisualEditor =
       Component: '@oak-digital/payload-visual-editor/client#RichTextEditorView',
       path: '/visual-rich-text',
     }
+    config.endpoints.push({
+      handler: createArrangeHandler(pluginOptions.collections ?? {}),
+      method: 'post',
+      path: '/payload-visual-editor/arrange',
+    })
+
     config.endpoints.push({
       handler: createRichTextHandler(pluginOptions.collections ?? {}),
       method: 'post',
