@@ -372,3 +372,23 @@
   height: 36px;
   padding: 0;
 }
+
+.blockModes {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  button {
+    flex: 1;
+    &[aria-pressed='true'] {
+      background: #007cae;
+      border-color: #27baff;
+    }
+  }
+}
+.blocks .blockLabel {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
