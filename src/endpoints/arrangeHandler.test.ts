@@ -145,6 +145,31 @@ describe('arrange editor batch', () => {
     expect(rows[1].body.root).toMatchObject({ type: 'root', children: [] })
   })
 
+  it('initializes many-valued relationships on new blocks', async () => {
+    const { call, block, payload } = fixture()
+    block.blocks.push({
+      slug: 'faq-accordion',
+      fields: [
+        { name: 'faqs', type: 'relationship', relationTo: 'faqs', hasMany: true, required: true },
+      ],
+    })
+    const { revision } = await (await call()).json()
+    const response = await call({
+      action: 'save',
+      revision,
+      changes: [],
+      orders: [
+        {
+          path: 'layout',
+          ids: ['a', 'b', '0123456789abcdef01234567'],
+          additions: [{ id: '0123456789abcdef01234567', blockType: 'faq-accordion' }],
+        },
+      ],
+    })
+    expect(response.status).toBe(200)
+    expect(payload.update.mock.calls[0][0].data.layout[2].faqs).toEqual([])
+  })
+
   it('lists editable block fields even when their values are not rendered', async () => {
     const { call } = fixture()
     const snapshot = await (await call({ paths: [] })).json()

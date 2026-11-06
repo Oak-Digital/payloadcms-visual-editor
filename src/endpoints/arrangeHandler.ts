@@ -46,6 +46,7 @@ function defaults(fields: Field[]): Record<string, unknown> {
         result[field.name] = structuredClone(field.defaultValue)
       else if (field.type === 'group') result[field.name] = defaults(field.fields)
       else if (field.type === 'array' || field.type === 'blocks') result[field.name] = []
+      else if ('hasMany' in field && field.hasMany) result[field.name] = []
       else if (field.type === 'checkbox') result[field.name] = false
       else if (field.type === 'richText')
         result[field.name] = {
