@@ -245,7 +245,6 @@ function WorkspaceShell({
   const [view, setView] = useState<
     'home' | 'content' | 'shared' | 'editor' | 'annotations' | 'settings'
   >('home')
-  const [side, setSide] = useState('right')
   const [dotPosition, setDotPosition] = useState('top-right')
   const [size, setSize] = useState('standard')
   const [pace, setPace] = useState(620)
@@ -620,7 +619,6 @@ function WorkspaceShell({
         className={styles.floating}
         data-dot-position={dotPosition}
         data-open={open}
-        data-side={side}
         data-size={size}
         data-reduce-motion={reduceMotion}
         style={{ '--editor-duration': `${pace}ms` } as React.CSSProperties}
@@ -966,19 +964,6 @@ function WorkspaceShell({
                       type="button"
                     >
                       {label}
-                    </button>
-                  ))}
-                </div>
-                <div className={styles.sectionLabel}>PANEL POSITION</div>
-                <div className={styles.segmented}>
-                  {['right', 'left'].map((value) => (
-                    <button
-                      key={value}
-                      aria-pressed={side === value}
-                      onClick={() => setSide(value)}
-                      type="button"
-                    >
-                      {value === 'right' ? 'Right' : 'Left'}
                     </button>
                   ))}
                 </div>
