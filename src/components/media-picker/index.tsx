@@ -28,7 +28,9 @@ export function MediaPicker({
   path,
   onClose,
   onSelect,
+  embedded = false,
 }: {
+  embedded?: boolean
   adminRoute: string
   apiRoute: string
   documentInfo: PayloadCMSDocument
@@ -46,10 +48,11 @@ export function MediaPicker({
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
   useEffect(() => {
+    if (embedded) return
     const previous = document.activeElement as HTMLElement | null
     dialog.current?.showModal()
     return () => previous?.focus()
-  }, [])
+  }, [embedded])
   useEffect(() => {
     const controller = new AbortController()
     setBusy(true)
@@ -88,30 +91,16 @@ export function MediaPicker({
     apiRoute,
   ])
 
-  return (
-    <dialog
-      ref={dialog}
-      className={styles.dialog}
-      aria-labelledby="ve-media-title"
-      data-feedback-toolbar
-      onKeyDown={(event) => {
-        event.stopPropagation()
-        if (event.key === 'Escape') {
-          event.preventDefault()
-          onClose()
-        }
-      }}
-      onCancel={(event) => {
-        event.preventDefault()
-        onClose()
-      }}
-    >
-      <header>
-        <h2 id="ve-media-title">Choose an image</h2>
-        <button type="button" onClick={onClose} aria-label="Close image picker">
-          Close
-        </button>
-      </header>
+  const content = (
+    <>
+      {!embedded && (
+        <header>
+          <h2 id="ve-media-title">Choose an image</h2>
+          <button type="button" onClick={onClose} aria-label="Close image picker">
+            Close
+          </button>
+        </header>
+      )}
       {!uploading && (
         <>
           <label>
@@ -216,6 +205,33 @@ export function MediaPicker({
           Use image
         </button>
       </footer>
+    </>
+  )
+  if (embedded)
+    return (
+      <section className={`${styles.dialog} ${styles.embedded}`} aria-label="Media library">
+        {content}
+      </section>
+    )
+  return (
+    <dialog
+      ref={dialog}
+      className={styles.dialog}
+      aria-labelledby="ve-media-title"
+      data-feedback-toolbar
+      onKeyDown={(event) => {
+        event.stopPropagation()
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          onClose()
+        }
+      }}
+      onCancel={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
+    >
+      {content}
     </dialog>
   )
 }

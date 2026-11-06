@@ -385,3 +385,21 @@
     min-width: 0;
   }
 }
+
+.blockModes {
+  display: flex;
+  padding: 4px;
+  gap: 3px;
+  border-radius: 11px;
+  background: #212121;
+  margin-bottom: 20px;
+  button {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    padding: 9px;
+  }
+  button[aria-pressed='true'] {
+    background: #333;
+  }
+}

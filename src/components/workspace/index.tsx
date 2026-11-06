@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 
 import type { PayloadCMSDocument } from '../../types.js'
 
+import { EditorIcon, OakMark } from './icons.js'
 import { VisualEditorToolbar } from '../toolbar/index.js'
 import styles from './styles.module.scss'
 
@@ -74,7 +75,24 @@ function WorkspaceCanvas({
     try {
       const panelContainer = window.parent.document.getElementById('visual-editor-panel')
       const actionsContainer = window.parent.document.getElementById('visual-editor-actions')
-      return panelContainer && actionsContainer ? { actionsContainer, panelContainer } : undefined
+      const headerContainer = window.parent.document.getElementById('visual-editor-heading')
+      const annotationContainer = window.parent.document.getElementById('visual-editor-annotations')
+      const historyContainer = window.parent.document.getElementById(
+        'visual-editor-history-actions',
+      )
+      return panelContainer &&
+        actionsContainer &&
+        headerContainer &&
+        annotationContainer &&
+        historyContainer
+        ? {
+            actionsContainer,
+            panelContainer,
+            headerContainer,
+            annotationContainer,
+            historyContainer,
+          }
+        : undefined
     } catch {
       return undefined
     }
@@ -139,6 +157,9 @@ function WorkspaceCanvas({
     const clear = () => {
       containers.panelContainer.replaceChildren()
       containers.actionsContainer.replaceChildren()
+      containers.headerContainer.replaceChildren()
+      containers.annotationContainer.replaceChildren()
+      containers.historyContainer.replaceChildren()
     }
     window.addEventListener('pagehide', clear)
     return () => {
@@ -157,9 +178,15 @@ function WorkspaceCanvas({
                 { type: 'visual-editor:mode', mode },
                 window.location.origin,
               ),
-            onPendingChange: (pending: boolean, busy: boolean) =>
+            onPendingChange: (
+              pending: boolean,
+              busy: boolean,
+              count: number,
+              status: string,
+              blocks: number,
+            ) =>
               window.parent.postMessage(
-                { type: 'visual-editor:pending', busy, pending },
+                { type: 'visual-editor:pending', busy, pending, count, status, blocks },
                 window.location.origin,
               ),
           }
@@ -214,6 +241,70 @@ function WorkspaceShell({
   const [navigation, setNavigation] = useState<Entry>()
   const [ready, setReady] = useState(false)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [view, setView] = useState<
+    'home' | 'content' | 'shared' | 'editor' | 'annotations' | 'settings'
+  >('home')
+  const [side, setSide] = useState('right')
+  const [size, setSize] = useState('standard')
+  const [pace, setPace] = useState(620)
+  const [reduceMotion, setReduceMotion] = useState(false)
+  const [changeCount, setChangeCount] = useState(0)
+  const [blockCount, setBlockCount] = useState(0)
+  const [annotationCount, setAnnotationCount] = useState(0)
+  const [annotationEditing, setAnnotationEditing] = useState(false)
+  const [saveStatus, setSaveStatus] = useState('')
+  const launcher = useRef<HTMLButtonElement>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
+
+  const send = useCallback((type: string, values: Record<string, unknown> = {}) => {
+    iframe.current?.contentWindow?.postMessage({ type, ...values }, window.location.origin)
+  }, [])
+  const collapse = useCallback(() => {
+    setOpen(false)
+    launcher.current?.focus({ preventScroll: true })
+  }, [])
+  const reveal = useCallback(() => setOpen(true), [])
+  useEffect(() => {
+    if (!open) return
+    const next = requestAnimationFrame(() => {
+      const title =
+        view === 'editor'
+          ? document.querySelector<HTMLElement>('#visual-editor-heading h2')
+          : heading.current
+      title?.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(next)
+  }, [open, view])
+  useEffect(() => {
+    const keyboard = (event: KeyboardEvent) => {
+      if (dialog.current?.open) return
+      const target = event.target as HTMLElement
+      const typing = target.closest('input, textarea, select, [contenteditable="true"]')
+      if (event.key === 'Escape' && open) {
+        event.preventDefault()
+        if (view === 'editor') send('visual-editor:back')
+        else if (view === 'annotations' && annotationEditing)
+          send('visual-editor:cancel-annotation')
+        else if (view !== 'home') {
+          setView('home')
+          setPickerOpen(false)
+        } else collapse()
+      } else if (
+        !typing &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === 'e'
+      ) {
+        event.preventDefault()
+        if (open) collapse()
+        else reveal()
+      }
+    }
+    window.addEventListener('keydown', keyboard)
+    return () => window.removeEventListener('keydown', keyboard)
+  }, [open, view, annotationEditing, send, collapse, reveal])
 
   const navigate = useCallback(
     (entry: Entry) => {
@@ -221,6 +312,7 @@ function WorkspaceShell({
         return
       }
       if (entry.id === current.id) {
+        setView('home')
         setPickerOpen(false)
         setNavigation(undefined)
         return
@@ -236,8 +328,14 @@ function WorkspaceShell({
       setReady(false)
       setLoadFailed(false)
       setMode('edit')
+      setChangeCount(0)
+      setBlockCount(0)
+      setAnnotationCount(0)
+      setAnnotationEditing(false)
+      setSaveStatus('')
       setSrc(url.href)
       setPickerOpen(false)
+      setView('home')
       setNavigation(undefined)
     },
     [current.id],
@@ -275,21 +373,38 @@ function WorkspaceShell({
   useEffect(() => {
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const siblings = Array.from(document.body.children).filter(
-      (element): element is HTMLElement =>
-        element instanceof HTMLElement &&
-        element !== root.current &&
-        !['LINK', 'SCRIPT', 'STYLE'].includes(element.tagName),
-    )
-    const originals = siblings.map((element) => element.inert)
-    siblings.forEach((element) => {
-      element.inert = true
-    })
+    const originals = new Map<Element, { inert: string | null; hidden: string | null }>()
+    const isolate = () => {
+      for (const element of document.body.children) {
+        if (
+          element === root.current ||
+          ['LINK', 'SCRIPT', 'STYLE'].includes(element.tagName) ||
+          originals.has(element)
+        )
+          continue
+        originals.set(element, {
+          inert: element.getAttribute('inert'),
+          hidden: element.getAttribute('aria-hidden'),
+        })
+        element.setAttribute('inert', '')
+        element.setAttribute('aria-hidden', 'true')
+      }
+    }
+    isolate()
+    const observer = new MutationObserver(isolate)
+    observer.observe(document.body, { childList: true })
     return () => {
+      observer.disconnect()
       document.body.style.overflow = previous
-      siblings.forEach((element, index) => {
-        element.inert = originals[index]
-      })
+      for (const [element, attributes] of originals) {
+        for (const [name, value] of [
+          ['inert', attributes.inert],
+          ['aria-hidden', attributes.hidden],
+        ] as const) {
+          if (value === null) element.removeAttribute(name)
+          else element.setAttribute(name, value)
+        }
+      }
     }
   }, [])
 
@@ -315,6 +430,9 @@ function WorkspaceShell({
       if (event.data?.type === 'visual-editor:pending') {
         setPending(Boolean(event.data.pending))
         setBusy(Boolean(event.data.busy))
+        setChangeCount(Number(event.data.count) || 0)
+        setBlockCount(Number(event.data.blocks) || 0)
+        setSaveStatus(String(event.data.status || ''))
       }
       if (
         event.data?.type === 'visual-editor:mode' &&
@@ -322,6 +440,35 @@ function WorkspaceShell({
       ) {
         setMode(event.data.mode)
       }
+      if (event.data?.type === 'visual-editor:reveal') {
+        setOpen(true)
+        setView('editor')
+        setPickerOpen(false)
+      }
+      if (event.data?.type === 'visual-editor:home') {
+        setView('home')
+        setPickerOpen(false)
+      }
+      if (event.data?.type === 'visual-editor:escape') {
+        if (view === 'editor') send('visual-editor:back')
+        else if (view === 'annotations' && annotationEditing)
+          send('visual-editor:cancel-annotation')
+        else if (view !== 'home') {
+          setView('home')
+          setPickerOpen(false)
+        } else collapse()
+      }
+      if (event.data?.type === 'visual-editor:collapse') collapse()
+      if (event.data?.type === 'visual-editor:toggle') setOpen((value) => !value)
+      if (event.data?.type === 'visual-editor:annotation-selection') {
+        setAnnotationEditing(Boolean(event.data.selected))
+        if (event.data.selected) {
+          setOpen(true)
+          setView('annotations')
+        }
+      }
+      if (event.data?.type === 'visual-editor:annotations')
+        setAnnotationCount(Number(event.data.count) || 0)
       if (event.data?.type === 'visual-editor:document') {
         setCurrent(event.data.documentInfo)
         setReady(true)
@@ -340,7 +487,7 @@ function WorkspaceShell({
       window.removeEventListener('message', receive)
       window.removeEventListener('beforeunload', beforeUnload)
     }
-  }, [pending, busy, navigate])
+  }, [pending, busy, navigate, collapse, view, annotationEditing, send])
 
   useEffect(() => {
     if (ready) {
@@ -416,228 +563,472 @@ function WorkspaceShell({
     )
   }
   const adminURL = `${adminRoute}/collections/${encodeURIComponent(current.collection)}/${encodeURIComponent(current.id)}`
-  const activeLabel = sourceSlug === current.collection ? currentLabel : 'Choose content'
+  function editorView(destination: 'blocks' | 'revisions' | 'changes' = 'blocks') {
+    changeMode('edit')
+    setView('editor')
+    setPickerOpen(false)
+    send('visual-editor:show', { view: destination })
+  }
+  function contentView(slug = current.collection) {
+    setSourceSlug(slug)
+    setSearch('')
+    setPage(1)
+    setEntries([])
+    setPickerOpen(true)
+    setView('content')
+  }
+  const titles = {
+    home: 'Workspace',
+    content: 'Content',
+    shared: 'Shared content',
+    editor: 'Edit content',
+    annotations: 'Annotations',
+    settings: 'Workspace settings',
+  }
   return createPortal(
     <div className={styles.workspace} data-mode={mode} data-visual-editor-workspace ref={root}>
-      <header className={styles.header}>
-        <div className={styles.navigation}>
-          <select
-            aria-label="Content source"
-            onChange={(event) => {
-              setSourceSlug(event.target.value)
-              setSearch('')
-              setPage(1)
-              setEntries([])
-              setPickerOpen(true)
-            }}
-            value={sourceSlug}
-          >
-            {sources.map((item) => (
-              <option key={item.slug} value={item.slug}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-          <button
-            aria-controls="visual-editor-navigation"
-            aria-expanded={pickerOpen}
-            onClick={() => setPickerOpen(!pickerOpen)}
-            type="button"
-          >
-            {activeLabel || 'Choose content'}
-          </button>
-          {pickerOpen && (
-            <section
-              aria-label="Content navigation"
-              className={styles.picker}
-              id="visual-editor-navigation"
-              role="dialog"
-            >
-              <div className={styles.pickerHeading}>
-                <strong>{source?.label}</strong>
-                <button
-                  aria-label="Close content navigation"
-                  onClick={() => setPickerOpen(false)}
-                  type="button"
-                >
-                  ×
-                </button>
-              </div>
-              {source?.global ? (
-                <a href={`${adminRoute}/globals/${source.slug}`} rel="noreferrer" target="_blank">
-                  Open {source.label} in Payload ↗
-                </a>
-              ) : (
-                <>
-                  <input
-                    aria-label="Search content"
-                    onChange={(event) => {
-                      setSearch(event.target.value)
-                      setPage(1)
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape') {
-                        setPickerOpen(false)
-                      }
-                    }}
-                    placeholder="Search content…"
-                    value={search}
-                  />
-                  {loading ? (
-                    <p role="status">Loading content…</p>
-                  ) : (
-                    <ul>
-                      {entries.map((entry) => (
-                        <li key={entry.id}>
-                          {entry.url ? (
-                            <button
-                              aria-current={current.id === entry.id ? 'page' : undefined}
-                              disabled={busy}
-                              onClick={() => (pending ? setNavigation(entry) : navigate(entry))}
-                              type="button"
-                            >
-                              {entry.label}
-                            </button>
-                          ) : (
-                            <a
-                              href={`${adminRoute}/collections/${source?.slug}/${encodeURIComponent(entry.id)}`}
-                              rel="noreferrer"
-                              target="_blank"
-                            >
-                              {entry.label} ↗
-                            </a>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {!loading && !error && entries.length === 0 && <p>No matching content.</p>}
-                  {error && <p role="alert">{error}</p>}
-                  <div className={styles.pagination}>
-                    <button
-                      disabled={page === 1 || loading}
-                      onClick={() => setPage(page - 1)}
-                      type="button"
-                    >
-                      Previous
-                    </button>
-                    <span>Page {page}</span>
-                    <button
-                      disabled={!hasNext || loading}
-                      onClick={() => setPage(page + 1)}
-                      type="button"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </>
-              )}
-            </section>
-          )}
+      <main className={styles.stage}>
+        <div className={styles.canvas} data-viewport={viewport}>
+          {/* Trusted same-origin preview: the editor portals controls into this document. */}
+          {/* eslint-disable-next-line @eslint-react/dom/no-missing-iframe-sandbox */}
+          <iframe key={src} name={frameName} ref={iframe} src={src} title="Website preview" />
         </div>
-        <span className={styles.draft}>DRAFT PREVIEW</span>
-        <nav aria-label="Editor tools" className={styles.tools}>
-          <button
-            aria-pressed={mode === 'browse'}
-            onClick={() => changeMode('browse')}
-            type="button"
-          >
-            Browse
-          </button>
-          <button aria-pressed={mode === 'edit'} onClick={() => changeMode('edit')} type="button">
-            Edit content
-          </button>
-          <button
-            aria-pressed={mode === 'annotate'}
-            onClick={() => changeMode('annotate')}
-            type="button"
-          >
-            Annotate
-          </button>
-        </nav>
-        <div aria-label="Preview width" className={styles.viewports}>
-          <button
-            aria-label="Desktop preview"
-            aria-pressed={viewport === 'desktop'}
-            onClick={() => setViewport('desktop')}
-            title="Desktop preview"
-            type="button"
-          >
-            <svg
-              aria-hidden="true"
-              fill="none"
-              height="20"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              viewBox="0 0 24 24"
-              width="20"
-            >
-              <rect height="13" rx="1.5" width="18" x="3" y="3" />
-              <path d="M12 16v5M7 21h10" />
-            </svg>
-          </button>
-          <button
-            aria-label="Mobile preview"
-            aria-pressed={viewport === 'mobile'}
-            onClick={() => setViewport('mobile')}
-            title="Mobile preview"
-            type="button"
-          >
-            <svg
-              aria-hidden="true"
-              fill="none"
-              height="20"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              viewBox="0 0 24 24"
-              width="20"
-            >
-              <rect height="20" rx="2" width="12" x="6" y="2" />
-              <path d="M10 19h4" />
-            </svg>
-          </button>
-        </div>
+        {!ready && (
+          <div className={styles.loading} role="status">
+            {loadFailed ? (
+              <>
+                The editor could not connect. <a href={adminURL}>Open in Payload</a>
+              </>
+            ) : (
+              'Opening preview…'
+            )}
+          </div>
+        )}
+      </main>
+      <aside
+        aria-label="Floating visual editor"
+        className={styles.floating}
+        data-open={open}
+        data-side={side}
+        data-size={size}
+        data-reduce-motion={reduceMotion}
+        style={{ '--editor-duration': `${pace}ms` } as React.CSSProperties}
+      >
         <button
-          disabled={!ready}
-          onClick={() => {
-            changeMode('edit')
-            iframe.current?.contentWindow?.postMessage(
-              { type: 'visual-editor:show-revisions' },
-              window.location.origin,
-            )
-          }}
+          aria-label="Open visual editor"
+          aria-expanded={open}
+          aria-controls="visual-editor-shell"
+          className={styles.launcher}
+          ref={launcher}
+          onClick={reveal}
+          tabIndex={open ? -1 : 0}
+          aria-hidden={open || undefined}
           type="button"
         >
-          Revisions
+          <span className={styles.orb}>
+            <OakMark />
+          </span>
+          {pending && <span className={styles.dotBadge} />}
         </button>
-        <div className={styles.actions} id="visual-editor-actions" key={`actions:${src}`} />
-      </header>
-      <div className={styles.body}>
-        <main className={styles.stage}>
-          <div className={styles.canvas} data-viewport={viewport}>
-            {/* Trusted same-origin preview: the editor portals controls into this document. */}
-            {/* eslint-disable-next-line @eslint-react/dom/no-missing-iframe-sandbox */}
-            <iframe key={src} name={frameName} ref={iframe} src={src} title="Website preview" />
-          </div>
-          {!ready && (
-            <div className={styles.loading} role="status">
-              {loadFailed ? (
-                <>
-                  The editor could not connect. <a href={adminURL}>Open in Payload</a>
-                </>
-              ) : (
-                'Opening preview…'
-              )}
+        <div className={styles.shell} id="visual-editor-shell" inert={!open}>
+          <header className={styles.header} hidden={view === 'editor'}>
+            {view === 'home' ? (
+              <span className={styles.identity}>
+                <OakMark />
+              </span>
+            ) : (
+              <button
+                className={styles.iconButton}
+                aria-label="Back"
+                onClick={() => {
+                  if (view === 'annotations' && annotationEditing) {
+                    send('visual-editor:cancel-annotation')
+                  } else {
+                    setView('home')
+                    setPickerOpen(false)
+                  }
+                }}
+                type="button"
+              >
+                <EditorIcon name="back" />
+              </button>
+            )}
+            <div className={styles.headerCopy}>
+              <h2 ref={heading} tabIndex={-1}>
+                {titles[view]}
+              </h2>
+              <small>Oak · Visual editor</small>
             </div>
-          )}
-        </main>
-        <div
-          className={styles.panel}
-          hidden={mode !== 'edit'}
-          id="visual-editor-panel"
-          key={`panel:${src}`}
-        />
-      </div>
+            {view === 'home' && (
+              <button
+                className={styles.iconButton}
+                aria-label="Workspace settings"
+                onClick={() => setView('settings')}
+                type="button"
+              >
+                <EditorIcon name="settings" />
+              </button>
+            )}
+            <button
+              className={styles.iconButton}
+              aria-label="Collapse editor"
+              onClick={collapse}
+              type="button"
+            >
+              <EditorIcon name="minus" />
+            </button>
+          </header>
+          <div
+            className={styles.editorHeading}
+            id="visual-editor-heading"
+            hidden={view !== 'editor'}
+            key={`heading:${src}`}
+          />
+          <div className={styles.views}>
+            {view === 'home' && (
+              <section className={styles.view} key="home">
+                <div className={styles.sectionLabel}>
+                  YOU’RE EDITING <span className={styles.tag}>Draft preview</span>
+                </div>
+                <button className={styles.pageSelect} onClick={() => contentView()} type="button">
+                  <span className={styles.pageThumb}>
+                    <EditorIcon name="page" />
+                  </span>
+                  <span className={styles.grow}>
+                    <strong title={currentLabel}>{currentLabel}</strong>
+                    <small>
+                      {sources.find((item) => item.slug === current.collection)?.label ||
+                        current.collection}{' '}
+                      · {current.locale || 'Default locale'}
+                    </small>
+                  </span>
+                  <EditorIcon name="chevron" />
+                </button>
+                <div className={styles.sectionLabel}>WORKSPACE MODE</div>
+                <nav aria-label="Editor tools" className={styles.segmented}>
+                  {(['browse', 'edit', 'annotate'] as const).map((value) => (
+                    <button
+                      type="button"
+                      key={value}
+                      aria-pressed={mode === value}
+                      onClick={() => {
+                        changeMode(value)
+                        if (value === 'annotate') setView('annotations')
+                      }}
+                    >
+                      <EditorIcon
+                        name={value === 'browse' ? 'eye' : value === 'edit' ? 'edit' : 'comment'}
+                      />
+                      {value === 'browse'
+                        ? 'Browse'
+                        : value === 'edit'
+                          ? 'Edit content'
+                          : 'Annotate'}
+                    </button>
+                  ))}
+                </nav>
+                <div className={styles.cards}>
+                  <button
+                    className={styles.card}
+                    title="Page blocks"
+                    disabled={!ready}
+                    onClick={() => editorView()}
+                    type="button"
+                  >
+                    <EditorIcon name="layers" />
+                    <strong>Page blocks</strong>
+                    <small>{blockCount} sections</small>
+                  </button>
+                  <button
+                    className={styles.card}
+                    title="Edit content"
+                    disabled={!ready}
+                    onClick={() => editorView()}
+                    type="button"
+                  >
+                    <EditorIcon name="edit" />
+                    <strong>Edit content</strong>
+                    <small>Select a field</small>
+                  </button>
+                  <button
+                    className={styles.card}
+                    title="Annotations"
+                    disabled={!ready}
+                    onClick={() => {
+                      changeMode('annotate')
+                      setView('annotations')
+                    }}
+                    type="button"
+                  >
+                    <EditorIcon name="comment" />
+                    <strong>Annotations</strong>
+                    <small>{annotationCount} notes</small>
+                  </button>
+                  <button
+                    className={styles.card}
+                    title="Revisions"
+                    disabled={!ready}
+                    onClick={() => editorView('revisions')}
+                    type="button"
+                  >
+                    <EditorIcon name="history" />
+                    <strong>Revisions</strong>
+                    <small>Changes & saved versions</small>
+                  </button>
+                </div>
+                <div className={styles.sectionLabel}>SHARED CONTENT</div>
+                <button className={styles.row} onClick={() => setView('shared')} type="button">
+                  <span className={styles.tile}>
+                    <EditorIcon name="globe" />
+                  </span>
+                  <span className={styles.grow}>
+                    <strong>Menus & globals</strong>
+                    <small>Navigation, footer, site settings</small>
+                  </span>
+                  <EditorIcon name="chevron" />
+                </button>
+                <div className={styles.previewControls}>
+                  <span>Preview width</span>
+                  <div aria-label="Preview width" className={styles.segmented}>
+                    {(['desktop', 'mobile'] as const).map((value) => (
+                      <button
+                        aria-label={`${value === 'desktop' ? 'Desktop' : 'Mobile'} preview`}
+                        aria-pressed={viewport === value}
+                        key={value}
+                        onClick={() => setViewport(value)}
+                        type="button"
+                      >
+                        <EditorIcon name={value} />
+                        {value === 'desktop' ? 'Desktop' : 'Mobile'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className={styles.hint}>
+                  <EditorIcon name="edit" />
+                  {mode === 'browse'
+                    ? 'Browse the page with editing outlines hidden.'
+                    : mode === 'annotate'
+                      ? 'Click an element on the page to leave feedback.'
+                      : 'Click a heading or image on the page to jump straight into its controls.'}
+                </p>
+              </section>
+            )}
+            {view === 'content' && (
+              <section
+                aria-label="Content navigation"
+                id="visual-editor-navigation"
+                className={styles.view}
+                key="content"
+              >
+                <label className={styles.field}>
+                  Content source
+                  <select
+                    aria-label="Content source"
+                    value={sourceSlug}
+                    onChange={(event) => contentView(event.target.value)}
+                  >
+                    {sources.map((item) => (
+                      <option key={item.slug} value={item.slug}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {source?.global ? (
+                  <a
+                    className={styles.row}
+                    href={`${adminRoute}/globals/${source.slug}`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Open {source.label} in Payload ↗
+                  </a>
+                ) : (
+                  <>
+                    <input
+                      aria-label="Search content"
+                      placeholder="Search content…"
+                      className={styles.search}
+                      value={search}
+                      onChange={(event) => {
+                        setSearch(event.target.value)
+                        setPage(1)
+                      }}
+                    />
+                    {loading ? (
+                      <p role="status">Loading content…</p>
+                    ) : (
+                      <ul className={styles.entries}>
+                        {entries.map((entry) => (
+                          <li key={entry.id}>
+                            {entry.url ? (
+                              <button
+                                className={styles.row}
+                                title={entry.label}
+                                aria-current={current.id === entry.id ? 'page' : undefined}
+                                disabled={busy}
+                                onClick={() => (pending ? setNavigation(entry) : navigate(entry))}
+                                type="button"
+                              >
+                                <EditorIcon name="page" />
+                                <span className={styles.grow}>
+                                  <strong>{entry.label}</strong>
+                                </span>
+                                <EditorIcon name={current.id === entry.id ? 'check' : 'chevron'} />
+                              </button>
+                            ) : (
+                              <a
+                                className={styles.row}
+                                href={`${adminRoute}/collections/${source?.slug}/${encodeURIComponent(entry.id)}`}
+                                rel="noreferrer"
+                                target="_blank"
+                              >
+                                {entry.label} ↗
+                              </a>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {!loading && !error && entries.length === 0 && <p>No matching content.</p>}
+                    {error && <p role="alert">{error}</p>}
+                    <div className={styles.pagination}>
+                      <button
+                        disabled={page === 1 || loading}
+                        onClick={() => setPage(page - 1)}
+                        type="button"
+                      >
+                        Previous
+                      </button>
+                      <span>Page {page}</span>
+                      <button
+                        disabled={!hasNext || loading}
+                        onClick={() => setPage(page + 1)}
+                        type="button"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
+            {view === 'shared' && (
+              <section className={styles.view} key="shared">
+                {sources
+                  .filter((item) => item.slug !== current.collection)
+                  .map((item) => (
+                    <button
+                      className={styles.row}
+                      key={item.slug}
+                      onClick={() => contentView(item.slug)}
+                      type="button"
+                    >
+                      <span className={styles.tile}>
+                        <EditorIcon name="globe" />
+                      </span>
+                      <span className={styles.grow}>
+                        <strong>{item.label}</strong>
+                        <small>{item.global ? 'Global settings' : 'Shared content'}</small>
+                      </span>
+                      <EditorIcon name="chevron" />
+                    </button>
+                  ))}
+              </section>
+            )}
+            {view === 'settings' && (
+              <section className={styles.view} key="settings">
+                <div className={styles.sectionLabel}>PANEL POSITION</div>
+                <div className={styles.segmented}>
+                  {['right', 'left'].map((value) => (
+                    <button
+                      key={value}
+                      aria-pressed={side === value}
+                      onClick={() => setSide(value)}
+                      type="button"
+                    >
+                      {value === 'right' ? 'Right' : 'Left'}
+                    </button>
+                  ))}
+                </div>
+                <div className={styles.sectionLabel}>SIDEBAR SIZE</div>
+                <div className={styles.segmented}>
+                  {['standard', 'large'].map((value) => (
+                    <button
+                      key={value}
+                      aria-pressed={size === value}
+                      onClick={() => setSize(value)}
+                      type="button"
+                    >
+                      {value === 'standard' ? 'Standard' : 'Large'}
+                    </button>
+                  ))}
+                </div>
+                <label className={styles.field}>
+                  Animation pace · {pace}ms
+                  <input
+                    type="range"
+                    min="250"
+                    max="1200"
+                    value={pace}
+                    onChange={(event) => setPace(Number(event.target.value))}
+                  />
+                </label>
+                <label className={styles.toggle}>
+                  Reduce motion
+                  <input
+                    type="checkbox"
+                    checked={reduceMotion}
+                    onChange={(event) => setReduceMotion(event.target.checked)}
+                  />
+                </label>
+                <p className={styles.hint}>
+                  E opens or collapses the editor. Escape goes back one layer.
+                </p>
+                <a className={styles.row} href={adminURL} target="_blank" rel="noreferrer">
+                  Open in Payload ↗
+                </a>
+              </section>
+            )}
+            <div
+              className={styles.panel}
+              hidden={view !== 'editor'}
+              id="visual-editor-panel"
+              key={`panel:${src}`}
+            />
+            <div
+              className={styles.annotations}
+              hidden={view !== 'annotations'}
+              id="visual-editor-annotations"
+              key={`annotations:${src}`}
+            />
+          </div>
+          <footer className={styles.footer}>
+            <div className={styles.changeLine}>
+              <button
+                className={styles.changeStatus}
+                disabled={!ready}
+                onClick={() => editorView('changes')}
+                type="button"
+              >
+                <span data-pending={pending} />
+                {busy
+                  ? 'Saving…'
+                  : changeCount
+                    ? `${changeCount} ${changeCount === 1 ? 'change' : 'changes'} · Unsaved`
+                    : saveStatus || 'No pending changes'}
+              </button>
+              <div
+                className={styles.historyActions}
+                id="visual-editor-history-actions"
+                key={`history:${src}`}
+              />
+            </div>
+            <div className={styles.actions} id="visual-editor-actions" key={`actions:${src}`} />
+          </footer>
+        </div>
+      </aside>
       {navigation && (
         <dialog
           aria-labelledby="navigation-title"

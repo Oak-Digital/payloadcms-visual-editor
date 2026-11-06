@@ -75,3 +75,100 @@ it('separates rearranging from editing and locates the selected block after movi
     vi.unstubAllGlobals()
   }
 })
+
+it('keeps workspace drafts and save actions mounted while hidden and rejects unrelated frame messages', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  document.body.innerHTML =
+    '<main><h1 data-payload-path="title">Original</h1></main><div id="editor"></div><div id="panel"></div><div id="heading"></div><div id="actions"></div><div id="history" data-feedback-toolbar></div>'
+  const root = createRoot(document.getElementById('editor')!)
+  const panel = document.getElementById('panel')!
+  const heading = document.getElementById('heading')!
+  const actions = document.getElementById('actions')!
+  const reveal = vi.fn()
+  const home = vi.fn()
+  const pending = vi.fn()
+  const props = {
+    active: true,
+    adminRoute: '/admin',
+    apiRoute: '/api',
+    documentInfo: { id: 'page', collection: 'pages', hasDrafts: true },
+    panelContainer: panel,
+    headerContainer: heading,
+    actionsContainer: actions,
+    historyContainer: document.getElementById('history')!,
+    onClose: vi.fn(),
+    onHome: home,
+    onReveal: reveal,
+    onPendingChange: pending,
+  }
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response(
+      JSON.stringify({ fields: { title: { type: 'text', value: 'Original' } }, orders: {} }),
+    ),
+  )
+  const message = async (
+    data: Record<string, unknown>,
+    origin = window.location.origin,
+    source: MessageEventSource | null = window.parent,
+  ) => {
+    await act(async () =>
+      window.dispatchEvent(new MessageEvent('message', { data, origin, source })),
+    )
+  }
+  try {
+    await act(async () => root.render(createElement(ArrangeEditor, props)))
+    await act(async () => (document.querySelector('h1') as HTMLElement).click())
+    expect(reveal).toHaveBeenCalled()
+    const input = panel.querySelector('textarea')!
+    expect(input.value).toBe('Original')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+        input,
+        'Pending draft',
+      )
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(document.querySelector('h1')?.textContent).toBe('Pending draft')
+    expect(actions.querySelector('button')?.disabled).toBe(false)
+    await message({ type: 'visual-editor:show', view: 'changes' }, 'https://unrelated.example')
+    expect(panel.querySelector('textarea')).toBe(input)
+    await message({ type: 'visual-editor:show', view: 'changes' }, window.location.origin, null)
+    expect(panel.querySelector('textarea')).toBe(input)
+    // Browsing and collapsing hide the host, without unmounting the field or action portals.
+    await act(async () => {
+      panel.hidden = true
+      root.render(createElement(ArrangeEditor, { ...props, active: false }))
+    })
+    expect(panel.querySelector('textarea')).toBe(input)
+    expect(input.value).toBe('Pending draft')
+    expect(actions.querySelector('button')?.disabled).toBe(false)
+    await act(async () => {
+      panel.hidden = false
+      root.render(createElement(ArrangeEditor, props))
+    })
+    expect(input.value).toBe('Pending draft')
+    await act(async () =>
+      (document.querySelector('[aria-label="Undo"]') as HTMLButtonElement).click(),
+    )
+    expect(input.value).toBe('Original')
+    expect(document.querySelector('h1')?.textContent).toBe('Original')
+    expect(actions.querySelector('button')?.disabled).toBe(true)
+    await act(async () => root.render(createElement(ArrangeEditor, { ...props, active: false })))
+    await act(async () => root.render(createElement(ArrangeEditor, props)))
+    await act(async () =>
+      (document.querySelector('[aria-label="Redo"]') as HTMLButtonElement).click(),
+    )
+    expect(input.value).toBe('Pending draft')
+    expect(actions.querySelector('button')?.disabled).toBe(false)
+    await message({ type: 'visual-editor:show', view: 'changes' })
+    expect(panel.querySelector('details')?.open).toBe(true)
+    expect(panel.textContent).toContain('Pending draft')
+    await message({ type: 'visual-editor:back' })
+    expect(home).toHaveBeenCalled()
+    expect(pending).toHaveBeenLastCalledWith(true, false, 1, '', 0)
+  } finally {
+    await act(async () => root.unmount())
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+  }
+})

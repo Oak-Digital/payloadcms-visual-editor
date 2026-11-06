@@ -106,3 +106,51 @@
   border: 1px solid #777;
   margin: 12px 0;
 }
+
+.embedded {
+  position: static;
+  margin: 0;
+  width: 100%;
+  max-height: none;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  button {
+    background: #242424;
+    color: #eee;
+    border-color: #383838;
+    border-radius: 9px;
+  }
+  input {
+    background: #212121;
+    color: #eee;
+    border-color: #383838;
+    border-radius: 9px;
+  }
+  [role='alert'] {
+    color: #e5a698;
+  }
+  :focus-visible {
+    outline-color: #b6b6b6;
+  }
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .grid button {
+    padding: 6px;
+    border-radius: 11px;
+  }
+  .grid button[aria-pressed='true'] {
+    outline: 1px solid #aaa;
+  }
+  .grid span {
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

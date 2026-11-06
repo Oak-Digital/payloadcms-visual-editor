@@ -50,6 +50,7 @@ import {
   updateAnnotation as updateAnnotationOnServer,
 } from '../../utils/sync.js'
 import { AnnotationPopupCSS } from '../annotation-popup-css/index.js'
+import { AnnotationEditor } from '../workspace/annotation-editor.js'
 import { ArrangeEditor } from '../arrange-editor/index.js'
 import {
   IconCopyAnimated,
@@ -350,7 +351,16 @@ export type VisualEditorToolbarProps = {
   workspace?: {
     actionsContainer: HTMLElement
     onModeChange: (mode: 'annotate' | 'browse' | 'edit') => void
-    onPendingChange: (pending: boolean, busy: boolean) => void
+    onPendingChange: (
+      pending: boolean,
+      busy: boolean,
+      count: number,
+      status: string,
+      blocks: number,
+    ) => void
+    historyContainer: HTMLElement
+    headerContainer: HTMLElement
+    annotationContainer: HTMLElement
     panelContainer: HTMLElement
   }
 }
@@ -1892,7 +1902,11 @@ export function VisualEditorToolbar({
 
   // Copy output
   const copyOutput = useCallback(async () => {
-    const output: string = ''
+    const output = generateOutput(
+      annotations,
+      window.location.pathname + window.location.search,
+      settings.outputDetail,
+    )
 
     if (copyToClipboard) {
       try {
@@ -1911,7 +1925,14 @@ export function VisualEditorToolbar({
     if (settings.autoClearAfterCopy) {
       originalSetTimeout(() => clearAll(), 500)
     }
-  }, [settings.autoClearAfterCopy, clearAll, copyToClipboard, onCopy])
+  }, [
+    annotations,
+    settings.outputDetail,
+    settings.autoClearAfterCopy,
+    clearAll,
+    copyToClipboard,
+    onCopy,
+  ])
 
   // Send to webhook
   const sendToWebhook = useCallback(async () => {
@@ -2195,6 +2216,25 @@ export function VisualEditorToolbar({
       const isTyping =
         target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
 
+      if (
+        workspace &&
+        !pendingAnnotation &&
+        (e.key === 'Escape' ||
+          (!isTyping && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'e'))
+      ) {
+        e.preventDefault()
+        window.parent.postMessage(
+          { type: e.key === 'Escape' ? 'visual-editor:escape' : 'visual-editor:toggle' },
+          window.location.origin,
+        )
+        return
+      }
+      if (workspace && e.key === 'Escape' && pendingAnnotation) {
+        e.preventDefault()
+        if (pendingAnnotation.state === 'edit') cancelEditAnnotation()
+        else cancelAnnotation()
+        return
+      }
       if (e.key === 'Escape') {
         // Reset mode first
         setMode('arrange')
@@ -2276,6 +2316,9 @@ export function VisualEditorToolbar({
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [
+    workspace,
+    cancelAnnotation,
+    cancelEditAnnotation,
     isActive,
     deactivate,
     pendingAnnotation,
@@ -2316,10 +2359,41 @@ export function VisualEditorToolbar({
     workspace?.onModeChange(!isActive ? 'browse' : isArrangeMode ? 'edit' : 'annotate')
   }, [isActive, isArrangeMode, workspace])
 
+  useEffect(() => {
+    if (workspace)
+      window.parent.postMessage(
+        {
+          type: 'visual-editor:annotations',
+          count: annotations.filter((item) => !item.payloadCMS.path).length,
+        },
+        window.location.origin,
+      )
+  }, [workspace, annotations])
+
+  useEffect(() => {
+    if (!workspace) return
+    window.parent.postMessage(
+      { type: 'visual-editor:annotation-selection', selected: Boolean(pendingAnnotation) },
+      window.location.origin,
+    )
+    const receive = (event: MessageEvent) => {
+      if (
+        event.origin === window.location.origin &&
+        event.source === window.parent &&
+        event.data?.type === 'visual-editor:cancel-annotation'
+      ) {
+        if (pendingAnnotation?.state === 'edit') cancelEditAnnotation()
+        else cancelAnnotation()
+      }
+    }
+    window.addEventListener('message', receive)
+    return () => window.removeEventListener('message', receive)
+  }, [workspace, pendingAnnotation?.id, cancelAnnotation, cancelEditAnnotation])
+
   if (!mounted) {
     return null
   }
-  if (isToolbarHidden) {
+  if (isToolbarHidden && !workspace) {
     return null
   }
 
@@ -2389,7 +2463,25 @@ export function VisualEditorToolbar({
         adminRoute={adminRoute}
         apiRoute={apiRoute}
         documentInfo={documentInfo}
-        onClose={() => setIsActive(false)}
+        onClose={() =>
+          workspace
+            ? window.parent.postMessage({ type: 'visual-editor:collapse' }, window.location.origin)
+            : setIsActive(false)
+        }
+        onReveal={
+          workspace
+            ? () =>
+                window.parent.postMessage({ type: 'visual-editor:reveal' }, window.location.origin)
+            : undefined
+        }
+        onHome={
+          workspace
+            ? () =>
+                window.parent.postMessage({ type: 'visual-editor:home' }, window.location.origin)
+            : undefined
+        }
+        headerContainer={workspace?.headerContainer}
+        historyContainer={workspace?.historyContainer}
         onPendingChange={workspace?.onPendingChange}
         panelContainer={workspace?.panelContainer}
       />
@@ -2460,13 +2552,95 @@ export function VisualEditorToolbar({
           </button>
         </div>
       )}
+      {workspace &&
+        createPortal(
+          <section aria-label="Page annotations" data-feedback-toolbar>
+            {pendingAnnotation ? (
+              <AnnotationEditor
+                key={pendingAnnotation.id}
+                comment={pendingAnnotation.comment}
+                element={pendingAnnotation.element}
+                editing={pendingAnnotation.state === 'edit'}
+                onCancel={
+                  pendingAnnotation.state === 'edit' ? cancelEditAnnotation : cancelAnnotation
+                }
+                onSubmit={pendingAnnotation.state === 'edit' ? updateAnnotation : addAnnotation}
+              />
+            ) : (
+              <>
+                <p>Select an element on the preview to leave feedback.</p>
+                <nav aria-label="Annotation actions">
+                  <button
+                    type="button"
+                    disabled={!hasAnnotations}
+                    onClick={() => setShowMarkers(!showMarkers)}
+                  >
+                    {showMarkers ? 'Hide markers' : 'Show markers'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!hasAnnotations}
+                    onClick={() => void copyOutput()}
+                  >
+                    {copied ? 'Copied' : 'Copy feedback'}
+                  </button>
+                  <button type="button" disabled={!hasAnnotations} onClick={clearAll}>
+                    Clear all
+                  </button>
+                  <button type="button" onClick={() => setShowSettings(!showSettings)}>
+                    Annotation settings
+                  </button>
+                </nav>
+                {visibleAnnotations
+                  .filter((item) => !item.payloadCMS.path)
+                  .map((annotation) => (
+                    <article key={annotation.id}>
+                      <header>{annotation.element}</header>
+                      <p>{annotation.comment}</p>
+                      <nav>
+                        <button type="button" onClick={() => startEditAnnotation(annotation)}>
+                          Edit note
+                        </button>
+                        <button type="button" onClick={() => deleteAnnotation(annotation.id)}>
+                          Delete note
+                        </button>
+                      </nav>
+                    </article>
+                  ))}
+                {!hasAnnotations && <p>No annotations yet.</p>}
+                {showSettings && (
+                  <SettingsPanel
+                    connectionStatus={connectionStatus}
+                    endpoint={endpoint}
+                    isDarkMode
+                    isDevMode={isDevMode}
+                    isVisible
+                    onHideToolbar={() =>
+                      window.parent.postMessage(
+                        { type: 'visual-editor:collapse' },
+                        window.location.origin,
+                      )
+                    }
+                    onSettingsChange={(patch) => setSettings((s) => ({ ...s, ...patch }))}
+                    onSettingsPageChange={setSettingsPage}
+                    onToggleTheme={toggleTheme}
+                    settings={settings}
+                    settingsPage={settingsPage}
+                    toolbarNearBottom={false}
+                  />
+                )}
+              </>
+            )}
+          </section>,
+          workspace.annotationContainer,
+        )}
       {/* Toolbar */}
       <div
         className={`${styles.toolbar} ${userClassName ? ` ${userClassName}` : ''}`}
         data-agentation-toolbar
         data-feedback-toolbar
         style={{
-          display: workspace && (!isActive || isArrangeMode) ? 'none' : undefined,
+          display: workspace ? 'none' : undefined,
           ...(toolbarPosition
             ? {
                 bottom: 'auto',
@@ -2976,7 +3150,7 @@ export function VisualEditorToolbar({
           )}
 
           {/* Pending annotation marker + popup */}
-          {pendingAnnotation?.state === 'pending' && (
+          {!workspace && pendingAnnotation?.state === 'pending' && (
             <>
               {/* Show element/area outline while adding annotation */}
               {pendingAnnotation.multiSelectElements?.length
@@ -3098,7 +3272,7 @@ export function VisualEditorToolbar({
           )}
 
           {/* Edit annotation popup */}
-          {pendingAnnotation?.state === 'edit' && (
+          {!workspace && pendingAnnotation?.state === 'edit' && (
             <>
               {/* Show element/area outline while editing */}
               {pendingAnnotation.elementBoundingBoxes?.length
