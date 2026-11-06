@@ -246,6 +246,7 @@ function WorkspaceShell({
     'home' | 'content' | 'shared' | 'editor' | 'annotations' | 'settings'
   >('home')
   const [side, setSide] = useState('right')
+  const [dotPosition, setDotPosition] = useState('top-right')
   const [size, setSize] = useState('standard')
   const [pace, setPace] = useState(620)
   const [reduceMotion, setReduceMotion] = useState(false)
@@ -585,6 +586,13 @@ function WorkspaceShell({
     annotations: 'Annotations',
     settings: 'Workspace settings',
   }
+  const footerStatus =
+    saveStatus ||
+    (busy
+      ? 'Loading content…'
+      : changeCount
+        ? `${changeCount} ${changeCount === 1 ? 'change' : 'changes'} · Unsaved`
+        : 'No pending changes')
   return createPortal(
     <div className={styles.workspace} data-mode={mode} data-visual-editor-workspace ref={root}>
       <main className={styles.stage}>
@@ -608,6 +616,7 @@ function WorkspaceShell({
       <aside
         aria-label="Floating visual editor"
         className={styles.floating}
+        data-dot-position={dotPosition}
         data-open={open}
         data-side={side}
         data-size={size}
@@ -939,6 +948,25 @@ function WorkspaceShell({
             )}
             {view === 'settings' && (
               <section className={styles.view} key="settings">
+                <div className={styles.sectionLabel}>DOT PLACEMENT</div>
+                <div className={styles.segmented}>
+                  {(
+                    [
+                      ['top-right', 'Top right'],
+                      ['right-bottom', 'Right bottom'],
+                      ['center-bottom', 'Center bottom'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      aria-pressed={dotPosition === value}
+                      key={value}
+                      onClick={() => setDotPosition(value)}
+                      type="button"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <div className={styles.sectionLabel}>PANEL POSITION</div>
                 <div className={styles.segmented}>
                   {['right', 'left'].map((value) => (
@@ -1008,16 +1036,15 @@ function WorkspaceShell({
             <div className={styles.changeLine}>
               <button
                 className={styles.changeStatus}
+                aria-label={footerStatus}
                 disabled={!ready}
                 onClick={() => editorView('changes')}
                 type="button"
               >
                 <span data-pending={pending} />
-                {busy
-                  ? 'Saving…'
-                  : changeCount
-                    ? `${changeCount} ${changeCount === 1 ? 'change' : 'changes'} · Unsaved`
-                    : saveStatus || 'No pending changes'}
+                <span role="status" aria-live="polite" aria-atomic="true">
+                  {footerStatus}
+                </span>
               </button>
               <div
                 className={styles.historyActions}

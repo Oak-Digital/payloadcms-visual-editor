@@ -111,6 +111,7 @@
     0 14px 40px #0008,
     0 0 38px #65526d12;
   transition:
+    top var(--editor-duration) cubic-bezier(0.22, 1, 0.36, 1),
     width var(--editor-duration) cubic-bezier(0.22, 1, 0.36, 1),
     height var(--editor-duration) cubic-bezier(0.22, 1, 0.36, 1),
     border-radius var(--editor-duration) cubic-bezier(0.22, 1, 0.36, 1),
@@ -128,6 +129,19 @@
   &[data-side='left'] {
     right: auto;
     left: 24px;
+  }
+  &[data-open='false'][data-dot-position='top-right'],
+  &[data-open='false'][data-dot-position='right-bottom'] {
+    right: 24px;
+    left: auto;
+  }
+  &[data-open='false'][data-dot-position='right-bottom'],
+  &[data-open='false'][data-dot-position='center-bottom'] {
+    top: calc(100dvh - 80px);
+  }
+  &[data-open='false'][data-dot-position='center-bottom'] {
+    right: auto;
+    left: calc(50% - 28px);
   }
   &[data-size='large'] {
     --editor-width: 440px;
@@ -495,7 +509,7 @@
   margin-bottom: 14px;
   text-align: left;
 }
-.changeStatus > span {
+.changeStatus > span[data-pending] {
   width: 5px;
   height: 5px;
   background: #b2b99d;
@@ -717,6 +731,19 @@
   .floating[data-side='left'] {
     left: 16px;
   }
+  .floating[data-open='false'][data-dot-position='top-right'],
+  .floating[data-open='false'][data-dot-position='right-bottom'] {
+    right: 16px;
+    left: auto;
+  }
+  .floating[data-open='false'][data-dot-position='right-bottom'],
+  .floating[data-open='false'][data-dot-position='center-bottom'] {
+    top: calc(100dvh - 72px);
+  }
+  .floating[data-open='false'][data-dot-position='center-bottom'] {
+    right: auto;
+    left: calc(50% - 28px);
+  }
   .floating[data-open='true'] {
     height: min(820px, calc(100dvh - 32px));
     border-radius: 22px;
@@ -751,11 +778,20 @@
 }
 .changeLine .changeStatus {
   margin-bottom: 0;
+  min-width: 0;
+  max-width: calc(100% - 64px);
+  flex-shrink: 0;
+}
+.changeStatus > span[role='status'] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .historyActions {
   display: flex;
   gap: 2px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
 }
 .historyActions button {
   display: grid;
