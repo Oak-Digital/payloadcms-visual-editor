@@ -1,5 +1,9 @@
 export type ArrangeChange = { path: string; value: unknown }
-export type ArrangeOrder = { ids: string[]; path: string }
+export type ArrangeOrder = {
+  ids: string[]
+  path: string
+  additions?: { id: string; blockType: string }[]
+}
 export type ArrayRow = { id: string } | { relationship: string }
 export type ArrangeArrayField = {
   type: 'array'
@@ -47,6 +51,8 @@ export function arrangeArrayRows(
 export type ArrangeSnapshot = {
   fields: Record<string, ArrangeField>
   orders: Record<string, { id: string; label: string }[]>
+  blockTypes?: Record<string, { slug: string; label: string }[]>
+  blockLimits?: Record<string, { min: number; max?: number }>
   revision: string
 }
 

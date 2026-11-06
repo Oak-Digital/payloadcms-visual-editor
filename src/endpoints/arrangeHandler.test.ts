@@ -101,6 +101,92 @@ function fixture() {
 }
 
 describe('arrange editor batch', () => {
+  it('adds and removes allowed blocks while preserving retained row data', async () => {
+    const { call, payload } = fixture()
+    const { revision, blockTypes } = await (await call()).json()
+    expect(blockTypes.layout).toEqual([{ slug: 'section', label: 'section' }])
+    const response = await call({
+      action: 'save',
+      revision,
+      changes: [],
+      orders: [
+        {
+          path: 'layout',
+          ids: ['b', '0123456789abcdef01234567'],
+          additions: [{ id: '0123456789abcdef01234567', blockType: 'section' }],
+        },
+      ],
+    })
+    expect(response.status).toBe(200)
+    const rows = payload.update.mock.calls[0][0].data.layout
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ id: 'b', heading: 'Second' })
+    expect(rows[1]).toMatchObject({ id: '0123456789abcdef01234567', blockType: 'section' })
+  })
+
+  it('rejects unknown block types and IDs', async () => {
+    const { call, payload } = fixture()
+    const { revision } = await (await call()).json()
+    const response = await call({
+      action: 'save',
+      revision,
+      changes: [],
+      orders: [
+        {
+          path: 'layout',
+          ids: ['a', 'b', '0123456789abcdef01234567'],
+          additions: [{ id: '0123456789abcdef01234567', blockType: 'unknown' }],
+        },
+      ],
+    })
+    expect(response.status).toBe(400)
+    expect(payload.update).not.toHaveBeenCalled()
+  })
+
+  it('enforces block row limits', async () => {
+    const { call, block, payload } = fixture()
+    block.minRows = 2
+    block.maxRows = 2
+    const { revision, blockLimits } = await (await call()).json()
+    expect(blockLimits.layout).toEqual({ min: 2, max: 2 })
+    const remove = await call({
+      action: 'save',
+      revision,
+      changes: [],
+      orders: [{ path: 'layout', ids: ['a'] }],
+    })
+    expect(remove.status).toBe(400)
+    const add = await call({
+      action: 'save',
+      revision,
+      changes: [],
+      orders: [
+        {
+          path: 'layout',
+          ids: ['a', 'b', '0123456789abcdef01234567'],
+          additions: [{ id: '0123456789abcdef01234567', blockType: 'section' }],
+        },
+      ],
+    })
+    expect(add.status).toBe(400)
+    expect(payload.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects removing a row with protected content', async () => {
+    const { call, payload, doc } = fixture()
+    const { revision } = await (await call()).json()
+    const visible = structuredClone(doc)
+    delete (visible.layout[0] as Record<string, unknown>).protectedSibling
+    payload.findByID.mockResolvedValueOnce(visible).mockResolvedValueOnce(structuredClone(doc))
+    const response = await call({
+      action: 'save',
+      revision,
+      changes: [],
+      orders: [{ path: 'layout', ids: ['b'] }],
+    })
+    expect(response.status).toBe(400)
+    expect(payload.update).not.toHaveBeenCalled()
+  })
   it('saves text, rich text and images before reordering, preserving siblings in one update', async () => {
     const { call, payload } = fixture()
     const snapshot = await (await call()).json()
@@ -150,19 +236,20 @@ describe('arrange editor batch', () => {
     expect((await call({ action: 'publish', revision, changes: [], orders: [] })).status).toBe(409)
     expect(payload.update).not.toHaveBeenCalled()
   })
-  it.each([['a'], ['a', 'a'], ['a', 'unknown'], ['a', 'b', 'extra']])(
-    'rejects invalid block permutations %j',
-    async (...ids) => {
-      const { call, payload } = fixture()
-      const { revision } = await (await call()).json()
-      expect(
-        (await call({ action: 'save', revision, changes: [], orders: [{ path: 'layout', ids }] }))
-          .status,
-      ).toBe(400)
-      expect(payload.update).not.toHaveBeenCalled()
-      expect(killTransaction).toHaveBeenCalled()
-    },
-  )
+  it.each([
+    ['a', 'a'],
+    ['a', 'unknown'],
+    ['a', 'b', 'extra'],
+  ])('rejects invalid block permutations %j', async (...ids) => {
+    const { call, payload } = fixture()
+    const { revision } = await (await call()).json()
+    expect(
+      (await call({ action: 'save', revision, changes: [], orders: [{ path: 'layout', ids }] }))
+        .status,
+    ).toBe(400)
+    expect(payload.update).not.toHaveBeenCalled()
+    expect(killTransaction).toHaveBeenCalled()
+  })
   it('enforces authentication, allowlists, locale and safe paths', async () => {
     const { call } = fixture()
     expect((await call({}, null)).status).toBe(401)

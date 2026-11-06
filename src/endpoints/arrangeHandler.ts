@@ -7,6 +7,7 @@ import {
   killTransaction,
   type PayloadHandler,
   type TypedLocale,
+  type Field,
 } from 'payload'
 
 import {
@@ -21,6 +22,35 @@ import {
 import { assertFieldAccess, assertSupportedRichText, resolveField } from '../utils/rich-text.js'
 import { buildSourceMap } from '../utils/source-map.js'
 import { uploadTargets, validateMedia } from '../utils/upload-fields.js'
+
+function defaults(fields: Field[]): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const field of fields) {
+    if (
+      field.type === 'row' ||
+      field.type === 'collapsible' ||
+      (field.type === 'group' && !('name' in field))
+    )
+      Object.assign(result, defaults(field.fields))
+    else if (field.type === 'tabs') {
+      for (const tab of field.tabs) {
+        if ('name' in tab && tab.name) result[tab.name] = defaults(tab.fields)
+        else Object.assign(result, defaults(tab.fields))
+      }
+    } else if ('name' in field) {
+      if (
+        'defaultValue' in field &&
+        field.defaultValue !== undefined &&
+        typeof field.defaultValue !== 'function'
+      )
+        result[field.name] = structuredClone(field.defaultValue)
+      else if (field.type === 'group') result[field.name] = defaults(field.fields)
+      else if (field.type === 'array' || field.type === 'blocks') result[field.name] = []
+      else if (field.type === 'checkbox') result[field.name] = false
+    }
+  }
+  return result
+}
 
 export const createArrangeHandler =
   (collections: Partial<Record<CollectionSlug, true>>): PayloadHandler =>
@@ -89,7 +119,13 @@ export const createArrangeHandler =
       }
       const revision = createHash('sha256').update(JSON.stringify(latest)).digest('hex')
       const sourceMap = buildSourceMap(collection.fields, visible)
-      const snapshot: ArrangeSnapshot = { fields: {}, orders: {}, revision }
+      const snapshot: ArrangeSnapshot = {
+        fields: {},
+        orders: {},
+        blockTypes: {},
+        blockLimits: {},
+        revision,
+      }
       for (const path of body.paths as string[]) {
         const resolved = resolveField(collection.fields, visible, path)
         if (!resolved || (!Object.hasOwn(sourceMap, path) && resolved.field.type !== 'array')) {
@@ -183,6 +219,14 @@ export const createArrangeHandler =
             id: String(row.id),
             label: String(row.blockName || row.blockType),
           }))
+          snapshot.blockTypes![path] = resolved.field.blocks.map((block) => ({
+            slug: block.slug,
+            label: typeof block.labels?.singular === 'string' ? block.labels.singular : block.slug,
+          }))
+          snapshot.blockLimits![path] = {
+            min: resolved.field.minRows ?? (resolved.field.required ? 1 : 0),
+            max: resolved.field.maxRows,
+          }
         } catch {
           /* Protected block fields cannot be reordered. */
         }
@@ -212,7 +256,15 @@ export const createArrangeHandler =
             !order ||
             !safePath(order.path) ||
             !Array.isArray(order.ids) ||
-            order.ids.some((id) => typeof id !== 'string'),
+            order.ids.some((id) => typeof id !== 'string') ||
+            (order.additions !== undefined &&
+              (!Array.isArray(order.additions) ||
+                order.additions.some(
+                  (addition) =>
+                    !addition ||
+                    typeof addition.id !== 'string' ||
+                    typeof addition.blockType !== 'string',
+                ))),
         )
       ) {
         throw new Error('Invalid pending changes')
@@ -314,7 +366,57 @@ export const createArrangeHandler =
           throw new Error('Block field is unavailable')
         }
         const resolved = resolveField(collection.fields, proposed, order.path)!
-        setPath(proposed, order.path, reorderRows(resolved.value, order.ids))
+        if (!resolved || resolved.field.type !== 'blocks' || !Array.isArray(resolved.value))
+          throw new Error('Block field is unavailable')
+        const field = resolved.field
+        const rows = resolved.value as Record<string, unknown>[]
+        const additions = order.additions ?? []
+        const existing = new Map(rows.map((row) => [String(row.id), row]))
+        const visibleRows = resolveField(collection.fields, visible, order.path)?.value
+        const originalRows = resolveField(collection.fields, complete, order.path)?.value
+        if (
+          !Array.isArray(visibleRows) ||
+          !Array.isArray(originalRows) ||
+          !isDeepStrictEqual(
+            rows.map((row) => String(row.id)),
+            visibleRows.map((row) => String(row.id)),
+          ) ||
+          rows.some(
+            (row, index) =>
+              !order.ids.includes(String(row.id)) &&
+              !isDeepStrictEqual(originalRows[index], visibleRows[index]),
+          )
+        )
+          throw new Error('Block contains protected content')
+        const added = new Map<string, Record<string, unknown>>()
+        for (const addition of additions) {
+          if (
+            !/^[a-f0-9]{24}$/.test(addition.id) ||
+            existing.has(addition.id) ||
+            added.has(addition.id)
+          )
+            throw new Error('Invalid new block')
+          const block = field.blocks.find((candidate) => candidate.slug === addition.blockType)
+          if (!block) throw new Error('Invalid block type')
+          added.set(addition.id, {
+            ...defaults(block.fields),
+            id: addition.id,
+            blockType: block.slug,
+          })
+        }
+        if (
+          new Set(order.ids).size !== order.ids.length ||
+          order.ids.some((id) => !existing.has(id) && !added.has(id)) ||
+          additions.some((addition) => !order.ids.includes(addition.id)) ||
+          order.ids.length < (field.minRows ?? (field.required ? 1 : 0)) ||
+          (field.maxRows !== undefined && order.ids.length > field.maxRows)
+        )
+          throw new Error('Invalid block layout')
+        setPath(
+          proposed,
+          order.path,
+          order.ids.map((id) => existing.get(id) ?? added.get(id)!),
+        )
         await assertFieldAccess(
           resolveField(collection.fields, proposed, order.path)!,
           complete,

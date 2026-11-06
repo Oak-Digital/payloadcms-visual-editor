@@ -69,9 +69,11 @@ Choose the blocks icon in the toolbar to open a persistent editing panel. Select
 
 The Blocks list defaults to Edit mode: selecting a block scrolls its page section into view and opens its controls. Rearrange mode shows drag handles and move up/down buttons instead. Switching modes retains pending edits and ordering changes. Hosts opt in by wrapping a block list with `data-payload-block-list="layout"` and `data-payload-document`, then wrapping each direct child with `data-payload-block-id` containing its stable Payload row ID. The list must render all rows in source order and use a column flex/grid layout for the pending order preview. Public pages do not need these attributes or wrappers.
 
+Edit mode also opens a layered picker for adding allowed block types. A selected block can be removed within the schema's row limits. Both changes stay pending with the other edits. Removed blocks hide in the canvas; added blocks render and become editable after saving the draft.
+
 **Save draft** saves pending content and order changes together and refreshes the preview without navigation. **Publish all** publishes the changed documents' full drafts, including drafts saved through this panel. Closing the panel retains pending changes in memory; leaving or reloading warns before discarding them. Pending work is not persisted across browser reloads.
 
-The `/payload-visual-editor/arrange` endpoint validates collection/field access, upload restrictions, Lexical round trips, and exact block-ID permutations. Each document uses a version check and transaction; field edits apply before block reordering. A stale snapshot is rejected without saving. Multiple owning documents save sequentially, not atomically; partial failures report completed documents and require reloading before further edits.
+The `/payload-visual-editor/arrange` endpoint validates collection/field access, upload restrictions, Lexical round trips, retained block IDs, allowed new block types, and row limits. Each document uses a version check and transaction; field edits apply before block changes. A stale snapshot is rejected without saving. Multiple owning documents save sequentially, not atomically; partial failures report completed documents and require reloading before further edits.
 
 ## Workspace
 

@@ -29,6 +29,8 @@ it('separates rearranging from editing and locates the selected block after movi
             { id: 'b', label: 'Second' },
           ],
         },
+        blockTypes: { layout: [{ slug: 'section', label: 'Section' }] },
+        blockLimits: { layout: { min: 0 } },
       }),
     ),
   )
@@ -68,6 +70,18 @@ it('separates rearranging from editing and locates the selected block after movi
     expect(scroll).toHaveBeenCalledWith({ behavior: 'instant', block: 'start' })
     await click('Back')
     expect(container.querySelector('ol button')?.textContent).toContain('Second')
+    await click('Edit Second')
+    await click('Remove block')
+    expect(container.querySelectorAll('ol li')).toHaveLength(1)
+    expect(
+      (document.querySelector('[data-payload-block-id="b"]') as HTMLElement).style.display,
+    ).toBe('none')
+    await click('Add block')
+    expect(container.querySelector('[aria-label="Add block"]')).toBeTruthy()
+    await click('Add Section')
+    expect(container.textContent).toContain('Save draft to edit this block.')
+    await click('Remove block')
+    expect(container.querySelectorAll('ol li')).toHaveLength(1)
   } finally {
     await act(async () => root.unmount())
     document.body.innerHTML = ''
