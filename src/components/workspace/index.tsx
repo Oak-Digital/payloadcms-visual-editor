@@ -280,7 +280,6 @@ function WorkspaceShell({
   >('home')
   const [dotPosition, setDotPosition] = useState('top-right')
   const [size, setSize] = useState('standard')
-  const [pace, setPace] = useState(620)
   const [reduceMotion, setReduceMotion] = useState(false)
   const [changeCount, setChangeCount] = useState(0)
   const [blockCount, setBlockCount] = useState(0)
@@ -674,7 +673,6 @@ function WorkspaceShell({
         data-open={open}
         data-size={size}
         data-reduce-motion={reduceMotion}
-        style={{ '--editor-duration': `${pace}ms` } as React.CSSProperties}
       >
         <button
           aria-label="Open visual editor"
@@ -1034,7 +1032,6 @@ function WorkspaceShell({
                     [
                       ['top-right', 'Top right'],
                       ['right-bottom', 'Right bottom'],
-                      ['center-bottom', 'Center bottom'],
                     ] as const
                   ).map(([value, label]) => (
                     <button
@@ -1060,16 +1057,6 @@ function WorkspaceShell({
                     </button>
                   ))}
                 </div>
-                <label className={styles.field}>
-                  Animation pace · {pace}ms
-                  <input
-                    type="range"
-                    min="250"
-                    max="1200"
-                    value={pace}
-                    onChange={(event) => setPace(Number(event.target.value))}
-                  />
-                </label>
                 <label className={styles.toggle}>
                   Reduce motion
                   <input
