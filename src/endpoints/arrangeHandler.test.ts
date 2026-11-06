@@ -101,6 +101,26 @@ function fixture() {
 }
 
 describe('arrange editor batch', () => {
+  it.each([undefined, []])('adds the first block to an empty layout (%j)', async (layout) => {
+    const { call, doc, payload } = fixture()
+    Object.assign(doc, { layout })
+    const snapshot = await (await call({ paths: [] })).json()
+    expect(snapshot.orders.layout).toEqual([])
+    const response = await call({
+      action: 'save',
+      revision: snapshot.revision,
+      changes: [],
+      orders: [
+        {
+          path: 'layout',
+          ids: ['0123456789abcdef01234567'],
+          additions: [{ id: '0123456789abcdef01234567', blockType: 'section' }],
+        },
+      ],
+    })
+    expect(response.status).toBe(200)
+    expect(payload.update.mock.calls[0][0].data.layout).toHaveLength(1)
+  })
   it('adds and removes allowed blocks while preserving retained row data', async () => {
     const { call, payload } = fixture()
     const { revision, blockTypes } = await (await call()).json()

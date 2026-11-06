@@ -215,12 +215,12 @@ export const createArrangeHandler =
       }
       for (const path of body.orderPaths as string[]) {
         const resolved = resolveField(collection.fields, visible, path)
-        if (!resolved || resolved.field.type !== 'blocks' || !Array.isArray(resolved.value)) {
+        if (!resolved || resolved.field.type !== 'blocks' || !Array.isArray(resolved.value ?? [])) {
           continue
         }
         try {
           await assertFieldAccess(resolved, visible, req)
-          const rows = resolved.value as Record<string, unknown>[]
+          const rows = (resolved.value ?? []) as Record<string, unknown>[]
           reorderRows(
             rows,
             rows.map((row) => String(row.id)),
@@ -376,14 +376,14 @@ export const createArrangeHandler =
           throw new Error('Block field is unavailable')
         }
         const resolved = resolveField(collection.fields, proposed, order.path)!
-        if (!resolved || resolved.field.type !== 'blocks' || !Array.isArray(resolved.value))
+        if (!resolved || resolved.field.type !== 'blocks' || !Array.isArray(resolved.value ?? []))
           throw new Error('Block field is unavailable')
         const field = resolved.field
-        const rows = resolved.value as Record<string, unknown>[]
+        const rows = (resolved.value ?? []) as Record<string, unknown>[]
         const additions = order.additions ?? []
         const existing = new Map(rows.map((row) => [String(row.id), row]))
-        const visibleRows = resolveField(collection.fields, visible, order.path)?.value
-        const originalRows = resolveField(collection.fields, complete, order.path)?.value
+        const visibleRows = resolveField(collection.fields, visible, order.path)?.value ?? []
+        const originalRows = resolveField(collection.fields, complete, order.path)?.value ?? []
         if (
           !Array.isArray(visibleRows) ||
           !Array.isArray(originalRows) ||
