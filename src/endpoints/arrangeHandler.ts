@@ -47,6 +47,10 @@ function defaults(fields: Field[]): Record<string, unknown> {
       else if (field.type === 'group') result[field.name] = defaults(field.fields)
       else if (field.type === 'array' || field.type === 'blocks') result[field.name] = []
       else if (field.type === 'checkbox') result[field.name] = false
+      else if (field.type === 'richText')
+        result[field.name] = {
+          root: { type: 'root', version: 1, format: '', indent: 0, direction: null, children: [] },
+        }
     }
   }
   return result
@@ -126,7 +130,13 @@ export const createArrangeHandler =
         blockLimits: {},
         revision,
       }
-      for (const path of body.paths as string[]) {
+      const paths = new Set<string>(body.paths as string[])
+      for (const orderPath of body.orderPaths as string[]) {
+        for (const path of Object.keys(sourceMap)) {
+          if (path.startsWith(`${orderPath}.`)) paths.add(path)
+        }
+      }
+      for (const path of paths) {
         const resolved = resolveField(collection.fields, visible, path)
         if (!resolved || (!Object.hasOwn(sourceMap, path) && resolved.field.type !== 'array')) {
           continue

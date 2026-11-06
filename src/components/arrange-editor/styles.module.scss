@@ -303,6 +303,18 @@
   text-align: left;
   margin-top: 6px;
 }
+.panel .blockChoice {
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 12px;
+}
+.choiceLabel {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .panel .addBlock {
   display: block;
   width: 100%;

@@ -1069,13 +1069,15 @@ export function ArrangeEditor({
                             (block) => (
                               <button
                                 aria-label={`Add ${humanize(block.label)}`}
-                                className={styles.fieldLink}
+                                className={`${styles.fieldLink} ${styles.blockChoice}`}
                                 disabled={busy || needsSync}
                                 key={block.slug}
                                 onClick={() => addBlock(adding.key, adding.path, block.slug)}
+                                title={humanize(block.label)}
                                 type="button"
                               >
-                                {humanize(block.label)} <span aria-hidden="true">›</span>
+                                <span className={styles.choiceLabel}>{humanize(block.label)}</span>
+                                <span aria-hidden="true">›</span>
                               </button>
                             ),
                           )}

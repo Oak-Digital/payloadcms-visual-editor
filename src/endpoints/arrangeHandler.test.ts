@@ -122,6 +122,13 @@ describe('arrange editor batch', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]).toMatchObject({ id: 'b', heading: 'Second' })
     expect(rows[1]).toMatchObject({ id: '0123456789abcdef01234567', blockType: 'section' })
+    expect(rows[1].body.root).toMatchObject({ type: 'root', children: [] })
+  })
+
+  it('lists editable block fields even when their values are not rendered', async () => {
+    const { call } = fixture()
+    const snapshot = await (await call({ paths: [] })).json()
+    expect(snapshot.fields['layout.1.heading']).toEqual({ type: 'text', value: 'Second' })
   })
 
   it('rejects unknown block types and IDs', async () => {
