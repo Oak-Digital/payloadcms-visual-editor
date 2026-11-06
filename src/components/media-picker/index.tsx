@@ -28,6 +28,8 @@ export function MediaPicker({
   path,
   onClose,
   onSelect,
+  selected,
+  onSelectionChange,
   embedded = false,
 }: {
   embedded?: boolean
@@ -37,13 +39,17 @@ export function MediaPicker({
   path: string
   onClose: () => void
   onSelect: (media: MediaChoice) => void
+  selected?: MediaChoice
+  onSelectionChange?: (media?: MediaChoice) => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [revision, setRevision] = useState(0)
   const [results, setResults] = useState<Results>()
-  const [selected, setSelected] = useState<MediaChoice>()
+  const [localSelection, setLocalSelection] = useState<MediaChoice>()
+  const activeSelection = onSelectionChange ? selected : localSelection
+  const changeSelection = onSelectionChange ?? setLocalSelection
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -95,14 +101,58 @@ export function MediaPicker({
     <>
       {!embedded && (
         <header>
-          <h2 id="ve-media-title">Choose an image</h2>
+          <h2 id="ve-media-title">{activeSelection ? 'Image preview' : 'Choose an image'}</h2>
           <button type="button" onClick={onClose} aria-label="Close image picker">
             Close
           </button>
         </header>
       )}
-      {!uploading && (
-        <>
+      {activeSelection && !uploading ? (
+        <div className={styles.drawerView}>
+          <figure className={styles.preview}>
+            <img src={activeSelection.url} alt={activeSelection.alt || ''} />
+            <figcaption>
+              {activeSelection.filename || activeSelection.alt || String(activeSelection.id)}
+            </figcaption>
+          </figure>
+          <footer>
+            <button type="button" onClick={() => changeSelection(undefined)}>
+              Cancel
+            </button>
+            <button type="button" onClick={() => onSelect(activeSelection)}>
+              Use image
+            </button>
+          </footer>
+        </div>
+      ) : uploading ? (
+        <section aria-label="Upload an image" className={styles.drawerView}>
+          <p>Save the new image in Payload, then return to the image list.</p>
+          <iframe
+            title="Upload a new image in Payload"
+            className={styles.upload}
+            src={`${adminRoute}/collections/${encodeURIComponent(results!.collection)}/create${documentInfo.locale ? `?locale=${encodeURIComponent(documentInfo.locale)}` : ''}`}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setUploading(false)
+              setSearch('')
+              setPage(1)
+              setRevision((value) => value + 1)
+            }}
+          >
+            Return to images
+          </button>
+        </section>
+      ) : (
+        <div className={styles.drawerView}>
+          {results?.canUpload && (
+            <section aria-label="Upload an image">
+              <button type="button" onClick={() => setUploading(true)}>
+                Upload a new image
+              </button>
+            </section>
+          )}
           <label>
             Search filenames
             <input
@@ -116,22 +166,15 @@ export function MediaPicker({
             />
           </label>
           <p className={styles.status} role="status">
-            {uploading
-              ? 'Create and save the image in the upload form.'
-              : busy
-                ? 'Loading images…'
-                : `Page ${results?.page ?? 1} of ${Math.max(1, results?.totalPages ?? 1)}`}
+            {busy
+              ? 'Loading images…'
+              : `Page ${results?.page ?? 1} of ${Math.max(1, results?.totalPages ?? 1)}`}
           </p>
           {error && <p role="alert">{error}</p>}
           <div className={styles.grid} aria-label="Available images" aria-busy={busy}>
             {!busy &&
               results?.docs.map((media) => (
-                <button
-                  type="button"
-                  key={media.id}
-                  aria-pressed={selected?.id === media.id}
-                  onClick={() => setSelected(media)}
-                >
+                <button type="button" key={media.id} onClick={() => changeSelection(media)}>
                   <img src={media.thumbnailURL || media.url} alt="" loading="lazy" />
                   <span>{media.filename || media.alt || String(media.id)}</span>
                 </button>
@@ -156,60 +199,21 @@ export function MediaPicker({
               Next
             </button>
           </nav>
-        </>
-      )}
-      {results?.canUpload && (
-        <section aria-label="Upload an image">
-          {!uploading ? (
-            <button type="button" onClick={() => setUploading(true)}>
-              Upload a new image
+          <footer>
+            <button type="button" onClick={onClose}>
+              Cancel
             </button>
-          ) : (
-            <>
-              <p>Save the new image in Payload, then return to the image list.</p>
-              <iframe
-                title="Upload a new image in Payload"
-                className={styles.upload}
-                src={`${adminRoute}/collections/${encodeURIComponent(results.collection)}/create${documentInfo.locale ? `?locale=${encodeURIComponent(documentInfo.locale)}` : ''}`}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setUploading(false)
-                  setSearch('')
-                  setPage(1)
-                  setRevision((value) => value + 1)
-                }}
-              >
-                Return to images
-              </button>
-            </>
-          )}
-        </section>
+          </footer>
+        </div>
       )}
-      {selected && !uploading && (
-        <figure className={styles.preview}>
-          <img src={selected.url} alt={selected.alt || ''} />
-          <figcaption>{selected.filename}</figcaption>
-        </figure>
-      )}
-      <footer>
-        <button type="button" onClick={onClose}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          disabled={!selected || busy || uploading}
-          onClick={() => selected && onSelect(selected)}
-        >
-          Use image
-        </button>
-      </footer>
     </>
   )
   if (embedded)
     return (
-      <section className={`${styles.dialog} ${styles.embedded}`} aria-label="Media library">
+      <section
+        className={`${styles.dialog} ${styles.embedded}`}
+        aria-label={activeSelection ? 'Image preview' : 'Media library'}
+      >
         {content}
       </section>
     )
@@ -223,12 +227,14 @@ export function MediaPicker({
         event.stopPropagation()
         if (event.key === 'Escape') {
           event.preventDefault()
-          onClose()
+          if (activeSelection) changeSelection(undefined)
+          else onClose()
         }
       }}
       onCancel={(event) => {
         event.preventDefault()
-        onClose()
+        if (activeSelection) changeSelection(undefined)
+        else onClose()
       }}
     >
       {content}

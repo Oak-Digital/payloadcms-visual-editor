@@ -178,6 +178,10 @@ export function ArrangeEditor({
         )
       : []
   const [picker, setPicker] = useState<Target>()
+  const [pickerSelection, setPickerSelection] = useState<MediaChoice>()
+  useEffect(() => {
+    if (pickerSelection && panelContainer) heading.current?.focus({ preventScroll: true })
+  }, [pickerSelection, panelContainer])
   const [sidebarSize, setSidebarSize] = useState<'standard' | 'large'>('standard')
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
@@ -228,7 +232,8 @@ export function ArrangeEditor({
   }, [count, needsSync, busy, status, sessions, onPendingChange, ready, refreshing, operation])
 
   function goBack() {
-    if (picker) setPicker(undefined)
+    if (pickerSelection) setPickerSelection(undefined)
+    else if (picker) setPicker(undefined)
     else if (tab === 'revisions' || tab === 'changes' || tab === 'menu') {
       if (onHome) onHome()
       else setTab('menu')
@@ -248,6 +253,7 @@ export function ArrangeEditor({
         ['blocks', 'revisions', 'changes'].includes(event.data.view)
       ) {
         setPicker(undefined)
+        setPickerSelection(undefined)
         setTarget(undefined)
         setSelectedBlock(undefined)
         setSelectedRow(undefined)
@@ -257,13 +263,30 @@ export function ArrangeEditor({
     }
     window.addEventListener('message', receive)
     return () => window.removeEventListener('message', receive)
-  }, [panelContainer, picker, tab, target, selectedRow, selectedBlock, onHome])
+  }, [panelContainer, picker, pickerSelection, tab, target, selectedRow, selectedBlock, onHome])
   const session = target && sessions[target.key]
   const field = target && session?.snapshot.fields[target.path]
   const value =
     target &&
     session &&
     (Object.hasOwn(session.changes, target.path) ? session.changes[target.path] : field?.value)
+  const imagePreview =
+    field?.type === 'upload' && target && session
+      ? session.media[target.path]?.url ||
+        (typeof document !== 'undefined'
+          ? Array.from(document.querySelectorAll<HTMLElement>('[data-payload-type="upload"]'))
+              .filter(
+                (element) =>
+                  element.dataset.payloadPath === target.path &&
+                  documentKey(fieldDocument(element, documentInfo)) === target.key,
+              )
+              .map((element) =>
+                element instanceof HTMLImageElement ? element : element.querySelector('img'),
+              )
+              .find((image) => image?.getAttribute('src'))
+              ?.getAttribute('src')
+          : undefined)
+      : undefined
 
   const request = useCallback(
     async (owner: PayloadCMSDocument, data: Record<string, unknown>) => {
@@ -847,7 +870,9 @@ export function ArrangeEditor({
                     title={blockLabel ? humanize(blockLabel) : undefined}
                   >
                     {picker && panelContainer
-                      ? 'Media library'
+                      ? pickerSelection
+                        ? 'Image preview'
+                        : 'Media library'
                       : tab === 'changes'
                         ? 'Changes'
                         : tab === 'menu'
@@ -881,11 +906,17 @@ export function ArrangeEditor({
                   adminRoute={adminRoute}
                   apiRoute={apiRoute}
                   documentInfo={sessions[picker.key].owner}
-                  onClose={() => setPicker(undefined)}
-                  onSelect={(media) => {
-                    stage(picker, media.id, media)
+                  onClose={() => {
+                    setPickerSelection(undefined)
                     setPicker(undefined)
                   }}
+                  onSelect={(media) => {
+                    stage(picker, media.id, media)
+                    setPickerSelection(undefined)
+                    setPicker(undefined)
+                  }}
+                  selected={pickerSelection}
+                  onSelectionChange={setPickerSelection}
                   path={picker.path}
                 />
               )}
@@ -984,13 +1015,22 @@ export function ArrangeEditor({
                             </>
                           )}
                           {field.type === 'upload' && (
-                            <button
-                              disabled={busy || needsSync}
-                              onClick={() => setPicker(target)}
-                              type="button"
-                            >
-                              Replace image
-                            </button>
+                            <>
+                              {imagePreview && (
+                                <img
+                                  className={styles.imagePreview}
+                                  src={imagePreview}
+                                  alt="Current image"
+                                />
+                              )}
+                              <button
+                                disabled={busy || needsSync}
+                                onClick={() => setPicker(target)}
+                                type="button"
+                              >
+                                Replace image
+                              </button>
+                            </>
                           )}
                           {field.type === 'richText' && session && (
                             <RichTextSidebar
@@ -1293,11 +1333,17 @@ export function ArrangeEditor({
           adminRoute={adminRoute}
           apiRoute={apiRoute}
           documentInfo={sessions[picker.key].owner}
-          onClose={() => setPicker(undefined)}
-          onSelect={(media) => {
-            stage(picker, media.id, media)
+          onClose={() => {
+            setPickerSelection(undefined)
             setPicker(undefined)
           }}
+          onSelect={(media) => {
+            stage(picker, media.id, media)
+            setPickerSelection(undefined)
+            setPicker(undefined)
+          }}
+          selected={pickerSelection}
+          onSelectionChange={setPickerSelection}
           path={picker.path}
         />
       )}

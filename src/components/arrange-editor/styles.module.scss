@@ -121,6 +121,14 @@
   margin-bottom: 12px;
   overflow-wrap: anywhere;
 }
+.imagePreview {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  margin-bottom: 16px;
+  object-fit: contain;
+  border-radius: 8px;
+}
 .restoreText {
   margin-top: 12px;
 }
