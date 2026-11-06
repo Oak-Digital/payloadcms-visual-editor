@@ -79,6 +79,31 @@ The `/payload-visual-editor/arrange` endpoint validates collection/field access,
 
 The workspace renders a same-origin iframe so responsive styles and fixed elements use the preview's actual viewport. The canvas portals its editing panel, history controls and save actions into the floating Oak sidebar. Rich text, the media library and feedback notes use layered sidebar views with a Back action. Host the component only in authenticated draft previews. The `visual-editor-canvas=1` query parameter provides the standalone toolbar for integration tests; it does not grant preview access.
 
-Switching pages with pending changes offers **Keep editing** or **Discard and switch**. Save first to retain changes across pages. Navigating while saving is blocked. Drafts are still saved per owning document through the existing editor; navigation does not batch-publish the site. The Oak dot expands into a taller charcoal workspace containing content navigation, editing modes, page blocks, annotations, shared content, preview widths and Revisions. Save draft, Publish all and undo/redo stay in its footer. Settings place both dot and sidebar at Top right, Right bottom, or Center bottom, and control width, animation speed and reduced motion. Press E to toggle; Escape goes back a layer, then collapses. Collapsing and changing views preserve pending edits. The revisions panel lists unsaved changes and saved page versions with before/after comparisons through Payload’s access-controlled versions API. Older history loads on demand. Saving refreshes history; referenced documents retain their own revision histories. Inline Global editing and agent chat are outside this phase.
+Switching pages with pending changes offers **Keep editing** or **Discard and switch**. Save first to retain changes across pages. Navigating while saving is blocked. Drafts are still saved per owning document through the existing editor; navigation does not batch-publish the site. The Oak dot expands into a taller charcoal workspace containing content navigation, editing modes, page blocks, annotations, shared content, preview widths and Revisions. Save draft, Publish all and undo/redo stay in its footer. Settings place both dot and sidebar at Top right, Right bottom, or Center bottom, and control width, animation speed and reduced motion. Press E to toggle; Escape goes back a layer, then collapses. Collapsing and changing views preserve pending edits. The revisions panel lists unsaved changes and saved page versions with before/after comparisons through Payload’s access-controlled versions API. Older history loads on demand. Saving refreshes history; referenced documents retain their own revision histories. Opted-in shared content uses the editor below; agent chat is outside this phase.
 
 In Edit content mode, text and textarea fields can be edited directly on the canvas. Canvas and sidebar edits share pending values, undo/redo and save/publish actions. Formatted rich text keeps its native sidebar editor. The footer reports unsaved changes, saving, publishing, preview refresh and failures; successful status remains visible when navigating between fields.
+
+## Shared collections and globals
+
+Opt in document roots on the server; mark matching workspace sources `editable: true` on the client:
+
+```ts
+payloadVisualEditor({
+  collections: { pages: true },
+  sharedContent: {
+    navigation: {
+      fields: ['title', 'navItems'],
+      rowLabels: { navItems: 'link.label', 'navItems.*.subMenu': 'link.label' },
+    },
+    footer: { global: true, fields: ['layout'] },
+  },
+})
+```
+
+The workspace reads Payload field schemas for text, textarea, email, numbers, checkboxes, select/radio, single relationships, groups, arrays and blocks. Arrays use schema limits and stable row IDs. Conditional fields and field permissions are evaluated on the server. Unsupported fields remain in Payload; updates preserve other document fields. Relationship pickers search accessible documents with pagination; enabled related content opens another retained editor session.
+
+Shared edits have their own persistent footer and undo/redo history. Save draft saves dirty shared documents; Publish all reviews and publishes the full drafts of the listed shared documents. Page edits remain separate. Saves are transactional per document; if a later document fails, earlier successful saves remain saved and remaining edits stay available. Revision checks reject stale edits. A database with transaction support is required. Sources without drafts expose publication only.
+
+Host renderers subscribe with `useSharedContentPreview` from `@oak-digital/payload-visual-editor/preview`. It returns same-origin workspace messages containing `{ target, document, focusPath }`. Documents include accessible populated relationships; the host chooses how to render them and reveal the selected region. No REC schema or storefront styling is built into the plugin. The standalone preview export avoids pulling editor controls into public storefront bundles. Shared-content persistence uses `/api/payload-visual-editor/shared-content` with Payload access checks, validation and hooks.
+
+Draft loaders in each host must bypass public caches only for authenticated preview sessions. Collections that previously saved immediately need their existing development content initialized with the intended publication status when enabling drafts. No legacy schema fallback is provided.

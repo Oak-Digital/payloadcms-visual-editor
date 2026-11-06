@@ -1,0 +1,201 @@
+.editor {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: #171717;
+  color: #eee;
+  border-radius: inherit;
+  overflow: hidden;
+}
+.editor[hidden] {
+  display: none;
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px;
+  border-bottom: 1px solid #333;
+  min-height: 77px;
+  background: linear-gradient(115deg, #242125, #1b1b1b 60%, #20231d);
+}
+.header > div {
+  flex: 1;
+  min-width: 0;
+}
+.header h2 {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.header small {
+  display: block;
+  font-size: 10px;
+  color: #aaa;
+  margin-top: 4px;
+}
+.editor button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 1px solid #383838;
+  border-radius: 9px;
+  background: #222;
+  padding: 10px;
+}
+.editor button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.header button {
+  border: 0;
+  background: transparent;
+  padding: 5px;
+}
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+  animation: enter 0.2s ease-out;
+}
+.body p {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.body [role='alert'] {
+  color: #f1b4a8;
+}
+.row {
+  width: 100%;
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  margin-bottom: 9px;
+  border-radius: 16px !important;
+}
+.row span {
+  min-width: 0;
+}
+.row strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+.row small {
+  display: block;
+  margin-top: 5px;
+  color: #aaa;
+  font-size: 10px;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.item > .row {
+  flex: 1;
+  min-width: 0;
+}
+.item > div {
+  display: flex;
+  flex-direction: column;
+}
+.item > div button {
+  border: 0;
+  background: none;
+  padding: 4px;
+}
+.field {
+  display: block;
+  margin-bottom: 18px;
+  font-size: 12px;
+}
+.field > span {
+  display: block;
+  margin-bottom: 8px;
+  color: #aaa;
+}
+.editor input:not([type='checkbox']),
+.editor select,
+.editor textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #383838;
+  border-radius: 9px;
+  background: #212121;
+  color: #eee;
+  font: inherit;
+}
+.editor textarea {
+  min-height: 95px;
+  resize: vertical;
+}
+.editor input[type='checkbox'] {
+  accent-color: #bbb;
+  width: 18px;
+  height: 18px;
+}
+.inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.inline > button {
+  flex: 1;
+}
+.footer {
+  border-top: 1px solid #333;
+  padding: 13px 18px 17px;
+  background: linear-gradient(110deg, #1d1b1e, #1b1b1b 60%, #1f211c);
+  font-size: 11px;
+}
+.status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.status button {
+  border: 0;
+  background: none;
+  padding: 5px;
+}
+.editor .primary {
+  background: #e0e0e0;
+  color: #181818;
+}
+.editor .danger {
+  color: #e5afa1;
+}
+.editor :focus-visible {
+  outline: 2px solid #bbb;
+  outline-offset: 3px;
+}
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .body {
+    animation: none;
+  }
+}

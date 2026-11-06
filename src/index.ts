@@ -4,6 +4,8 @@ import { createVisualEditorMutationHandler } from './endpoints/visualEditorMutat
 import { createMediaHandler } from './endpoints/mediaHandler.js'
 import { createArrangeHandler } from './endpoints/arrangeHandler.js'
 import { createRichTextHandler } from './endpoints/richTextHandler.js'
+import { createSharedContentHandler } from './endpoints/sharedContentHandler.js'
+import type { SharedContentConfig } from './utils/shared-content.js'
 import { buildSourceMap } from './utils/source-map.js'
 
 const populateSourceMap =
@@ -26,6 +28,7 @@ export type PayloadVisualEditorConfig = {
    * List of collections to add a custom field
    */
   collections?: Partial<Record<CollectionSlug, true>>
+  sharedContent?: SharedContentConfig
   disabled?: boolean
 }
 
@@ -98,6 +101,12 @@ const payloadVisualEditor =
       Component: '@oak-digital/payload-visual-editor/client#RichTextEditorView',
       path: '/visual-rich-text',
     }
+    config.endpoints.push({
+      handler: createSharedContentHandler(pluginOptions.sharedContent ?? {}),
+      method: 'post',
+      path: '/payload-visual-editor/shared-content',
+    })
+
     config.endpoints.push({
       handler: createArrangeHandler(pluginOptions.collections ?? {}),
       method: 'post',

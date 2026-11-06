@@ -5,14 +5,18 @@ import { createPortal } from 'react-dom'
 
 import type { PayloadCMSDocument } from '../../types.js'
 
+import { SharedContentEditor } from '../shared-content/index.js'
+import type { SharedTarget } from '../../utils/shared-content.js'
+import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
 import { EditorIcon, OakMark } from './icons.js'
 import { VisualEditorToolbar } from '../toolbar/index.js'
 import styles from './styles.module.scss'
 
 export type WorkspaceSource = {
   global?: boolean
+  editable?: boolean
   label: string
-  /** No preview resolver means entries open in the native admin in another tab. */
+  /** Sources without a preview resolver or shared editing open in the native admin. */
   previewURL?: (document: Record<string, unknown>) => string | undefined
   slug: string
   titleField?: string
@@ -68,6 +72,19 @@ function WorkspaceCanvas({
   apiRoute: string
   documentInfo: PayloadCMSDocument
 }) {
+  const refresh = usePreviewRefresh()
+  useEffect(() => {
+    const receive = (event: MessageEvent) => {
+      if (
+        event.source === window.parent &&
+        event.origin === window.location.origin &&
+        event.data?.type === 'visual-editor:refresh-shared'
+      )
+        void refresh()
+    }
+    window.addEventListener('message', receive)
+    return () => window.removeEventListener('message', receive)
+  }, [refresh])
   const [containers] = useState(() => {
     if (window.parent === window) {
       return undefined
@@ -215,6 +232,17 @@ function WorkspaceShell({
   documentInfo: PayloadCMSDocument
   sources: WorkspaceSource[]
 }) {
+  const [sharedTarget, setSharedTarget] = useState<SharedTarget>()
+  const [sharedVisible, setSharedVisible] = useState(false)
+  const [sharedTrail, setSharedTrail] = useState<SharedTarget[]>([])
+  const sharedPreviews = useRef(
+    new Map<string, { target: SharedTarget; document: Record<string, any>; focusPath?: string }>(),
+  )
+  const openShared = (target: SharedTarget) => {
+    setSharedTrail((trail) => (sharedVisible && sharedTarget ? [...trail, sharedTarget] : []))
+    setSharedTarget(target)
+    setSharedVisible(true)
+  }
   const iframe = useRef<HTMLIFrameElement>(null)
   const root = useRef<HTMLDivElement>(null)
   const dialog = useRef<HTMLDialogElement>(null)
@@ -233,8 +261,13 @@ function WorkspaceShell({
   const [hasNext, setHasNext] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [pending, setPending] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [pagePending, setPending] = useState(false)
+  const [pageBusy, setBusy] = useState(false)
+  const [sharedPending, setSharedPending] = useState(false)
+  const [sharedBusy, setSharedBusy] = useState(false)
+  const [sharedEpoch, setSharedEpoch] = useState(0)
+  const pending = pagePending || sharedPending
+  const busy = pageBusy || sharedBusy
   const [mode, setMode] = useState<Mode>('edit')
   const [viewport, setViewport] = useState('desktop')
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -260,6 +293,19 @@ function WorkspaceShell({
   const send = useCallback((type: string, values: Record<string, unknown> = {}) => {
     iframe.current?.contentWindow?.postMessage({ type, ...values }, window.location.origin)
   }, [])
+  useEffect(() => {
+    const ready = (event: MessageEvent) => {
+      if (
+        event.source === iframe.current?.contentWindow &&
+        event.origin === window.location.origin &&
+        event.data?.type === 'visual-editor:shared-ready'
+      )
+        for (const value of sharedPreviews.current.values())
+          send('visual-editor:shared-preview', value)
+    }
+    window.addEventListener('message', ready)
+    return () => window.removeEventListener('message', ready)
+  }, [send])
   const collapse = useCallback(() => {
     setOpen(false)
     launcher.current?.focus({ preventScroll: true })
@@ -306,7 +352,7 @@ function WorkspaceShell({
     }
     window.addEventListener('keydown', keyboard)
     return () => window.removeEventListener('keydown', keyboard)
-  }, [open, view, annotationEditing, send, collapse, reveal])
+  }, [open, view, annotationEditing, send, collapse, reveal, sharedVisible])
 
   const navigate = useCallback(
     (entry: Entry) => {
@@ -325,6 +371,12 @@ function WorkspaceShell({
         return
       }
       url.searchParams.set('visual-editor-canvas', '1')
+      setSharedVisible(false)
+      setSharedTarget(undefined)
+      setSharedPending(false)
+      setSharedBusy(false)
+      setSharedEpoch((e) => e + 1)
+      sharedPreviews.current.clear()
       setPending(false)
       setBusy(false)
       setReady(false)
@@ -639,7 +691,7 @@ function WorkspaceShell({
           </span>
           {pending && <span className={styles.dotBadge} />}
         </button>
-        <div className={styles.shell} id="visual-editor-shell" inert={!open}>
+        <div className={styles.shell} id="visual-editor-shell" inert={!open || sharedVisible}>
           <header className={styles.header} hidden={view === 'editor'}>
             {view === 'home' ? (
               <span className={styles.identity}>
@@ -844,7 +896,17 @@ function WorkspaceShell({
                     ))}
                   </select>
                 </label>
-                {source?.global ? (
+                {source?.global && source.editable ? (
+                  <button
+                    className={styles.row}
+                    onClick={() =>
+                      openShared({ slug: source.slug, global: true, label: source.label })
+                    }
+                  >
+                    {source.label}
+                    <EditorIcon name="chevron" />
+                  </button>
+                ) : source?.global ? (
                   <a
                     className={styles.row}
                     href={`${adminRoute}/globals/${source.slug}`}
@@ -871,7 +933,24 @@ function WorkspaceShell({
                       <ul className={styles.entries}>
                         {entries.map((entry) => (
                           <li key={entry.id}>
-                            {entry.url ? (
+                            {source?.editable ? (
+                              <button
+                                className={styles.row}
+                                title={entry.label}
+                                onClick={() =>
+                                  openShared({
+                                    slug: source.slug,
+                                    id: entry.id,
+                                    label: entry.label,
+                                  })
+                                }
+                              >
+                                <span className={styles.grow}>
+                                  <strong>{entry.label}</strong>
+                                </span>
+                                <EditorIcon name="chevron" />
+                              </button>
+                            ) : entry.url ? (
                               <button
                                 className={styles.row}
                                 title={entry.label}
@@ -1025,12 +1104,12 @@ function WorkspaceShell({
                 className={styles.changeStatus}
                 aria-label={footerStatus}
                 disabled={!ready}
-                onClick={() => editorView('changes')}
+                onClick={() => (sharedPending ? setSharedVisible(true) : editorView('changes'))}
                 type="button"
               >
                 <span data-pending={pending} />
                 <span role="status" aria-live="polite" aria-atomic="true">
-                  {footerStatus}
+                  {sharedPending ? 'Shared edits pending' : footerStatus}
                 </span>
               </button>
               <div
@@ -1039,9 +1118,51 @@ function WorkspaceShell({
                 key={`history:${src}`}
               />
             </div>
-            <div className={styles.actions} id="visual-editor-actions" key={`actions:${src}`} />
+            <div
+              className={styles.actions}
+              hidden={sharedPending}
+              id="visual-editor-actions"
+              key={`actions:${src}`}
+            />
+            {sharedPending && (
+              <button className={styles.row} onClick={() => setSharedVisible(true)}>
+                Review shared changes
+              </button>
+            )}
           </footer>
         </div>
+        {sharedTarget && (
+          <SharedContentEditor
+            key={`${current.locale}:${sharedEpoch}`}
+            onStateChange={(pending, busy) => {
+              setSharedPending(pending)
+              setSharedBusy(busy)
+            }}
+            target={sharedTarget}
+            locale={current.locale}
+            apiRoute={apiRoute}
+            hidden={!sharedVisible || !open}
+            enabledSources={sources.filter((s) => s.editable)}
+            onOpen={openShared}
+            onClose={() => {
+              const previous = sharedTrail.at(-1)
+              if (previous) {
+                setSharedTarget(previous)
+                setSharedTrail((t) => t.slice(0, -1))
+              } else setSharedVisible(false)
+            }}
+            onCollapse={collapse}
+            onPreview={(target, document, focusPath) => {
+              sharedPreviews.current.set(`${target.slug}:${target.id ?? ''}`, {
+                target,
+                document,
+                focusPath,
+              })
+              send('visual-editor:shared-preview', { target, document, focusPath })
+            }}
+            onSaved={() => send('visual-editor:refresh-shared')}
+          />
+        )}
       </aside>
       {navigation && (
         <dialog
