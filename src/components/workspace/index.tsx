@@ -273,7 +273,9 @@ function WorkspaceShell({
         view === 'editor'
           ? document.querySelector<HTMLElement>('#visual-editor-heading h2')
           : heading.current
-      title?.focus({ preventScroll: true })
+      if (!iframe.current?.contentDocument?.activeElement?.hasAttribute('data-arrange-inline')) {
+        title?.focus({ preventScroll: true })
+      }
     })
     return () => cancelAnimationFrame(next)
   }, [open, view])

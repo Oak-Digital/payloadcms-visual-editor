@@ -403,3 +403,10 @@
     background: #333;
   }
 }
+
+:global([data-arrange-inline]) {
+  cursor: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  caret-color: currentColor;
+}

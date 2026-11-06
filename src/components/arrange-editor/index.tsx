@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 
 import type { Annotation, PayloadCMSDocument } from '../../types.js'
@@ -15,6 +15,7 @@ import { RichTextSidebar } from '../rich-text-editor/sidebar.js'
 import { EditorIcon } from '../workspace/icons.js'
 import styles from './styles.module.scss'
 import { ArrayEditor } from './array-editor.js'
+import { createCanvasTextEditor } from './canvas-text.js'
 
 type Session = {
   changes: Record<string, unknown>
@@ -124,7 +125,8 @@ export function ArrangeEditor({
         ? `${selectedBlock.key}:${selectedBlock.id}`
         : 'blocks'
   useEffect(() => {
-    if (active) heading.current?.focus({ preventScroll: true })
+    if (active && !document.activeElement?.hasAttribute('data-arrange-inline'))
+      heading.current?.focus({ preventScroll: true })
   }, [viewKey, active, tab])
   function selectBlock(key: string, path: string, id: string) {
     onReveal?.()
@@ -150,7 +152,6 @@ export function ArrangeEditor({
     setTarget(undefined)
     setTab('content')
     setBlockMode('edit')
-    setStatus('')
   }
   function selectField(key: string, path: string) {
     onReveal?.()
@@ -181,6 +182,7 @@ export function ArrangeEditor({
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
+  const [operation, setOperation] = useState<'save' | 'publish' | 'refresh'>('save')
   const [ready, setReady] = useState(false)
   const [needsSync, setNeedsSync] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -207,7 +209,15 @@ export function ArrangeEditor({
       count > 0 || needsSync,
       busy,
       count,
-      status,
+      busy
+        ? !ready
+          ? 'Loading content…'
+          : refreshing || operation === 'refresh'
+            ? 'Updating preview…'
+            : operation === 'publish'
+              ? 'Publishing…'
+              : 'Saving draft…'
+        : status,
       Object.values(sessions).reduce(
         (total, session) =>
           total +
@@ -215,7 +225,7 @@ export function ArrangeEditor({
         0,
       ),
     )
-  }, [count, needsSync, busy, status, sessions, onPendingChange])
+  }, [count, needsSync, busy, status, sessions, onPendingChange, ready, refreshing, operation])
 
   function goBack() {
     if (picker) setPicker(undefined)
@@ -396,7 +406,8 @@ export function ArrangeEditor({
       if (!element || element.closest('[data-feedback-toolbar], [data-annotation-popup]')) {
         return
       }
-      event.preventDefault()
+      const inline = element.closest<HTMLElement>('[data-arrange-inline]')
+      if (!inline || element.closest('a')) event.preventDefault()
       event.stopImmediatePropagation()
       if (busy || needsSync || blockMode === 'rearrange') {
         return
@@ -423,7 +434,6 @@ export function ArrangeEditor({
         return
       }
       setError('')
-      setStatus('')
       setTab('content')
       selectField(key, path)
     }
@@ -431,7 +441,8 @@ export function ArrangeEditor({
       if (
         (event.key === 'Enter' || event.key === ' ') &&
         event.target instanceof HTMLElement &&
-        event.target.matches('[data-payload-path]')
+        event.target.matches('[data-payload-path]') &&
+        !event.target.hasAttribute('data-arrange-inline')
       ) {
         event.preventDefault()
         event.stopImmediatePropagation()
@@ -452,6 +463,63 @@ export function ArrangeEditor({
     }
   }, [active, busy, needsSync, sessions, documentInfo, blockMode])
 
+  function undo() {
+    const previous = undoStack.at(-1)
+    if (!previous || busy || needsSync) return
+    setRedoStack((stack) => [...stack, sessions])
+    setUndoStack((stack) => stack.slice(0, -1))
+    setSessions(previous)
+    setStatus('')
+  }
+  function redo() {
+    const next = redoStack.at(-1)
+    if (!next || busy || needsSync) return
+    setUndoStack((stack) => [...stack, sessions])
+    setRedoStack((stack) => stack.slice(0, -1))
+    setSessions(next)
+    setStatus('')
+  }
+  const canvasText = useRef<ReturnType<typeof createCanvasTextEditor> | undefined>(undefined)
+  useLayoutEffect(() => {
+    const editor = createCanvasTextEditor(document)
+    canvasText.current = editor
+    return () => {
+      editor.destroy()
+      canvasText.current = undefined
+    }
+  }, [])
+  useLayoutEffect(() => {
+    canvasText.current?.update({
+      enabled: active && blockMode === 'edit',
+      blocked: busy || needsSync,
+      refreshing,
+      resolve: (element) => {
+        const key = documentKey(fieldDocument(element, documentInfo))
+        const path = element.dataset.payloadPath!
+        const session = sessions[key]
+        const field = session?.snapshot.fields[path]
+        if (
+          !field ||
+          !['text', 'textarea'].includes(field.type) ||
+          element.querySelector('[data-payload-path]')
+        )
+          return
+        return {
+          key,
+          path,
+          label: fieldLabel(path, session),
+          multiline: field.type === 'textarea',
+          value: String(session.changes[path] ?? field.value ?? ''),
+          changed: Object.hasOwn(session.changes, path) && !committed.current.has(key),
+        }
+      },
+      onSelect: (field) => selectField(field.key, field.path),
+      onChange: (field, value) => stage(field, value),
+      onUndo: undo,
+      onRedo: redo,
+    })
+  })
+
   // Release DOM previews before React merges the saved server-rendered content.
   useEffect(() => {
     if (refreshing) {
@@ -461,35 +529,9 @@ export function ArrangeEditor({
     for (const element of document.querySelectorAll<HTMLElement>('[data-payload-path]')) {
       const key = documentKey(fieldDocument(element, documentInfo))
       const path = element.dataset.payloadPath!
-      const current = sessions[key]
       if (active && target?.key === key && target.path === path) {
         element.setAttribute('data-arrange-selected', '')
         restore.push(() => element.removeAttribute('data-arrange-selected'))
-      }
-      if (!current || committed.current.has(key) || !Object.hasOwn(current.changes, path)) {
-        continue
-      }
-      const field = current.snapshot.fields[path]
-      if (!field) continue
-      if (field.type === 'text' || field.type === 'textarea') {
-        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
-        const nodes: Text[] = []
-        while (walker.nextNode()) {
-          nodes.push(walker.currentNode as Text)
-        }
-        if (!nodes.length) {
-          const node = document.createTextNode('')
-          element.append(node)
-          nodes.push(node)
-          restore.push(() => node.remove())
-        }
-        nodes.forEach((node, index) => {
-          const original = node.data
-          node.data = index === 0 ? String(current.changes[path]) : ''
-          restore.push(() => {
-            node.data = original
-          })
-        })
       }
     }
     const mediaAnnotations = Object.values(sessions)
@@ -529,6 +571,12 @@ export function ArrangeEditor({
   }, [active, sessions, target, documentInfo, refreshing])
 
   function stage(target: Target, value: unknown, media?: MediaChoice) {
+    const current = sessions[target.key]
+    if (
+      !current ||
+      same(current.changes[target.path] ?? current.snapshot.fields[target.path].value, value)
+    )
+      return
     rememberEdit()
     setError('')
     setSessions((previous) => {
@@ -606,6 +654,7 @@ export function ArrangeEditor({
       return
     }
     saving.current = true
+    setOperation('refresh')
     setBusy(true)
     setError('')
     try {
@@ -613,6 +662,7 @@ export function ArrangeEditor({
       setStatus('Preview updated.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to update preview')
+      setStatus('Saved · Preview update failed')
     } finally {
       saving.current = false
       setBusy(false)
@@ -624,6 +674,7 @@ export function ArrangeEditor({
       return
     }
     saving.current = true
+    setOperation(action)
     setBusy(true)
     setError('')
     setStatus('')
@@ -704,6 +755,13 @@ export function ArrangeEditor({
       }
       setStatus(action === 'publish' ? 'All changes published.' : 'Draft saved.')
     } catch (cause) {
+      setStatus(
+        completed
+          ? 'Some changes saved · Retry remaining'
+          : action === 'publish'
+            ? 'Publish failed · Draft kept'
+            : 'Save failed · Changes kept',
+      )
       setError(
         `${cause instanceof Error ? cause.message : 'Unable to save changes'}${completed ? ` ${completed} document(s) already saved. Remaining changes can be retried.` : ' Your changes are still here. Try saving again.'}`,
       )
@@ -714,6 +772,7 @@ export function ArrangeEditor({
         try {
           await syncPreview()
         } catch (cause) {
+          setStatus('Saved · Preview update failed')
           setError(
             `Changes saved, but the preview could not update. ${cause instanceof Error ? cause.message : ''}`,
           )
@@ -733,14 +792,7 @@ export function ArrangeEditor({
               aria-label="Undo"
               disabled={busy || needsSync || !undoStack.length}
               type="button"
-              onClick={() => {
-                const previous = undoStack.at(-1)
-                if (!previous) return
-                setRedoStack((stack) => [...stack, sessions])
-                setUndoStack((stack) => stack.slice(0, -1))
-                setSessions(previous)
-                setStatus('')
-              }}
+              onClick={undo}
             >
               <EditorIcon name="undo" />
             </button>
@@ -748,14 +800,7 @@ export function ArrangeEditor({
               aria-label="Redo"
               disabled={busy || needsSync || !redoStack.length}
               type="button"
-              onClick={() => {
-                const next = redoStack.at(-1)
-                if (!next) return
-                setUndoStack((stack) => [...stack, sessions])
-                setRedoStack((stack) => stack.slice(0, -1))
-                setSessions(next)
-                setStatus('')
-              }}
+              onClick={redo}
             >
               <EditorIcon name="redo" />
             </button>
@@ -1197,9 +1242,11 @@ export function ArrangeEditor({
                       Retry preview update
                     </button>
                   )}
-                  <p role="status">
-                    {busy && ready ? (refreshing ? 'Updating preview…' : 'Saving…') : status}
-                  </p>
+                  {!panelContainer && (
+                    <p role="status">
+                      {busy && ready ? (refreshing ? 'Updating preview…' : 'Saving…') : status}
+                    </p>
+                  )}
                 </>
               )}
             </div>

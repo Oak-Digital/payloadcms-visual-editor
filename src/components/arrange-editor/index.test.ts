@@ -160,9 +160,26 @@ it('keeps workspace drafts and save actions mounted while hidden and rejects unr
     )
     expect(input.value).toBe('Pending draft')
     expect(actions.querySelector('button')?.disabled).toBe(false)
+    await act(async () => {
+      const canvas = document.querySelector('h1')!
+      canvas.focus()
+      canvas.textContent = 'Inline draft'
+      canvas.dispatchEvent(new InputEvent('input', { bubbles: true }))
+    })
+    expect(input.value).toBe('Inline draft')
+    expect(document.activeElement).toBe(document.querySelector('h1'))
+    await act(async () =>
+      (document.querySelector('[aria-label="Undo"]') as HTMLButtonElement).click(),
+    )
+    expect(input.value).toBe('Pending draft')
+    expect(document.querySelector('h1')?.textContent).toBe('Pending draft')
+    await act(async () =>
+      (document.querySelector('[aria-label="Redo"]') as HTMLButtonElement).click(),
+    )
+    expect(input.value).toBe('Inline draft')
     await message({ type: 'visual-editor:show', view: 'changes' })
     expect(panel.querySelector('details')?.open).toBe(true)
-    expect(panel.textContent).toContain('Pending draft')
+    expect(panel.textContent).toContain('Inline draft')
     await message({ type: 'visual-editor:back' })
     expect(home).toHaveBeenCalled()
     expect(pending).toHaveBeenLastCalledWith(true, false, 1, '', 0)
@@ -170,5 +187,70 @@ it('keeps workspace drafts and save actions mounted while hidden and rejects unr
     await act(async () => root.unmount())
     document.body.innerHTML = ''
     vi.restoreAllMocks()
+  }
+})
+
+it('reports distinct save/publish states to the footer without duplicating them in the field panel', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  document.body.innerHTML =
+    '<h1 data-payload-path="title">Original</h1><div id="editor"></div><div id="panel"></div><div id="actions" data-feedback-toolbar></div>'
+  const root = createRoot(document.getElementById('editor')!)
+  const panel = document.getElementById('panel')!
+  const actions = document.getElementById('actions')!
+  const pending = vi.fn()
+  let finish: (response: Response) => void = () => {}
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    const body = JSON.parse(String(init?.body))
+    if (body.action !== 'read')
+      return new Promise<Response>((resolve) => {
+        finish = resolve
+      })
+    return new Response(
+      JSON.stringify({ fields: { title: { type: 'text', value: 'Original' } }, orders: {} }),
+    )
+  })
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ArrangeEditor, {
+          active: true,
+          adminRoute: '/admin',
+          apiRoute: '/api',
+          documentInfo: { id: 'page', collection: 'pages', hasDrafts: true },
+          panelContainer: panel,
+          actionsContainer: actions,
+          onClose: vi.fn(),
+          onPendingChange: pending,
+        }),
+      ),
+    )
+    await act(async () => {
+      const title = document.querySelector('h1')!
+      title.textContent = 'Staged inline'
+      title.dispatchEvent(new InputEvent('input', { bubbles: true }))
+    })
+    await act(async () => (actions.querySelector('button') as HTMLButtonElement).click())
+    expect(pending.mock.lastCall?.[3]).toBe('Saving draft…')
+    await act(async () => finish(new Response('{}')))
+    expect(pending.mock.lastCall?.[3]).toBe('Draft saved.')
+    expect(panel.textContent).not.toContain('Draft saved.')
+    await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
+    expect(pending.mock.lastCall?.[3]).toBe('Publishing…')
+    await act(async () => finish(new Response('{}')))
+    expect(pending.mock.lastCall?.[3]).toBe('All changes published.')
+    expect(panel.textContent).not.toContain('All changes published.')
+    await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
+    await act(async () =>
+      finish(new Response(JSON.stringify({ error: 'Rejected for verification' }), { status: 500 })),
+    )
+    expect(pending.mock.lastCall?.[3]).toBe('Publish failed · Draft kept')
+    expect(panel.querySelector('[role="alert"]')?.textContent).toContain(
+      'Rejected for verification',
+    )
+  } finally {
+    await act(async () => root.unmount())
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    document.body.replaceChildren()
   }
 })
