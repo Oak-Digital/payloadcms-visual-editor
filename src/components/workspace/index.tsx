@@ -7,7 +7,7 @@ import type { PayloadCMSDocument } from '../../types.js'
 
 import { SharedContentEditor } from '../shared-content/index.js'
 import type { SharedTarget } from '../../utils/shared-content.js'
-import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
+import { PreviewRefreshContext, usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
 import { EditorIcon, OakMark } from './icons.js'
 import { VisualEditorToolbar } from '../toolbar/index.js'
 import styles from './styles.module.scss'
@@ -41,25 +41,29 @@ export function VisualEditorWorkspace({
   apiRoute = '/api',
   documentInfo,
   sources,
+  preparePreview,
 }: {
   adminRoute?: string
   apiRoute?: string
   documentInfo: PayloadCMSDocument
   sources: WorkspaceSource[]
+  /** Renew the host's authenticated preview session before a route refresh. */
+  preparePreview?: (signal: AbortSignal) => Promise<void>
 }) {
   const [canvas] = useState(isCanvas)
-  if (canvas) {
-    return (
-      <WorkspaceCanvas adminRoute={adminRoute} apiRoute={apiRoute} documentInfo={documentInfo} />
-    )
-  }
   return (
-    <WorkspaceShell
-      adminRoute={adminRoute}
-      apiRoute={apiRoute}
-      documentInfo={documentInfo}
-      sources={sources}
-    />
+    <PreviewRefreshContext.Provider value={preparePreview}>
+      {canvas ? (
+        <WorkspaceCanvas adminRoute={adminRoute} apiRoute={apiRoute} documentInfo={documentInfo} />
+      ) : (
+        <WorkspaceShell
+          adminRoute={adminRoute}
+          apiRoute={apiRoute}
+          documentInfo={documentInfo}
+          sources={sources}
+        />
+      )}
+    </PreviewRefreshContext.Provider>
   )
 }
 
@@ -80,7 +84,7 @@ function WorkspaceCanvas({
         event.origin === window.location.origin &&
         event.data?.type === 'visual-editor:refresh-shared'
       )
-        void refresh()
+        void refresh().catch((error) => console.error('Unable to refresh shared preview', error))
     }
     window.addEventListener('message', receive)
     return () => window.removeEventListener('message', receive)

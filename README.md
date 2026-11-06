@@ -30,6 +30,8 @@ Enable native drafts on each selected collection. Request `context: { contentSou
 
 The fork adds block/array source maps, locale-aware saving, collection allowlists, Payload read/update access enforcement, draft/publish separation and patch path validation. Feedback annotations are excluded from CMS mutations. Text, textarea, marked Lexical rich-text fields and single image uploads are supported; read-only/virtual fields and structural metadata are excluded. See [rich-text editing](README.rich-text.md) and [image editing](README.images.md) for integration, safety and limitations.
 
+Hosts using Next draft mode should pass `preparePreview(signal)` to `VisualEditorWorkspace`. Renew the authenticated draft cookie in that callback before the editor refreshes the route; an expired cookie must not switch the canvas to public content. Refresh failures and timeouts retain the saved state and offer a refresh-only retry. Concurrent refresh requests share one operation.
+
 Saving and publishing use the host's normal Payload hooks and validation. Host publication policies still apply: REC's `publishStatus` must already be Public for a published document to appear publicly. No webhook or agent endpoint is configured by REC.
 
 ## Bind shared renderers

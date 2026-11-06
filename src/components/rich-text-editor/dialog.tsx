@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { PayloadCMSDocument } from '../../types.js'
 
@@ -19,6 +19,7 @@ export function RichTextDialog({
   path: string
 }) {
   const refreshPreview = usePreviewRefresh()
+  const [error, setError] = useState('')
   const dialog = useRef<HTMLDialogElement>(null)
   const frame = useRef<HTMLIFrameElement>(null)
   const saved = useRef(false)
@@ -48,7 +49,12 @@ export function RichTextDialog({
       return
     }
     if (saved.current) {
-      void refreshPreview().then(onClose)
+      setError('')
+      void refreshPreview()
+        .then(onClose)
+        .catch((cause) => {
+          setError(cause instanceof Error ? cause.message : 'Unable to update preview.')
+        })
     } else {
       onClose()
     }
@@ -65,8 +71,9 @@ export function RichTextDialog({
       ref={dialog}
     >
       <button className={styles.close} onClick={close} type="button">
-        Close editor
+        {error ? 'Retry preview update' : 'Close editor'}
       </button>
+      {error && <p role="alert">{error}</p>}
       <iframe
         ref={frame}
         src={`${adminRoute}/visual-rich-text?${new URLSearchParams({ id: String(documentInfo.id), collection: documentInfo.collection, locale: documentInfo.locale || '', path })}`}
