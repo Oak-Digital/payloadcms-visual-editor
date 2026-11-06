@@ -1,3 +1,5 @@
+@use '../compact-row' as row;
+
 .workspace {
   position: fixed;
   inset: 0;
@@ -429,14 +431,12 @@
   border-color: #525252;
 }
 .floating .row {
+  @include row.compact;
   display: flex;
   align-items: center;
   gap: 11px;
   width: 100%;
-  min-height: 65px;
-  padding: 12px;
   border: 1px solid #343434;
-  border-radius: 16px;
   background: #191919;
   text-align: left;
   margin-bottom: 8px;

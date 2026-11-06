@@ -328,7 +328,7 @@ export function SharedContentEditor({
         return (
           <div className={styles.field} key={n.path}>
             <span>{n.label}</span>
-            <button className={`${styles.row} ${styles.compactRow}`} onClick={() => openRelation(n)}>
+            <button className={styles.row} onClick={() => openRelation(n)}>
               {id ? n.displayValue || 'Selected content' : 'Select content'}
               <EditorIcon name="chevron" />
             </button>
@@ -475,7 +475,7 @@ export function SharedContentEditor({
             />
             {choices.map((c) => (
               <button
-                className={`${styles.row} ${styles.compactRow}`}
+                className={styles.row}
                 key={c.id}
                 onClick={() => {
                   setValue(relation, relation.polymorphic ? { relationTo, value: c.id } : c.id)

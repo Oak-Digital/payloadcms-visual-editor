@@ -1,3 +1,5 @@
+@use '../compact-row' as row;
+
 .editor {
   position: absolute;
   inset: 0;
@@ -71,20 +73,15 @@
 .body [role='alert'] {
   color: #f1b4a8;
 }
-.row {
+.editor .row {
+  @include row.compact;
   width: 100%;
-  min-height: 66px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   text-align: left;
   margin-bottom: 9px;
-  border-radius: 16px !important;
-}
-.compactRow {
-  min-height: 44px;
-  border-radius: 9px !important;
 }
 .row span {
   min-width: 0;

@@ -495,6 +495,7 @@ function WorkspaceShell({
         setMode(event.data.mode)
       }
       if (event.data?.type === 'visual-editor:reveal') {
+        setSharedVisible(false)
         setOpen(true)
         setView('editor')
         setPickerOpen(false)
