@@ -361,3 +361,12 @@
     left: 0;
   }
 }
+
+@media (min-width: 601px) {
+  .panel:has(> aside[data-size='large']) {
+    width: min(620px, 60vw);
+  }
+}
+.panel > aside[data-size='large'] {
+  width: 100%;
+}

@@ -1,6 +1,8 @@
 # Rich-text editing
 
-Click a marked rich-text field in CMS editing mode to open its native Payload Lexical editor in a modal. Formatting controls, link drawers, custom features and embedded-content editors come from that field's host configuration. **Save draft** and **Publish** use the host's normal Payload update operation, access rules, validation and hooks. Publishing publishes the whole document, including its existing draft changes. Close the editor to refresh the preview after saving.
+In **Edit content**, selecting a rich-text field opens its configured editor inside the sidebar. Edits queue automatically and remain when switching fields or sidebar size. **Save draft** saves the pending batch.
+
+In inline editing mode, click a marked rich-text field to open its native Payload Lexical editor in a modal. Formatting controls, link drawers, custom features and embedded-content editors come from that field's host configuration. **Save draft** and **Publish** use the host's normal Payload update operation, access rules, validation and hooks. Publishing publishes the whole document, including its existing draft changes. Close the editor to refresh the preview after saving.
 
 ## Integration
 
@@ -23,7 +25,7 @@ The editor resolves instance paths into Payload schema paths, including nested a
 
 Requires native drafts, existing saved versions and a transaction-capable adapter. MongoDB must run as a replica set. Concurrency is integration-tested against REC's MongoDB adapter; other adapters need equivalent integration verification before deployment. Payload's `RenderLexical` API is experimental, and this fork pins Payload 3.79.0.
 
-Only populated, marked rich-text fields on enabled collections are editable. Globals, externally referenced documents/Saved Layouts and `blockReferences` schemas are not wired by this integration. Unsupported content must be edited in the full admin; there is no lossy conversion fallback. Edits are made in a modal, not directly in the page's DOM. Closing after saving refreshes the preview; typing does not live-render the storefront. Unsaved changes are local to the open editor and are lost on a browser refresh. Plain-text/media editing retain their existing save flow and do not gain rich-text revision checks.
+Only populated, marked rich-text fields on enabled collections are editable. Globals, externally referenced documents/Saved Layouts and `blockReferences` schemas are not wired by this integration. Unsupported content must be edited in the full admin; there is no lossy conversion fallback. Edits are made in the sidebar or inline-editing modal, not directly in the page's DOM. Closing after saving refreshes the preview; typing does not live-render the storefront. Unsaved changes are local to the open editor and are lost on a browser refresh. Plain-text/media editing retain their existing save flow and do not gain rich-text revision checks.
 
 ## Verification
 

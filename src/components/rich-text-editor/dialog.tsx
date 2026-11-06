@@ -11,16 +11,12 @@ export function RichTextDialog({
   adminRoute,
   documentInfo,
   onClose,
-  onStage,
   path,
-  stagedValue,
 }: {
   adminRoute: string
   documentInfo: PayloadCMSDocument
   onClose: () => void
-  onStage?: (value: unknown) => void
   path: string
-  stagedValue?: unknown
 }) {
   const refreshPreview = usePreviewRefresh()
   const dialog = useRef<HTMLDialogElement>(null)
@@ -36,16 +32,6 @@ export function RichTextDialog({
       ) {
         return
       }
-      if (event.data?.type === 'payload-visual-editor:ready' && onStage) {
-        frame.current?.contentWindow?.postMessage(
-          { type: 'payload-visual-editor:initial', value: stagedValue },
-          window.location.origin,
-        )
-      }
-      if (event.data?.type === 'payload-visual-editor:staged' && onStage) {
-        dirty.current = false
-        onStage(event.data.value)
-      }
       if (event.data?.type === 'payload-visual-editor:saved') {
         saved.current = true
         dirty.current = false
@@ -56,7 +42,7 @@ export function RichTextDialog({
     }
     window.addEventListener('message', receive)
     return () => window.removeEventListener('message', receive)
-  }, [onStage, stagedValue])
+  }, [])
   const close = () => {
     if (dirty.current && !window.confirm('Discard unsaved rich-text changes?')) {
       return
@@ -83,7 +69,7 @@ export function RichTextDialog({
       </button>
       <iframe
         ref={frame}
-        src={`${adminRoute}/visual-rich-text?${new URLSearchParams({ id: String(documentInfo.id), collection: documentInfo.collection, locale: documentInfo.locale || '', path, ...(onStage ? { mode: 'stage' } : {}) })}`}
+        src={`${adminRoute}/visual-rich-text?${new URLSearchParams({ id: String(documentInfo.id), collection: documentInfo.collection, locale: documentInfo.locale || '', path })}`}
         title="Rich-text editor"
       />
     </dialog>

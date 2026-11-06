@@ -11,7 +11,7 @@ import { documentKey, fieldDocument } from '../../utils/field-target.js'
 import { type MediaChoice, MediaPicker } from '../media-picker/index.js'
 import { imageFieldAt, previewImages } from '../media-picker/preview.js'
 import { RevisionHistory } from '../revision-history/index.js'
-import { RichTextDialog } from '../rich-text-editor/dialog.js'
+import { RichTextSidebar } from '../rich-text-editor/sidebar.js'
 import styles from './styles.module.scss'
 import { ArrayEditor } from './array-editor.js'
 
@@ -165,7 +165,7 @@ export function ArrangeEditor({
         )
       : []
   const [picker, setPicker] = useState<Target>()
-  const [richText, setRichText] = useState<Target>()
+  const [sidebarSize, setSidebarSize] = useState<'standard' | 'large'>('standard')
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
@@ -669,7 +669,12 @@ export function ArrangeEditor({
     <>
       {active && (
         <Portal container={panelContainer}>
-          <aside aria-label="Edit content" className={styles.panel} data-feedback-toolbar>
+          <aside
+            aria-label="Edit content"
+            className={styles.panel}
+            data-feedback-toolbar
+            data-size={sidebarSize}
+          >
             <header>
               <div className={styles.headingGroup}>
                 {tab !== 'menu' && (
@@ -746,6 +751,19 @@ export function ArrangeEditor({
                       <span aria-hidden="true">›</span>
                     </button>
                   ))}
+                  <label className={styles.sizeControl}>
+                    Sidebar size
+                    <select
+                      aria-label="Sidebar size"
+                      value={sidebarSize}
+                      onChange={(event) =>
+                        setSidebarSize(event.target.value as 'standard' | 'large')
+                      }
+                    >
+                      <option value="standard">Standard</option>
+                      <option value="large">Large</option>
+                    </select>
+                  </label>
                   <button
                     className={styles.fieldLink}
                     type="button"
@@ -785,14 +803,15 @@ export function ArrangeEditor({
                           Replace image
                         </button>
                       )}
-                      {field.type === 'richText' && (
-                        <button
+                      {field.type === 'richText' && session && (
+                        <RichTextSidebar
+                          adminRoute={adminRoute}
+                          documentInfo={session.owner}
+                          path={target.path}
+                          value={value}
                           disabled={busy || needsSync}
-                          onClick={() => setRichText(target)}
-                          type="button"
-                        >
-                          Edit formatted text
-                        </button>
+                          onChange={(next) => stage(target, next)}
+                        />
                       )}
                     </section>
                   )}
@@ -1077,22 +1096,6 @@ export function ArrangeEditor({
             setPicker(undefined)
           }}
           path={picker.path}
-        />
-      )}
-      {richText && (
-        <RichTextDialog
-          adminRoute={adminRoute}
-          documentInfo={sessions[richText.key].owner}
-          onClose={() => setRichText(undefined)}
-          onStage={(value) => {
-            stage(richText, value)
-            setRichText(undefined)
-          }}
-          path={richText.path}
-          stagedValue={
-            sessions[richText.key].changes[richText.path] ??
-            sessions[richText.key].snapshot.fields[richText.path].value
-          }
         />
       )}
     </>

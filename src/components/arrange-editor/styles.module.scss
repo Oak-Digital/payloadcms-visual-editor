@@ -368,3 +368,20 @@
   text-overflow: ellipsis;
   font-size: 13px;
 }
+
+.panel[data-size='large'] {
+  width: min(600px, calc(100vw - 32px));
+}
+.sizeControl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 12px;
+  flex-shrink: 0;
+  select {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+}

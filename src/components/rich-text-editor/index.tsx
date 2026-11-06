@@ -15,6 +15,8 @@ export function RichTextEditorView() {
   const { config } = useConfig()
   const apiRoute = config.routes.api
   const [staging, setStaging] = useState(false)
+  const [embedded, setEmbedded] = useState(false)
+  const [initialized, setInitialized] = useState(false)
   const [editorKey, setEditorKey] = useState(0)
   const [snapshot, setSnapshot] = useState<Snapshot>()
   const [value, setValue] = useState<DefaultTypedEditorState>()
@@ -26,6 +28,7 @@ export function RichTextEditorView() {
   useEffect(() => {
     const query = new URLSearchParams(window.location.search)
     setStaging(query.get('mode') === 'stage')
+    setEmbedded(query.get('embedded') === 'true')
     const params = Object.fromEntries(
       ['collection', 'id', 'locale', 'path'].map((key) => [key, query.get(key) || '']),
     )
@@ -66,11 +69,16 @@ export function RichTextEditorView() {
     const receive = (event: MessageEvent) => {
       if (
         event.origin !== window.location.origin ||
-        event.source !== window.parent ||
+        (event.source !== window.parent &&
+          event.source !==
+            window.parent.document.querySelector<HTMLIFrameElement>(
+              '[data-visual-editor-workspace] iframe[title="Website preview"]',
+            )?.contentWindow) ||
         event.data?.type !== 'payload-visual-editor:initial'
       ) {
         return
       }
+      setInitialized(true)
       setValue(event.data.value)
       setSnapshot((previous) => (previous ? { ...previous, value: event.data.value } : previous))
       setEditorKey((previous) => previous + 1)
@@ -119,10 +127,10 @@ export function RichTextEditorView() {
 
   return (
     <main className={styles.editor}>
-      <h1>Edit rich text</h1>
+      {!embedded && <h1>Edit rich text</h1>}
       {error && <p role="alert">{error}</p>}
       <p role="status">{status}</p>
-      {snapshot && value && (
+      {snapshot && value && (!embedded || initialized) && (
         <RenderLexical
           initialValue={snapshot.value}
           key={`${snapshot.schemaPath}:${editorKey}`}
@@ -131,41 +139,20 @@ export function RichTextEditorView() {
           setValue={(next) => {
             setValue(next as DefaultTypedEditorState)
             window.parent.postMessage(
-              { type: 'payload-visual-editor:changed' },
+              { type: 'payload-visual-editor:changed', ...(embedded ? { value: next } : {}) },
               window.location.origin,
             )
           }}
           value={value}
         />
       )}
-      <div className={styles.actions}>
-        {staging ? (
-          <button
-            disabled={!snapshot || !value}
-            onClick={() =>
-              window.parent.postMessage(
-                { type: 'payload-visual-editor:staged', value },
-                window.location.origin,
-              )
-            }
-            type="button"
-          >
-            Add to changes
+      <div className={styles.actions} hidden={embedded}>
+          <button disabled={!snapshot || busy} onClick={() => void submit('save')} type="button">
+            Save draft
           </button>
-        ) : (
-          <>
-            <button disabled={!snapshot || busy} onClick={() => void submit('save')} type="button">
-              Save draft
-            </button>
-            <button
-              disabled={!snapshot || busy}
-              onClick={() => void submit('publish')}
-              type="button"
-            >
-              Publish
-            </button>
-          </>
-        )}
+          <button disabled={!snapshot || busy} onClick={() => void submit('publish')} type="button">
+            Publish
+          </button>
       </div>
     </main>
   )
