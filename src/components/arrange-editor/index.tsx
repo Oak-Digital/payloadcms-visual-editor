@@ -960,16 +960,28 @@ export function ArrangeEditor({
                             {session && fieldLabel(target.path, session)}
                           </small>
                           {(field.type === 'text' || field.type === 'textarea') && (
-                            <label>
-                              Replacement text
-                              <textarea
-                                aria-label="Replacement text"
-                                disabled={busy || needsSync}
-                                onChange={(event) => stage(target, event.target.value)}
-                                rows={5}
-                                value={typeof value === 'string' ? value : ''}
-                              />
-                            </label>
+                            <>
+                              <label>
+                                Replacement text
+                                <textarea
+                                  aria-label="Replacement text"
+                                  disabled={busy || needsSync}
+                                  onChange={(event) => stage(target, event.target.value)}
+                                  rows={5}
+                                  value={typeof value === 'string' ? value : ''}
+                                />
+                              </label>
+                              <button
+                                className={styles.restoreText}
+                                disabled={
+                                  busy || needsSync || !Object.hasOwn(session.changes, target.path)
+                                }
+                                onClick={() => stage(target, field.value)}
+                                type="button"
+                              >
+                                Restore text
+                              </button>
+                            </>
                           )}
                           {field.type === 'upload' && (
                             <button

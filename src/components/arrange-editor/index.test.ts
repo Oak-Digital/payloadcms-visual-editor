@@ -121,6 +121,10 @@ it('keeps workspace drafts and save actions mounted while hidden and rejects unr
     expect(reveal).toHaveBeenCalled()
     const input = panel.querySelector('textarea')!
     expect(input.value).toBe('Original')
+    const restoreText = [...panel.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Restore text',
+    )!
+    expect(restoreText.disabled).toBe(true)
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
         input,
@@ -129,6 +133,7 @@ it('keeps workspace drafts and save actions mounted while hidden and rejects unr
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     expect(document.querySelector('h1')?.textContent).toBe('Pending draft')
+    expect(restoreText.disabled).toBe(false)
     expect(actions.querySelector('button')?.disabled).toBe(false)
     await message({ type: 'visual-editor:show', view: 'changes' }, 'https://unrelated.example')
     expect(panel.querySelector('textarea')).toBe(input)
@@ -175,6 +180,15 @@ it('keeps workspace drafts and save actions mounted while hidden and rejects unr
     expect(document.querySelector('h1')?.textContent).toBe('Pending draft')
     await act(async () =>
       (document.querySelector('[aria-label="Redo"]') as HTMLButtonElement).click(),
+    )
+    expect(input.value).toBe('Inline draft')
+    await act(async () => restoreText.click())
+    expect(input.value).toBe('Original')
+    expect(document.querySelector('h1')?.textContent).toBe('Original')
+    expect(restoreText.disabled).toBe(true)
+    expect(actions.querySelector('button')?.disabled).toBe(true)
+    await act(async () =>
+      (document.querySelector('[aria-label="Undo"]') as HTMLButtonElement).click(),
     )
     expect(input.value).toBe('Inline draft')
     await message({ type: 'visual-editor:show', view: 'changes' })
