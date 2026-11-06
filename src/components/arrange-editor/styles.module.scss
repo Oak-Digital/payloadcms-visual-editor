@@ -442,3 +442,37 @@
   overflow-wrap: anywhere;
   caret-color: currentColor;
 }
+
+.draftBlock {
+  box-sizing: border-box;
+  min-height: 220px;
+  width: 100%;
+  padding: clamp(24px, 5vw, 72px);
+  border: 1px dashed #666;
+  background: #171717;
+  color: #eee;
+  overflow-wrap: anywhere;
+
+  h2 {
+    font: inherit;
+    font-size: clamp(28px, 4vw, 56px);
+    line-height: 1.15;
+    margin: 24px 0;
+  }
+  p {
+    max-width: 65ch;
+    line-height: 1.6;
+  }
+  img {
+    display: block;
+    width: min(100%, 800px);
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    margin-top: 24px;
+  }
+}
+
+.draftLabel {
+  font: 12px / 1.4 monospace;
+  color: #b4b4b4;
+}

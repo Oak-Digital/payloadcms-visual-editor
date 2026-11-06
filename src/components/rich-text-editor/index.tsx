@@ -33,6 +33,23 @@ export function RichTextEditorView() {
       ['collection', 'id', 'locale', 'path'].map((key) => [key, query.get(key) || '']),
     )
     setParameters(params)
+    // Staged fields use the schema resolved by the arrange endpoint, including unsaved rows.
+    // No direct save is exposed here; the batch endpoint validates paths and values again.
+    const schemaPath = query.get('schemaPath')
+    if (
+      query.get('mode') === 'stage' &&
+      schemaPath?.startsWith(`collection.${params.collection}.`)
+    ) {
+      setSnapshot({
+        schemaPath,
+        revision: '',
+        value: {
+          root: { type: 'root', version: 1, format: '', indent: 0, direction: null, children: [] },
+        },
+      })
+      setStatus('')
+      return
+    }
     const controller = new AbortController()
     void fetch(`${apiRoute}/payload-visual-editor/rich-text`, {
       body: JSON.stringify({ ...params, action: 'read' }),
@@ -86,6 +103,16 @@ export function RichTextEditorView() {
     window.addEventListener('message', receive)
     return () => window.removeEventListener('message', receive)
   }, [staging])
+
+  useEffect(() => {
+    if (
+      staging &&
+      snapshot?.schemaPath &&
+      new URLSearchParams(window.location.search).has('schemaPath')
+    ) {
+      window.parent.postMessage({ type: 'payload-visual-editor:ready' }, window.location.origin)
+    }
+  }, [staging, snapshot?.schemaPath])
 
   async function submit(action: 'publish' | 'save') {
     if (!snapshot || !value || busy) {
@@ -147,12 +174,12 @@ export function RichTextEditorView() {
         />
       )}
       <div className={styles.actions} hidden={embedded}>
-          <button disabled={!snapshot || busy} onClick={() => void submit('save')} type="button">
-            Save draft
-          </button>
-          <button disabled={!snapshot || busy} onClick={() => void submit('publish')} type="button">
-            Publish
-          </button>
+        <button disabled={!snapshot || busy} onClick={() => void submit('save')} type="button">
+          Save draft
+        </button>
+        <button disabled={!snapshot || busy} onClick={() => void submit('publish')} type="button">
+          Publish
+        </button>
       </div>
     </main>
   )

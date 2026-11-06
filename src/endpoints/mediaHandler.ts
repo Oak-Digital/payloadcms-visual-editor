@@ -1,4 +1,5 @@
 import type { CollectionSlug, PayloadHandler, TypedLocale } from 'payload'
+import { appendDraftBlocks } from '../utils/draft-blocks.js'
 import { assertUploadAccess, mediaWhere, uploadTargets } from '../utils/upload-fields.js'
 
 export const createMediaHandler =
@@ -46,6 +47,7 @@ export const createMediaHandler =
         overrideAccess: false,
         req,
       })
+      await appendDraftBlocks(collection.fields, doc, body.orders, req)
       const target = uploadTargets(collection.fields, doc).get(body.path)
       if (!target) throw new Error('Unsupported upload field')
       await assertUploadAccess(target, req, doc, body.id)

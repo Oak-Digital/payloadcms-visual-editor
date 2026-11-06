@@ -19,10 +19,18 @@ it('separates rearranging from editing and locates the selected block after movi
   const block = document.querySelector('[data-payload-block-id="b"]')!
   block.scrollIntoView = scroll
   vi.stubGlobal('matchMedia', () => ({ matches: true }))
-  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-    new Response(
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    const body = JSON.parse(String(init?.body))
+    const added = body.orders?.[0]?.additions?.[0]
+    return new Response(
       JSON.stringify({
-        fields: {},
+        revision: 'revision',
+        fields: added
+          ? {
+              'layout.2.heading': { type: 'text', value: 'Section' },
+              'layout.2.image': { type: 'upload', value: null },
+            }
+          : {},
         orders: {
           layout: [
             { id: 'a', label: 'First' },
@@ -32,8 +40,8 @@ it('separates rearranging from editing and locates the selected block after movi
         blockTypes: { layout: [{ slug: 'section', label: 'Section' }] },
         blockLimits: { layout: { min: 0 } },
       }),
-    ),
-  )
+    )
+  })
   const click = async (label: string) => {
     const button = [...container.querySelectorAll('button')].find(
       (button) => button.getAttribute('aria-label') === label || button.textContent === label,
@@ -79,9 +87,31 @@ it('separates rearranging from editing and locates the selected block after movi
     await click('Add block')
     expect(container.querySelector('[aria-label="Add block"]')).toBeTruthy()
     await click('Add Section')
-    expect(container.textContent).toContain('Save draft to edit this block.')
+    expect(container.textContent).not.toContain('Save draft to edit this block.')
+    expect(document.querySelector('[data-draft-block] h2')?.textContent).toBe('Section')
+    expect(document.querySelector('[data-draft-block] img')?.getAttribute('src')).toContain(
+      'data:image/svg+xml',
+    )
+    const headingField = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.startsWith('Heading'),
+    )!
+    await act(async () => headingField.click())
+    const input = container.querySelector('textarea')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+        input,
+        'Before saving',
+      )
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(document.querySelector('[data-draft-block] h2')?.textContent).toBe('Before saving')
+    expect(
+      fetch.mock.calls.every(([, init]) => JSON.parse(String(init?.body)).action === 'read'),
+    ).toBe(true)
+    await click('Back')
     await click('Remove block')
     expect(container.querySelectorAll('ol li')).toHaveLength(1)
+    expect(document.querySelector('[data-draft-block]')).toBeNull()
   } finally {
     await act(async () => root.unmount())
     document.body.innerHTML = ''

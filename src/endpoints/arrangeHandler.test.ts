@@ -142,7 +142,85 @@ describe('arrange editor batch', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]).toMatchObject({ id: 'b', heading: 'Second' })
     expect(rows[1]).toMatchObject({ id: '0123456789abcdef01234567', blockType: 'section' })
-    expect(rows[1].body.root).toMatchObject({ type: 'root', children: [] })
+    expect(rows[1].heading).toBe('section')
+    expect(rows[1].body.root.children[0].children[0].text).toBe('Add your text here.')
+  })
+
+  it('prepares editable new blocks without writing, then saves their edits at reordered positions', async () => {
+    const { call, payload } = fixture()
+    const id = '0123456789abcdef01234567'
+    const orders = [{ path: 'layout', ids: [id, 'b'], additions: [{ id, blockType: 'section' }] }]
+    const prepared = await (await call({ orders })).json()
+    expect(prepared.fields['layout.2.heading']).toEqual({ type: 'text', value: 'section' })
+    expect(prepared.fields['layout.2.body'].schemaPath).toBe('collection.pages.layout.section.body')
+    expect(payload.update).not.toHaveBeenCalled()
+    expect(payload.db.updateVersion).not.toHaveBeenCalled()
+    const response = await call({
+      action: 'save',
+      revision: prepared.revision,
+      orders,
+      changes: [
+        { path: 'layout.2.heading', value: 'Unsaved heading' },
+        { path: 'layout.2.body', value: richText },
+        { path: 'layout.2.image', value: 'new' },
+      ],
+    })
+    expect(response.status).toBe(200)
+    const rows = payload.update.mock.calls[0][0].data.layout
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ id, heading: 'Unsaved heading', body: richText, image: 'new' })
+    expect(rows[1]).toMatchObject({ id: 'b', heading: 'Second' })
+  })
+
+  it('keeps later new-block paths stable after removing an earlier unsaved block', async () => {
+    const { call, payload } = fixture()
+    const first = '0123456789abcdef01234567'
+    const second = '0123456789abcdef01234568'
+    const orders = [
+      {
+        path: 'layout',
+        ids: ['a', second],
+        additions: [
+          { id: first, blockType: 'section' },
+          { id: second, blockType: 'section' },
+        ],
+      },
+    ]
+    const { revision } = await (await call({ orders })).json()
+    const response = await call({
+      action: 'save',
+      revision,
+      orders,
+      changes: [{ path: 'layout.3.heading', value: 'Retained' }],
+    })
+    expect(response.status).toBe(200)
+    expect(payload.update.mock.calls[0][0].data.layout.map((row: any) => row.id)).toEqual([
+      'a',
+      second,
+    ])
+    expect(payload.update.mock.calls[0][0].data.layout[1].heading).toBe('Retained')
+  })
+
+  it('enforces new-block field access on preparation and saving', async () => {
+    const { call, text, payload } = fixture()
+    text.access = { update: () => false }
+    const id = '0123456789abcdef01234567'
+    const orders = [
+      { path: 'layout', ids: ['a', 'b', id], additions: [{ id, blockType: 'section' }] },
+    ]
+    const prepared = await (await call({ orders })).json()
+    expect(prepared.fields['layout.2.heading']).toBeUndefined()
+    expect(
+      (
+        await call({
+          action: 'save',
+          revision: prepared.revision,
+          orders,
+          changes: [{ path: 'layout.2.heading', value: 'Forged' }],
+        })
+      ).status,
+    ).toBe(400)
+    expect(payload.update).not.toHaveBeenCalled()
   })
 
   it('initializes many-valued relationships on new blocks', async () => {

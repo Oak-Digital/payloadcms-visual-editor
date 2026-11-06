@@ -15,7 +15,7 @@ export type ArrangeArrayField = {
   labels: Record<string, string>
 }
 export type ArrangeField =
-  | { type: 'richText' | 'text' | 'textarea' | 'upload'; value: unknown }
+  | { type: 'richText' | 'text' | 'textarea' | 'upload'; value: unknown; schemaPath?: string }
   | ArrangeArrayField
 
 /** Retained rows come from the server, never from client-supplied content. */

@@ -1,5 +1,7 @@
 'use client'
 
+import type { ArrangeOrder } from '../../utils/arrange.js'
+
 import { useEffect, useRef, useState } from 'react'
 import type { PayloadCMSDocument } from '../../types.js'
 import styles from './styles.module.scss'
@@ -25,6 +27,7 @@ export function MediaPicker({
   adminRoute,
   apiRoute,
   documentInfo,
+  draftOrders,
   path,
   onClose,
   onSelect,
@@ -37,6 +40,7 @@ export function MediaPicker({
   apiRoute: string
   documentInfo: PayloadCMSDocument
   path: string
+  draftOrders?: ArrangeOrder[]
   onClose: () => void
   onSelect: (media: MediaChoice) => void
   selected?: MediaChoice
@@ -70,7 +74,7 @@ export function MediaPicker({
           credentials: 'same-origin',
           signal: controller.signal,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...documentInfo, path, search, page }),
+          body: JSON.stringify({ ...documentInfo, path, search, page, orders: draftOrders }),
         })
         const data = await response.json()
         if (!response.ok) throw new Error(data.error || 'Unable to load images')
@@ -91,6 +95,7 @@ export function MediaPicker({
     documentInfo.collection,
     documentInfo.locale,
     path,
+    draftOrders,
     search,
     page,
     revision,

@@ -37,13 +37,11 @@ function fixture() {
         ],
       },
       findByID: vi.fn().mockResolvedValue({ id: 'page', image: 'old' }),
-      find: vi
-        .fn()
-        .mockResolvedValue({
-          docs: [{ id: 'photo', url: '/photo.png', filename: 'watch.png' }],
-          page: 2,
-          totalPages: 3,
-        }),
+      find: vi.fn().mockResolvedValue({
+        docs: [{ id: 'photo', url: '/photo.png', filename: 'watch.png' }],
+        page: 2,
+        totalPages: 3,
+      }),
       logger: { error: vi.fn() },
     },
   }
@@ -81,6 +79,28 @@ describe('media browsing permissions', () => {
         },
       }),
     )
+  })
+  it('loads permitted images for an unsaved block and still enforces its field access', async () => {
+    const { req, fieldUpdate } = fixture()
+    const upload = req.payload.config.collections[0].fields![0]
+    Object.assign(req.payload.config.collections[0], {
+      fields: [{ name: 'layout', type: 'blocks', blocks: [{ slug: 'section', fields: [upload] }] }],
+    })
+    req.payload.findByID.mockResolvedValue(
+      Object.assign({ id: 'page', image: 'old' }, { layout: [] }),
+    )
+    const id = '0123456789abcdef01234567'
+    const original = await req.json()
+    req.json = async () => ({
+      ...original,
+      path: 'layout.0.image',
+      orders: [{ path: 'layout', ids: [id], additions: [{ id, blockType: 'section' }] }],
+    })
+    expect((await handler(req as never)).status).toBe(200)
+    fieldUpdate.mockResolvedValue(false)
+    req.payload.find.mockClear()
+    expect((await handler(req as never)).status).toBe(400)
+    expect(req.payload.find).not.toHaveBeenCalled()
   })
   it('rejects anonymous browsing before any document read', async () => {
     const { req } = fixture()

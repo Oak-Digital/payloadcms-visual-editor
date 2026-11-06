@@ -1,6 +1,14 @@
 'use client'
 
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal, flushSync } from 'react-dom'
 
 import type { Annotation, PayloadCMSDocument } from '../../types.js'
@@ -15,6 +23,7 @@ import { RichTextSidebar } from '../rich-text-editor/sidebar.js'
 import { EditorIcon } from '../workspace/icons.js'
 import styles from './styles.module.scss'
 import { ArrayEditor } from './array-editor.js'
+import { createDraftBlockPreviews } from './draft-block-preview.js'
 import { createCanvasTextEditor } from './canvas-text.js'
 
 type Session = {
@@ -24,6 +33,22 @@ type Session = {
   orders: Record<string, string[]>
   owner: PayloadCMSDocument
   snapshot: ArrangeSnapshot
+}
+function expandedOrders(session: Session) {
+  return Object.fromEntries(
+    Object.entries(session.snapshot.orders).map(([path, rows]) => [
+      path,
+      [
+        ...rows,
+        ...(session.additions[path] ?? []).map((addition) => ({
+          id: addition.id,
+          label:
+            session.snapshot.blockTypes?.[path]?.find((type) => type.slug === addition.blockType)
+              ?.label || addition.blockType,
+        })),
+      ],
+    ]),
+  )
 }
 type Target = { key: string; path: string }
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
@@ -108,7 +133,7 @@ export function ArrangeEditor({
   const selectedSession = selectedBlock && sessions[selectedBlock.key]
   const selectedIndex =
     selectedBlock &&
-    selectedSession?.snapshot.orders[selectedBlock.path]?.findIndex(
+    (selectedSession && expandedOrders(selectedSession)[selectedBlock.path])?.findIndex(
       (row) => row.id === selectedBlock.id,
     )
   const blockPath =
@@ -117,13 +142,22 @@ export function ArrangeEditor({
       : undefined
   const blockLabel =
     selectedBlock && selectedIndex !== undefined
-      ? selectedSession?.snapshot.orders[selectedBlock.path]?.[selectedIndex]?.label
+      ? (selectedSession && expandedOrders(selectedSession)[selectedBlock.path])?.[selectedIndex]
+          ?.label
       : undefined
-  const selectedAddition =
-    selectedBlock &&
-    selectedSession?.additions[selectedBlock.path]?.find(
-      (addition) => addition.id === selectedBlock.id,
-    )
+  useEffect(() => {
+    if (!selectedBlock || committed.current.has(selectedBlock.key)) return
+    const session = sessions[selectedBlock.key]
+    const ids =
+      session?.orders[selectedBlock.path] ??
+      session?.snapshot.orders[selectedBlock.path]?.map((row) => row.id) ??
+      []
+    if (!ids.includes(selectedBlock.id)) {
+      setSelectedBlock(undefined)
+      setSelectedRow(undefined)
+      setTarget(undefined)
+    }
+  }, [sessions, selectedBlock])
   const viewKey = target
     ? `${target.key}:${target.path}`
     : selectedRow
@@ -164,7 +198,7 @@ export function ArrangeEditor({
   }
   function selectField(key: string, path: string) {
     onReveal?.()
-    const order = Object.entries(sessions[key].snapshot.orders)
+    const order = Object.entries(expandedOrders(sessions[key]))
       .filter(([orderPath]) => path.startsWith(`${orderPath}.`))
       .sort(([a], [b]) => b.length - a.length)[0]
     const row = order?.[1][Number(path.slice(order[0].length + 1).split('.')[0])]
@@ -187,6 +221,16 @@ export function ArrangeEditor({
         )
       : []
   const [picker, setPicker] = useState<Target>()
+  const pickerOrders = useMemo(() => {
+    const session = picker && sessions[picker.key]
+    return session
+      ? Object.entries(session.additions).map(([path, additions]) => ({
+          path,
+          additions,
+          ids: session.orders[path] ?? session.snapshot.orders[path].map((row) => row.id),
+        }))
+      : undefined
+  }, [picker?.key, sessions])
   const [pickerSelection, setPickerSelection] = useState<MediaChoice>()
   useEffect(() => {
     if (pickerSelection && panelContainer) heading.current?.focus({ preventScroll: true })
@@ -195,7 +239,7 @@ export function ArrangeEditor({
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
-  const [operation, setOperation] = useState<'save' | 'publish' | 'refresh'>('save')
+  const [operation, setOperation] = useState<'save' | 'publish' | 'refresh' | 'add'>('save')
   const [ready, setReady] = useState(false)
   const [needsSync, setNeedsSync] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -227,9 +271,11 @@ export function ArrangeEditor({
           ? 'Loading content…'
           : refreshing || operation === 'refresh'
             ? 'Updating preview…'
-            : operation === 'publish'
-              ? 'Publishing…'
-              : 'Saving draft…'
+            : operation === 'add'
+              ? 'Adding block…'
+              : operation === 'publish'
+                ? 'Publishing…'
+                : 'Saving draft…'
         : status,
       Object.values(sessions).reduce(
         (total, session) =>
@@ -526,6 +572,20 @@ export function ArrangeEditor({
     setSessions(next)
     setStatus('')
   }
+  const draftPreviews = useRef<ReturnType<typeof createDraftBlockPreviews> | undefined>(undefined)
+  useLayoutEffect(() => {
+    draftPreviews.current = createDraftBlockPreviews(document, documentInfo)
+    return () => draftPreviews.current?.destroy()
+  }, [documentInfo])
+  useLayoutEffect(() => {
+    draftPreviews.current?.update(
+      refreshing
+        ? []
+        : Object.values(sessions).filter(
+            (session) => !committed.current.has(documentKey(session.owner)),
+          ),
+    )
+  })
   const canvasText = useRef<ReturnType<typeof createCanvasTextEditor> | undefined>(undefined)
   useLayoutEffect(() => {
     const editor = createCanvasTextEditor(document)
@@ -693,20 +753,76 @@ export function ArrangeEditor({
       else orders[path] = ids
       if (additions.length) nextAdditions[path] = additions
       else delete nextAdditions[path]
-      return { ...previous, [key]: { ...session, orders, additions: nextAdditions } }
+      if (!orders[path]) delete nextAdditions[path]
+      const removedPrefixes = expandedOrders(session)[path].flatMap((row, index) =>
+        ids.includes(row.id) ? [] : [`${path}.${index}.`],
+      )
+      const changes = Object.fromEntries(
+        Object.entries(session.changes).filter(
+          ([fieldPath]) => !removedPrefixes.some((prefix) => fieldPath.startsWith(prefix)),
+        ),
+      )
+      const media = Object.fromEntries(
+        Object.entries(session.media).filter(
+          ([fieldPath]) => !removedPrefixes.some((prefix) => fieldPath.startsWith(prefix)),
+        ),
+      )
+      return {
+        ...previous,
+        [key]: { ...session, changes, media, orders, additions: nextAdditions },
+      }
     })
   }
 
-  function addBlock(key: string, path: string, blockType: string) {
+  async function addBlock(key: string, path: string, blockType: string) {
+    if (busy || needsSync) return
     const session = sessions[key]
     const original = session.snapshot.orders[path].map((row) => row.id)
     const ids = session.orders[path] ?? original
     const id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (byte) =>
       byte.toString(16).padStart(2, '0'),
     ).join('')
-    changeBlocks(key, path, [...ids, id], [...(session.additions[path] ?? []), { id, blockType }])
-    setAdding(undefined)
-    setSelectedBlock({ key, path, id })
+    const additions = [...(session.additions[path] ?? []), { id, blockType }]
+    const orders = { ...session.orders, [path]: [...ids, id] }
+    setOperation('add')
+    setBusy(true)
+    setError('')
+    try {
+      const prepared: ArrangeSnapshot = await request(session.owner, {
+        action: 'read',
+        paths: [],
+        orderPaths: Object.keys(session.snapshot.orders),
+        orders: Object.entries(orders).map(([orderPath, ids]) => ({
+          path: orderPath,
+          ids,
+          additions: orderPath === path ? additions : (session.additions[orderPath] ?? []),
+        })),
+      })
+      if (prepared.revision !== session.snapshot.revision)
+        throw new Error(
+          'This document changed. Reload before adding blocks; your pending changes are still here.',
+        )
+      rememberEdit()
+      setSessions((previous) => ({
+        ...previous,
+        [key]: {
+          ...session,
+          orders,
+          additions: { ...session.additions, [path]: additions },
+          snapshot: {
+            ...session.snapshot,
+            fields: { ...session.snapshot.fields, ...prepared.fields },
+          },
+        },
+      }))
+      setStatus('')
+      setAdding(undefined)
+      setSelectedBlock({ key, path, id })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to add block')
+    } finally {
+      setBusy(false)
+    }
   }
 
   function removeBlock(key: string, path: string, id: string) {
@@ -716,7 +832,7 @@ export function ArrangeEditor({
       key,
       path,
       ids.filter((candidate) => candidate !== id),
-      (session.additions[path] ?? []).filter((addition) => addition.id !== id),
+      session.additions[path] ?? [],
     )
     setSelectedBlock(undefined)
     setSelectedRow(undefined)
@@ -838,7 +954,7 @@ export function ArrangeEditor({
         } else if (target?.key === key) {
           nextTarget.current = {
             key,
-            path: remapArrangePath(target.path, session.snapshot.orders, session.orders),
+            path: remapArrangePath(target.path, expandedOrders(session), session.orders),
           }
         }
         savedOwners =
@@ -960,8 +1076,8 @@ export function ArrangeEditor({
                               ? 'Revision history'
                               : target
                                 ? 'Edit content'
-                                : blockLabel || selectedAddition
-                                  ? humanize(blockLabel || selectedAddition!.blockType)
+                                : blockLabel
+                                  ? humanize(blockLabel)
                                   : blockMode === 'edit'
                                     ? 'Page blocks'
                                     : 'Rearrange content'}
@@ -997,6 +1113,7 @@ export function ArrangeEditor({
                   selected={pickerSelection}
                   onSelectionChange={setPickerSelection}
                   path={picker.path}
+                  draftOrders={pickerOrders}
                 />
               )}
               {(!picker || !panelContainer) && (
@@ -1083,7 +1200,6 @@ export function ArrangeEditor({
                           )}
                         </section>
                       )}
-                      {selectedAddition && <p>Save draft to edit this block.</p>}
                       {field && field.type !== 'array' && target && (
                         <section aria-label="Selected content">
                           <h3>{field.type === 'upload' ? 'Image' : 'Text'}</h3>
@@ -1134,9 +1250,11 @@ export function ArrangeEditor({
                           )}
                           {field.type === 'richText' && session && (
                             <RichTextSidebar
+                              key={`${target.key}:${target.path}`}
                               adminRoute={adminRoute}
                               documentInfo={session.owner}
                               path={target.path}
+                              schemaPath={field.schemaPath}
                               value={value}
                               disabled={busy || needsSync}
                               onChange={(next) => stage(target, next)}
@@ -1222,7 +1340,7 @@ export function ArrangeEditor({
                         ) && (
                           <section aria-label="Blocks">
                             {Object.entries(sessions).flatMap(([key, session]) =>
-                              Object.entries(session.snapshot.orders).map(([path, rows]) => {
+                              Object.entries(expandedOrders(session)).map(([path, rows]) => {
                                 const ids = session.orders[path] ?? rows.map((row) => row.id)
                                 return (
                                   <div key={`${key}:${path}`}>
@@ -1409,9 +1527,25 @@ export function ArrangeEditor({
                                   const additions = { ...previous[key].additions }
                                   delete orders[path]
                                   delete additions[path]
+                                  const prefixes = (previous[key].additions[path] ?? []).map(
+                                    (_, index) =>
+                                      `${path}.${previous[key].snapshot.orders[path].length + index}.`,
+                                  )
+                                  const changes = Object.fromEntries(
+                                    Object.entries(previous[key].changes).filter(
+                                      ([field]) =>
+                                        !prefixes.some((prefix) => field.startsWith(prefix)),
+                                    ),
+                                  )
+                                  const media = Object.fromEntries(
+                                    Object.entries(previous[key].media).filter(
+                                      ([field]) =>
+                                        !prefixes.some((prefix) => field.startsWith(prefix)),
+                                    ),
+                                  )
                                   return {
                                     ...previous,
-                                    [key]: { ...previous[key], orders, additions },
+                                    [key]: { ...previous[key], orders, additions, changes, media },
                                   }
                                 })
                               }}
@@ -1493,6 +1627,7 @@ export function ArrangeEditor({
           selected={pickerSelection}
           onSelectionChange={setPickerSelection}
           path={picker.path}
+          draftOrders={pickerOrders}
         />
       )}
     </>

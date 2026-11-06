@@ -13,6 +13,7 @@ export function RichTextSidebar({
   documentInfo,
   onChange,
   path,
+  schemaPath,
   value,
 }: {
   adminRoute: string
@@ -20,6 +21,7 @@ export function RichTextSidebar({
   documentInfo: PayloadCMSDocument
   onChange: (value: unknown) => void
   path: string
+  schemaPath?: string
   value: unknown
 }) {
   const frame = useRef<HTMLIFrameElement>(null)
@@ -70,7 +72,7 @@ export function RichTextSidebar({
     <div className={styles.sidebar} inert={disabled}>
       <iframe
         ref={frame}
-        src={`${adminRoute}/visual-rich-text?${new URLSearchParams({ id: String(documentInfo.id), collection: documentInfo.collection, embedded: 'true', locale: documentInfo.locale || '', mode: 'stage', path })}`}
+        src={`${adminRoute}/visual-rich-text?${new URLSearchParams({ id: String(documentInfo.id), collection: documentInfo.collection, embedded: 'true', locale: documentInfo.locale || '', mode: 'stage', path, ...(schemaPath ? { schemaPath } : {}) })}`}
         title="Rich-text editor"
       />
     </div>
