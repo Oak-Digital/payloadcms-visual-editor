@@ -35,7 +35,7 @@ import { createDraftBlockPreviews } from './draft-block-preview.js'
 import { createCanvasTextEditor } from './canvas-text.js'
 
 type Session = {
-  additions: Record<string, { id: string; blockType: string }[]>
+  additions: Record<string, { id: string; blockType: string; sourceId?: string }[]>
   changes: Record<string, unknown>
   media: Record<string, MediaChoice>
   orders: Record<string, string[]>
@@ -53,6 +53,7 @@ function expandedOrders(session: Session) {
         ...rows,
         ...(session.additions[path] ?? []).map((addition) => ({
           id: addition.id,
+          blockType: addition.blockType,
           label:
             session.snapshot.blockTypes?.[path]?.find((type) => type.slug === addition.blockType)
               ?.label || addition.blockType,
@@ -855,7 +856,7 @@ export function ArrangeEditor({
     })
   }
 
-  async function addBlock(key: string, path: string, blockType: string) {
+  async function addBlock(key: string, path: string, blockType: string, sourceId?: string) {
     if (busy || needsSync) return
     const session = sessions[key]
     const original = session.snapshot.orders[path].map((row) => row.id)
@@ -863,8 +864,15 @@ export function ArrangeEditor({
     const id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (byte) =>
       byte.toString(16).padStart(2, '0'),
     ).join('')
-    const additions = [...(session.additions[path] ?? []), { id, blockType }]
-    const orders = { ...session.orders, [path]: [...ids, id] }
+    const max = session.snapshot.blockLimits?.[path]?.max
+    if (max !== undefined && ids.length >= max) return
+    const additions = [
+      ...(session.additions[path] ?? []),
+      { id, blockType, ...(sourceId ? { sourceId } : {}) },
+    ]
+    const nextIds = [...ids]
+    nextIds.splice(sourceId ? ids.indexOf(sourceId) + 1 : ids.length, 0, id)
+    const orders = { ...session.orders, [path]: nextIds }
     setOperation('add')
     setBusy(true)
     setError('')
@@ -883,11 +891,41 @@ export function ArrangeEditor({
         throw new Error(
           'This document changed. Reload before adding blocks; your pending changes are still here.',
         )
+      const changes = { ...session.changes }
+      const media = { ...session.media }
+      if (sourceId) {
+        const sourceIndex = expandedOrders(session)[path].findIndex((row) => row.id === sourceId)
+        const targetIndex = session.snapshot.orders[path].length + additions.length - 1
+        const prefix = `${path}.${sourceIndex}.`
+        const targetPrefix = `${path}.${targetIndex}.`
+        for (const [fieldPath, field] of Object.entries(session.snapshot.fields)) {
+          if (!fieldPath.startsWith(prefix)) continue
+          const targetPath = targetPrefix + fieldPath.slice(prefix.length)
+          const targetField = prepared.fields[targetPath]
+          if (!targetField) continue
+          let value = structuredClone(
+            Object.hasOwn(session.changes, fieldPath) ? session.changes[fieldPath] : field.value,
+          )
+          if (field.type === 'array' && targetField.type === 'array' && Array.isArray(value)) {
+            const originalIds = field.value.map((row) => ('id' in row ? row.id : undefined))
+            value = value.map((row: ArrayRow) => {
+              if (!('id' in row)) return row
+              const mapped = targetField.value[originalIds.indexOf(row.id)]
+              if (!mapped || !('id' in mapped)) throw new Error('Unable to duplicate nested rows')
+              return { id: mapped.id }
+            })
+          }
+          if (!same(value, targetField.value)) changes[targetPath] = value
+          if (session.media[fieldPath]) media[targetPath] = session.media[fieldPath]
+        }
+      }
       rememberEdit()
       setSessions((previous) => ({
         ...previous,
         [key]: {
           ...session,
+          changes,
+          media,
           orders,
           additions: { ...session.additions, [path]: additions },
           snapshot: {
@@ -1525,6 +1563,36 @@ export function ArrangeEditor({
                             </button>
                           ))}
                         </section>
+                      )}
+                      {!target && selectedBlock && selectedSession && (
+                        <button
+                          type="button"
+                          className={styles.fieldLink}
+                          disabled={
+                            busy ||
+                            needsSync ||
+                            (
+                              selectedSession.orders[selectedBlock.path] ??
+                              selectedSession.snapshot.orders[selectedBlock.path]
+                            ).length >=
+                              (selectedSession.snapshot.blockLimits?.[selectedBlock.path]?.max ??
+                                Infinity)
+                          }
+                          onClick={() => {
+                            const row = expandedOrders(selectedSession)[selectedBlock.path].find(
+                              (row) => row.id === selectedBlock.id,
+                            )
+                            if (row?.blockType)
+                              void addBlock(
+                                selectedBlock.key,
+                                selectedBlock.path,
+                                row.blockType,
+                                row.id,
+                              )
+                          }}
+                        >
+                          Duplicate block
+                        </button>
                       )}
                       {!target && selectedBlock && (
                         <button

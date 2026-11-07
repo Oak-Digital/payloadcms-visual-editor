@@ -101,7 +101,15 @@ export const createArrangeHandler =
       const paths = new Set<string>(body.paths as string[])
       for (const orderPath of body.orderPaths as string[]) {
         for (const path of Object.keys(sourceMap)) {
-          if (path.startsWith(`${orderPath}.`)) paths.add(path)
+          if (path.startsWith(`${orderPath}.`)) {
+            paths.add(path)
+            const parts = path.split('.')
+            for (let length = 1; length < parts.length; length++) {
+              const parentPath = parts.slice(0, length).join('.')
+              const parent = resolveField(collection.fields, visible, parentPath)
+              if (parent?.field.type === 'array') paths.add(parentPath)
+            }
+          }
         }
       }
       for (const path of paths) {
@@ -199,6 +207,7 @@ export const createArrangeHandler =
           snapshot.orders[path] = rows.map((row) => ({
             id: String(row.id),
             label: String(row.blockName || row.blockType),
+            blockType: String(row.blockType),
           }))
           snapshot.blockTypes![path] = resolved.field.blocks.map((block) => ({
             slug: block.slug,

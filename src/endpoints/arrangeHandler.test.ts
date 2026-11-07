@@ -491,6 +491,38 @@ describe('relationship array editing', () => {
       })
     return { ...fixtureData, read, save }
   }
+  it('duplicates nested rows with independent identities and applies copied row edits before reordering', async () => {
+    const { call, payload } = arrayFixture()
+    const id = '0123456789abcdef01234567'
+    const orders = [
+      {
+        path: 'layout',
+        ids: ['a', id, 'b'],
+        additions: [{ id, blockType: 'section', sourceId: 'a' }],
+      },
+    ]
+    const prepared = await (await call({ orders })).json()
+    const rows = prepared.fields['layout.2.slides'].value
+    expect(rows[0].id).not.toBe('one')
+    expect(rows[1].id).not.toBe('two')
+    const saved = await call({
+      action: 'save',
+      revision: prepared.revision,
+      orders,
+      changes: [
+        { path: 'layout.2.slides.0.caption', value: 'Copied pending caption' },
+        { path: 'layout.2.slides', value: [rows[1], rows[0]] },
+      ],
+    })
+    expect(saved.status).toBe(200)
+    const layout = payload.update.mock.calls[0][0].data.layout
+    expect(layout[0].slides[0]).toMatchObject({ id: 'one', caption: 'Keep me' })
+    expect(layout[1].slides[1]).toMatchObject({
+      id: rows[0].id,
+      caption: 'Copied pending caption',
+      product: 'new',
+    })
+  })
   it('adds and removes rows while preserving edited overrides through block reordering', async () => {
     const { read, save, payload } = arrayFixture()
     const { revision, fields } = await read()
@@ -531,5 +563,69 @@ describe('relationship array editing', () => {
     delete array.access
     delete array.custom
     expect((await read()).fields).not.toHaveProperty('layout.0.slides')
+  })
+})
+
+it('duplicates stored content independently and retains the copy after removing its source', async () => {
+  const { call, payload } = fixture()
+  const id = '0123456789abcdef01234567'
+  const orders = [
+    { path: 'layout', ids: [id, 'b'], additions: [{ id, blockType: 'section', sourceId: 'a' }] },
+  ]
+  const prepared = await (await call({ orders })).json()
+  expect(prepared.fields['layout.2.heading'].value).toBe('First')
+  expect(payload.update).not.toHaveBeenCalled()
+  const saved = await call({
+    action: 'save',
+    revision: prepared.revision,
+    orders,
+    changes: [{ path: 'layout.2.heading', value: 'Independent copy' }],
+  })
+  expect(saved.status).toBe(200)
+  expect(payload.update.mock.calls[0][0].data.layout[0]).toMatchObject({
+    id,
+    heading: 'Independent copy',
+    image: 'old',
+  })
+})
+it('rejects duplication of inaccessible source fields and unknown sources', async () => {
+  const { call, text, payload } = fixture()
+  const id = '0123456789abcdef01234567'
+  const duplicate = (sourceId: string) => ({
+    orders: [
+      { path: 'layout', ids: ['a', id, 'b'], additions: [{ id, blockType: 'section', sourceId }] },
+    ],
+  })
+  expect((await call(duplicate('missing'))).status).toBe(400)
+  text.access = { read: () => false }
+  expect((await call(duplicate('a'))).status).toBe(400)
+  expect(payload.update).not.toHaveBeenCalled()
+})
+
+it('duplicates a pending new block even when its source is removed', async () => {
+  const { call, payload } = fixture()
+  const first = '0123456789abcdef01234567'
+  const second = '1123456789abcdef01234567'
+  const orders = [
+    {
+      path: 'layout',
+      ids: ['a', 'b', second],
+      additions: [
+        { id: first, blockType: 'section' },
+        { id: second, blockType: 'section', sourceId: first },
+      ],
+    },
+  ]
+  const prepared = await (await call({ orders })).json()
+  const result = await call({
+    action: 'save',
+    revision: prepared.revision,
+    orders,
+    changes: [{ path: 'layout.3.heading', value: 'Copy of pending source' }],
+  })
+  expect(result.status).toBe(200)
+  expect(payload.update.mock.calls[0][0].data.layout[2]).toMatchObject({
+    id: second,
+    heading: 'Copy of pending source',
   })
 })

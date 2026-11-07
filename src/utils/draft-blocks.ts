@@ -1,6 +1,7 @@
 import type { Field, PayloadRequest } from 'payload'
 
 import { type ArrangeOrder, safePath, setPath } from './arrange.js'
+import { duplicateBlock } from './duplicate-block.js'
 import { assertFieldAccess, resolveField } from './rich-text.js'
 
 export function blockDefaults(fields: Field[], label: string): Record<string, unknown> {
@@ -121,12 +122,33 @@ export async function appendDraftBlocks(
       if (!block) {
         throw new Error('Invalid block type')
       }
+      let cloned: Record<string, unknown> | undefined
+      if (addition.sourceId !== undefined) {
+        const sourceIndex = rows.findIndex((row) => row.id === addition.sourceId)
+        const source = rows[sourceIndex]
+        if (typeof addition.sourceId !== 'string' || !source || source.blockType !== block.slug) {
+          throw new Error('Duplicate source is unavailable')
+        }
+        const check = async (value: unknown, path: string): Promise<void> => {
+          if (!value || typeof value !== 'object') return
+          for (const [key, child] of Object.entries(value)) {
+            if (key === 'id' || key === 'blockType') continue
+            const childPath = `${path}.${key}`
+            const field = resolveField(fields, document, childPath)
+            if (field) await assertFieldAccess(field, document, req)
+            await check(child, childPath)
+          }
+        }
+        await check(source, `${order.path}.${sourceIndex}`)
+        cloned = duplicateBlock(block.fields, source, addition.id)
+      }
       ids.add(addition.id)
       rows.push({
-        ...blockDefaults(
-          block.fields,
-          typeof block.labels?.singular === 'string' ? block.labels.singular : block.slug,
-        ),
+        ...(cloned ??
+          blockDefaults(
+            block.fields,
+            typeof block.labels?.singular === 'string' ? block.labels.singular : block.slug,
+          )),
         id: addition.id,
         blockType: block.slug,
       })

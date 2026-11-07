@@ -2,7 +2,7 @@ export type ArrangeChange = { path: string; value: unknown }
 export type ArrangeOrder = {
   ids: string[]
   path: string
-  additions?: { id: string; blockType: string }[]
+  additions?: { id: string; blockType: string; sourceId?: string }[]
 }
 export type ArrayRow = { id: string } | { relationship: string }
 export type ArrangeArrayField = {
@@ -51,7 +51,7 @@ export function arrangeArrayRows(
 export type ArrangeSnapshot = {
   recoveryUser?: string
   fields: Record<string, ArrangeField>
-  orders: Record<string, { id: string; label: string }[]>
+  orders: Record<string, { id: string; label: string; blockType?: string }[]>
   blockTypes?: Record<string, { slug: string; label: string }[]>
   blockLimits?: Record<string, { min: number; max?: number }>
   revision: string
