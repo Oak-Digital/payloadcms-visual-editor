@@ -121,11 +121,18 @@
   margin-bottom: 12px;
   overflow-wrap: anywhere;
 }
+.panel .imagePreviewButton {
+  display: block;
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
 .imagePreview {
   display: block;
   width: 100%;
   max-height: 260px;
-  margin-bottom: 16px;
   object-fit: contain;
   border-radius: 8px;
 }

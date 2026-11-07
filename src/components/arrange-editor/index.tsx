@@ -1233,11 +1233,19 @@ export function ArrangeEditor({
                           {field.type === 'upload' && (
                             <>
                               {imagePreview && (
-                                <img
-                                  className={styles.imagePreview}
-                                  src={imagePreview}
-                                  alt="Current image"
-                                />
+                                <button
+                                  aria-label="Replace image from preview"
+                                  className={styles.imagePreviewButton}
+                                  disabled={busy || needsSync}
+                                  onClick={() => setPicker(target)}
+                                  type="button"
+                                >
+                                  <img
+                                    className={styles.imagePreview}
+                                    src={imagePreview}
+                                    alt="Current image"
+                                  />
+                                </button>
                               )}
                               <button
                                 disabled={busy || needsSync}
