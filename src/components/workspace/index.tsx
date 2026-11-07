@@ -253,8 +253,14 @@ function WorkspaceShell({
   const [src, setSrc] = useState(() => {
     const url = new URL(window.location.href)
     url.searchParams.set('visual-editor-canvas', '1')
+    url.searchParams.set('visual-editor-document', String(documentInfo.id))
     return url.href
   })
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('visual-editor-document', String(documentInfo.id))
+    window.history.replaceState(window.history.state, '', url.href)
+  }, [documentInfo.id])
   const [current, setCurrent] = useState(documentInfo)
   const [currentLabel, setCurrentLabel] = useState('Current page')
   const [sourceSlug, setSourceSlug] = useState(documentInfo.collection)
@@ -421,6 +427,10 @@ function WorkspaceShell({
         return
       }
       url.searchParams.set('visual-editor-canvas', '1')
+      url.searchParams.set('visual-editor-document', entry.id)
+      const outerURL = new URL(url)
+      outerURL.searchParams.delete('visual-editor-canvas')
+      window.history.replaceState(window.history.state, '', outerURL.href)
       setSharedVisible(false)
       setSharedTarget(undefined)
       setSharedPending(false)

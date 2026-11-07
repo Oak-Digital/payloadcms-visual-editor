@@ -141,6 +141,9 @@ export function ArrangeEditor({
   const [blockMode, setBlockMode] = useState<'edit' | 'rearrange'>('edit')
   const [adding, setAdding] = useState<Target>()
   const [revisionRefresh, setRevisionRefresh] = useState(0)
+  const [historical, setHistorical] = useState<PayloadCMSDocument>()
+  const revisionRequest = useRef<{ cancel: () => void } | undefined>(undefined)
+  const [historyOwnerKey, setHistoryOwnerKey] = useState<string>()
   const [sessions, setSessions] = useState<Record<string, Session>>({})
   const [recoveries, setRecoveries] = useState<
     Record<string, { record: RecoveryRecord<Session>; conflict: boolean }>
@@ -659,7 +662,7 @@ export function ArrangeEditor({
   }, [count])
 
   useEffect(() => {
-    if (!active) {
+    if (!active || historical) {
       return
     }
     const elements = [
@@ -735,11 +738,21 @@ export function ArrangeEditor({
       document.removeEventListener('keydown', keyboard, true)
       document.removeEventListener('click', select, true)
     }
-  }, [active, busy, needsSync, sessions, documentInfo, blockMode, previewEpoch, layoutView])
+  }, [
+    active,
+    busy,
+    needsSync,
+    sessions,
+    documentInfo,
+    blockMode,
+    previewEpoch,
+    layoutView,
+    historical,
+  ])
 
   function undo() {
     const previous = undoStack.at(-1)
-    if (!previous || busy || needsSync) return
+    if (!previous || busy || needsSync || historical) return
     setRedoStack((stack) => [...stack, sessions])
     setUndoStack((stack) => stack.slice(0, -1))
     setSessions(previous)
@@ -747,7 +760,7 @@ export function ArrangeEditor({
   }
   function redo() {
     const next = redoStack.at(-1)
-    if (!next || busy || needsSync) return
+    if (!next || busy || needsSync || historical) return
     setUndoStack((stack) => [...stack, sessions])
     setRedoStack((stack) => stack.slice(0, -1))
     setSessions(next)
@@ -812,7 +825,7 @@ export function ArrangeEditor({
   }, [])
   useLayoutEffect(() => {
     canvasText.current?.update({
-      enabled: active && blockMode === 'edit',
+      enabled: active && !historical && blockMode === 'edit',
       blocked: busy || needsSync,
       refreshing,
       resolve: (element) => {
@@ -1341,8 +1354,103 @@ export function ArrangeEditor({
     return () => window.removeEventListener('message', receive)
   }, [sessions, recoveries, busy, needsSync, count])
 
+  const returnFromRevision = useCallback((owner: PayloadCMSDocument) => {
+    revisionRequest.current?.cancel()
+    window.dispatchEvent(
+      new CustomEvent('payload:render-revision', { detail: { owner, versionId: null } }),
+    )
+    setHistorical(undefined)
+  }, [])
+
+  async function previewRevision(owner: PayloadCMSDocument, versionId: string): Promise<string> {
+    if (!document.querySelector('[data-payload-live-preview]'))
+      throw new Error('This host does not support revision previews')
+    revisionRequest.current?.cancel()
+    setHistorical(owner)
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () => finish(new Error('Revision preview timed out. Try again.')),
+        30000,
+      )
+      const finish = (error?: Error, revision?: string) => {
+        clearTimeout(timer)
+        window.removeEventListener('payload:revision-result', receive)
+        revisionRequest.current = undefined
+        if (error) {
+          window.dispatchEvent(
+            new CustomEvent('payload:render-revision', { detail: { owner, versionId: null } }),
+          )
+          setHistorical(undefined)
+          reject(error)
+        } else resolve(revision!)
+      }
+      const receive = (event: Event) => {
+        if (!(event instanceof CustomEvent)) return
+        const result = event.detail
+        if (
+          result?.owner?.id !== owner.id ||
+          result.owner.collection !== owner.collection ||
+          result.versionId !== versionId
+        )
+          return
+        if (result.error) finish(new Error(result.error))
+        else if (typeof result.revision === 'string') finish(undefined, result.revision)
+      }
+      revisionRequest.current = { cancel: () => finish(new Error('Revision preview closed')) }
+      window.addEventListener('payload:revision-result', receive)
+      window.dispatchEvent(
+        new CustomEvent('payload:render-revision', { detail: { owner, versionId } }),
+      )
+    })
+  }
+
+  async function restoreRevision(owner: PayloadCMSDocument, versionId: string, revision: string) {
+    if (busy || needsSync || count || Object.keys(recoveries).length)
+      throw new Error('Save or discard pending edits before restoring.')
+    setBusy(true)
+    setOperation('refresh')
+    setError('')
+    try {
+      const response = await fetch(`${apiRoute}/payload-visual-editor/revisions`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...owner, versionId, revision, action: 'restore' }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Unable to restore revision')
+      const key = documentKey(owner)
+      committed.current.add(key)
+      returnFromRevision(owner)
+      setUndoStack([])
+      setRedoStack([])
+      const savedKey = `visual-editor-drafts:${documentKey(documentInfo)}`
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(savedKey) || '[]')
+        sessionStorage.setItem(
+          savedKey,
+          JSON.stringify([...new Set([...(Array.isArray(saved) ? saved : []), key])]),
+        )
+      } catch {
+        /* Restoring succeeded; storage is optional. */
+      }
+      setNeedsSync(true)
+      await syncPreview()
+      setRevisionRefresh((value) => value + 1)
+      setStatus('Revision restored as draft.')
+    } catch (cause) {
+      if (committed.current.size) {
+        setStatus('Draft restored · Preview update failed')
+        setError('The draft was restored. Retry the preview update before editing.')
+      }
+      throw cause
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function submit(action: 'publish' | 'save'): Promise<boolean> {
-    if (saving.current || busy || needsSync || Object.keys(recoveries).length) {
+    if (saving.current || busy || needsSync || historical || Object.keys(recoveries).length) {
       return false
     }
     let success = false
@@ -1473,7 +1581,7 @@ export function ArrangeEditor({
           <>
             <button
               aria-label="Undo"
-              disabled={busy || needsSync || !undoStack.length}
+              disabled={busy || needsSync || !!historical || !undoStack.length}
               type="button"
               onClick={undo}
             >
@@ -1481,7 +1589,7 @@ export function ArrangeEditor({
             </button>
             <button
               aria-label="Redo"
-              disabled={busy || needsSync || !redoStack.length}
+              disabled={busy || needsSync || !!historical || !redoStack.length}
               type="button"
               onClick={redo}
             >
@@ -2215,12 +2323,39 @@ export function ArrangeEditor({
                     </ul>
                   </details>
                   {tab === 'revisions' && (
-                    <RevisionHistory
-                      apiRoute={apiRoute}
-                      key={documentKey(documentInfo)}
-                      owner={documentInfo}
-                      refresh={revisionRefresh}
-                    />
+                    <>
+                      {Object.keys(sessions).length > 1 && (
+                        <label>
+                          History for
+                          <select
+                            aria-label="History for"
+                            value={historyOwnerKey ?? documentKey(documentInfo)}
+                            onChange={(event) => setHistoryOwnerKey(event.target.value)}
+                          >
+                            {Object.entries(sessions).map(([key, session]) => (
+                              <option key={key} value={key}>
+                                {session.snapshot.label || session.owner.collection}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      <RevisionHistory
+                        apiRoute={apiRoute}
+                        key={historyOwnerKey ?? documentKey(documentInfo)}
+                        owner={
+                          sessions[historyOwnerKey ?? documentKey(documentInfo)]?.owner ??
+                          documentInfo
+                        }
+                        refresh={revisionRefresh}
+                        onPreview={previewRevision}
+                        onReturn={returnFromRevision}
+                        onRestore={restoreRevision}
+                        canRestore={
+                          !busy && !needsSync && count === 0 && Object.keys(recoveries).length === 0
+                        }
+                      />
+                    </>
                   )}
                   {error && (
                     <p className={styles.error} role="alert">
@@ -2246,7 +2381,7 @@ export function ArrangeEditor({
                 className={actionsContainer ? styles.actions : undefined}
               >
                 <button
-                  disabled={busy || needsSync || !count}
+                  disabled={busy || needsSync || !!historical || !count}
                   onClick={() => void submit('save')}
                   type="button"
                 >
@@ -2255,7 +2390,9 @@ export function ArrangeEditor({
                 </button>
                 <button
                   className={styles.primary}
-                  disabled={busy || needsSync || !ready || !Object.keys(sessions).length}
+                  disabled={
+                    busy || needsSync || !!historical || !ready || !Object.keys(sessions).length
+                  }
                   onClick={() => void submit('publish')}
                   type="button"
                 >

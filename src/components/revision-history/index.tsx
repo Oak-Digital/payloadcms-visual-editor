@@ -17,10 +17,18 @@ export function RevisionHistory({
   apiRoute,
   owner,
   refresh,
+  onPreview,
+  onReturn,
+  onRestore,
+  canRestore = false,
 }: {
   apiRoute: string
   owner: PayloadCMSDocument
   refresh: number
+  onPreview?: (owner: PayloadCMSDocument, versionId: string) => Promise<string>
+  onReturn?: (owner: PayloadCMSDocument) => void
+  onRestore?: (owner: PayloadCMSDocument, versionId: string, revision: string) => Promise<void>
+  canRestore?: boolean
 }) {
   const [revisions, setRevisions] = useState<Revision[]>([])
   const [limit, setLimit] = useState(10)
@@ -28,6 +36,37 @@ export function RevisionHistory({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
+
+  const [selected, setSelected] = useState<{ version: Revision; revision: string }>()
+  const [working, setWorking] = useState(false)
+  useEffect(() => () => onReturn?.(owner), [owner.collection, owner.id, owner.locale, onReturn])
+  async function preview(version: Revision) {
+    if (!onPreview || working) return
+    setWorking(true)
+    setError('')
+    try {
+      const revision = await onPreview(owner, version.id)
+      setSelected({ version, revision })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to preview revision')
+      setSelected(undefined)
+    } finally {
+      setWorking(false)
+    }
+  }
+  async function restore() {
+    if (!selected || !onRestore || working || !canRestore) return
+    setWorking(true)
+    setError('')
+    try {
+      await onRestore(owner, selected.version.id, selected.revision)
+      setSelected(undefined)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to restore revision')
+    } finally {
+      setWorking(false)
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -79,7 +118,28 @@ export function RevisionHistory({
   return (
     <section aria-label="Saved revisions" className={styles.history}>
       <h3>Saved revisions</h3>
-      <p>History for this page.</p>
+      {working && <p role="status">Updating revision preview…</p>}
+      {selected && (
+        <section aria-label="Revision preview">
+          <p>Previewing {new Date(selected.version.updatedAt).toLocaleString()}</p>
+          <p>Linked content uses current saved values.</p>
+          <button
+            type="button"
+            disabled={working}
+            onClick={() => {
+              onReturn?.(owner)
+              setSelected(undefined)
+              setError('')
+            }}
+          >
+            Return to current edits
+          </button>
+          <button type="button" disabled={working || !canRestore} onClick={restore}>
+            Restore as draft
+          </button>
+          {!canRestore && <p>Save or discard pending edits before restoring.</p>}
+        </section>
+      )}
       {loading && <p role="status">Loading revisions…</p>}
       {error ? (
         <>
@@ -96,7 +156,7 @@ export function RevisionHistory({
               const previous = revisions[index + 1]
               const changes = previous ? revisionChanges(previous.version, revision.version) : []
               return (
-                <li key={revision.id}>
+                <li key={revision.id} data-version-id={revision.id}>
                   <time dateTime={revision.updatedAt}>
                     {new Date(revision.updatedAt).toLocaleString()}
                   </time>
@@ -109,6 +169,11 @@ export function RevisionHistory({
                         ? 'Published'
                         : 'Draft'}
                   </p>
+                  {onPreview && (
+                    <button type="button" disabled={working} onClick={() => preview(revision)}>
+                      Preview revision
+                    </button>
+                  )}
                   {previous ? (
                     <details>
                       <summary>View changes · {changes.length}</summary>

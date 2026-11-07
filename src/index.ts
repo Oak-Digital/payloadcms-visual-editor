@@ -2,6 +2,7 @@ import type { CollectionAfterReadHook, CollectionSlug, Config, Field, FieldHook 
 
 import { createVisualEditorMutationHandler } from './endpoints/visualEditorMutationHandler.js'
 import { createMediaHandler } from './endpoints/mediaHandler.js'
+import { createRevisionHandler } from './endpoints/revisionHandler.js'
 import { createArrangeHandler } from './endpoints/arrangeHandler.js'
 import { createRichTextHandler } from './endpoints/richTextHandler.js'
 import { createSharedContentHandler } from './endpoints/sharedContentHandler.js'
@@ -105,6 +106,12 @@ const payloadVisualEditor =
       handler: createSharedContentHandler(pluginOptions.sharedContent ?? {}),
       method: 'post',
       path: '/payload-visual-editor/shared-content',
+    })
+
+    config.endpoints.push({
+      handler: createRevisionHandler(pluginOptions.collections ?? {}),
+      method: 'post',
+      path: '/payload-visual-editor/revisions',
     })
 
     config.endpoints.push({

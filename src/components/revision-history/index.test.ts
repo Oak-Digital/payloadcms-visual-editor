@@ -79,3 +79,22 @@ describe('revision history', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull()
   })
 })
+
+it('requires a successful preview and clean pending state before restoring a draft', async () => {
+  root = createRoot(container)
+  const docs = [{ id: 'v1', updatedAt: '2026-01-01T00:00:00Z', version: { title: 'Old' } }]
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ docs })))
+  const onPreview = vi.fn(async () => 'current-revision')
+  const onReturn = vi.fn()
+  const onRestore = vi.fn(async () => {})
+  const props = { apiRoute: '/api', owner, refresh: 0, onPreview, onReturn, onRestore, canRestore: false }
+  await act(async () => { root.render(createElement(RevisionHistory, props)); await Promise.resolve() })
+  await act(async () => { [...container.querySelectorAll('button')].find((button) => button.textContent === 'Preview revision')?.click(); await Promise.resolve() })
+  expect(onPreview).toHaveBeenCalledWith(owner, 'v1')
+  const restore = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Restore as draft')!
+  expect(restore.disabled).toBe(true)
+  expect(onRestore).not.toHaveBeenCalled()
+  await act(async () => { root.render(createElement(RevisionHistory, { ...props, canRestore: true })); await Promise.resolve() })
+  await act(async () => { restore.click(); await Promise.resolve() })
+  expect(onRestore).toHaveBeenCalledWith(owner, 'v1', 'current-revision')
+})
