@@ -1,3 +1,4 @@
+import { publishedChanges } from '../utils/publish-review.js'
 import { createHash } from 'node:crypto'
 import {
   commitTransaction,
@@ -352,7 +353,7 @@ export const createSharedContentHandler =
       if (
         !body ||
         typeof body.slug !== 'string' ||
-        !['read', 'preview', 'save', 'publish', 'choices'].includes(body.action)
+        !['read', 'preview', 'save', 'publish', 'choices', 'review'].includes(body.action)
       )
         throw new Error('Invalid shared-content request')
       const entry = enabled[body.slug]
@@ -385,6 +386,15 @@ export const createSharedContentHandler =
         : await req.payload.findByID({ ...options, collection: body.slug, id: body.id })
       const access = await config.access.update({ req, id: body.id, data: doc })
       if (access === false) throw new Error('Update access denied')
+      if (!entry.global && typeof access === 'object') {
+        const allowed = await req.payload.find({
+          ...options,
+          collection: body.slug,
+          limit: 1,
+          where: { and: [access, { id: { equals: body.id } }] },
+        })
+        if (!allowed.docs.length) throw new Error('Update access denied')
+      }
       // Include raw persisted state in the revision; transactions also detect concurrent writes.
       const complete: Record<string, any> = entry.global
         ? await req.payload.findGlobal({ ...options, slug: body.slug, overrideAccess: true })
@@ -441,6 +451,36 @@ export const createSharedContentHandler =
         })
       }
       const drafts = !!config.versions && !!config.versions.drafts
+      if (body.action === 'review') {
+        let published: Record<string, any> | undefined
+        if (entry.global) {
+          const result = await req.payload.findGlobal({ ...options, slug: body.slug, draft: false })
+          if (!drafts || result._status === 'published') published = result
+        } else {
+          published = (
+            await req.payload.find({
+              ...options,
+              collection: body.slug,
+              draft: false,
+              limit: 1,
+              where: {
+                and: [
+                  { id: { equals: body.id } },
+                  ...(drafts ? [{ _status: { equals: 'published' } }] : []),
+                ],
+              },
+            })
+          ).docs[0]
+        }
+        await commitTransaction(req)
+        transaction = false
+        return Response.json({
+          revision,
+          published: !!published,
+          draft: doc._status === 'draft',
+          changes: publishedChanges(published || {}, proposed),
+        })
+      }
       if (body.action === 'save' || body.action === 'publish') {
         if (body.action === 'save' && !drafts)
           throw new Error('This content does not support drafts')
@@ -462,6 +502,9 @@ export const createSharedContentHandler =
               slug: body.slug,
               data,
               draft: body.action === 'save',
+              ...(body.action === 'publish' && req.locale
+                ? { publishSpecificLocale: req.locale }
+                : {}),
             })
           : await req.payload.update({
               ...options,
@@ -469,6 +512,9 @@ export const createSharedContentHandler =
               id: body.id,
               data,
               draft: body.action === 'save',
+              ...(body.action === 'publish' && req.locale
+                ? { publishSpecificLocale: req.locale }
+                : {}),
             })
         if (drafts && proposed._status !== data._status)
           throw new Error('Publication status denied')

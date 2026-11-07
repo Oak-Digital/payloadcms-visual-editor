@@ -15,6 +15,7 @@ import {
   writeRecovery,
   type RecoveryRecord,
 } from '../../utils/recovery.js'
+import { PublishReview, type PublishReviewItem } from '../publish-review/index.js'
 import { EditorIcon } from '../workspace/icons.js'
 import styles from './styles.module.scss'
 
@@ -81,6 +82,9 @@ export function SharedContentEditor({
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const [review, setReview] = useState(false)
+  const [reviewItems, setReviewItems] = useState<PublishReviewItem[]>([])
+  const [reviewFailed, setReviewFailed] = useState(false)
+  const reviewSessions = useRef<Session[]>([])
   const [relation, setRelation] = useState<SharedNode>()
   const [search, setSearch] = useState(''),
     [page, setPage] = useState(1)
@@ -101,9 +105,6 @@ export function SharedContentEditor({
     ? node?.rows?.find((r) => r.id === current.row)?.children
     : node?.children
   const nodes = current ? (selectedNodes ?? []) : (session?.snapshot.nodes ?? [])
-  const pending = Object.values(sessions).filter(
-    (s) => s.operations.length || s.base.status === 'draft',
-  )
   const dirty = Object.values(sessions).filter((s) => s.operations.length)
   useEffect(() => {
     onStateChange(dirty.length > 0 || Object.keys(recoveries).length > 0, busy)
@@ -336,14 +337,73 @@ export function SharedContentEditor({
       }
     })
   }
+  const preparePublish = async () => {
+    if (busy || saving || Object.keys(recoveries).length) return
+    setReview(true)
+    setBusy(true)
+    setError('')
+    setReviewItems([])
+    setReviewFailed(false)
+    try {
+      const items: PublishReviewItem[] = []
+      const prepared: Session[] = []
+      for (const candidate of Object.values(sessions)) {
+        const base = candidate.operations.length
+          ? candidate.base
+          : await request(candidate.target, { action: 'read' })
+        const s = { ...candidate, base }
+        const result = await request(s.target, {
+          action: 'review',
+          revision: base.revision,
+          operations: s.operations,
+        })
+        if (!s.operations.length && result.published && !result.changes.length) continue
+        prepared.push(structuredClone(s))
+        items.push({
+          ...result,
+          key: keyOf(s.target),
+          label: s.target.label,
+          collection: s.target.slug,
+          locale,
+          pending: !!s.operations.length,
+          status: 'ready',
+        })
+      }
+      reviewSessions.current = prepared
+      setReviewItems(items)
+    } catch (cause) {
+      setReviewFailed(true)
+      setError(cause instanceof Error ? cause.message : 'Unable to prepare review')
+    } finally {
+      setBusy(false)
+    }
+  }
   const save = async (action: 'save' | 'publish') => {
     if (busy || saving || Object.keys(recoveries).length) return false
     if (action === 'save' && !dirty.length) return true
+    if (
+      action === 'publish' &&
+      (!review || reviewFailed || !reviewItems.some((item) => item.status !== 'published'))
+    )
+      return false
     setBusy(true)
     setSaving(true)
     setError('')
+    let activeKey: string | undefined
+    let completed = 0
     try {
-      for (const s of action === 'save' ? dirty : pending) {
+      for (const s of action === 'save' ? dirty : reviewSessions.current) {
+        activeKey = keyOf(s.target)
+        if (
+          action === 'publish' &&
+          reviewItems.find((item) => item.key === activeKey)?.status === 'published'
+        )
+          continue
+        if (
+          action === 'publish' &&
+          JSON.stringify(s.operations) !== JSON.stringify(sessions[activeKey]?.operations)
+        )
+          throw new Error('Pending edits changed. Refresh the review.')
         const snapshot: SharedSnapshot = await request(s.target, {
           action,
           revision: s.base.revision,
@@ -359,11 +419,35 @@ export function SharedContentEditor({
           [keyOf(s.target)]: { ...s, base: snapshot, snapshot, operations: [], undo: [], redo: [] },
         }))
         onPreview(s.target, snapshot.document)
+        completed++
+        if (action === 'publish')
+          setReviewItems((items) =>
+            items.map((item) =>
+              item.key === keyOf(s.target)
+                ? { ...item, status: 'published', error: undefined }
+                : item,
+            ),
+          )
       }
-      setReview(false)
+      if (action === 'save') setReview(false)
       onSaved()
       return true
     } catch (e) {
+      if (action === 'publish') {
+        setReviewFailed(true)
+        setReviewItems((items) =>
+          items.map((item) =>
+            item.key === activeKey
+              ? {
+                  ...item,
+                  status: 'failed',
+                  error: e instanceof Error ? e.message : 'Publish failed',
+                }
+              : item,
+          ),
+        )
+      }
+      if (completed) onSaved()
       setError(e instanceof Error ? e.message : 'Save failed. Remaining changes are retained.')
       return false
     } finally {
@@ -634,12 +718,9 @@ export function SharedContentEditor({
         {!session && <p>{busy ? 'Loading…' : 'Content unavailable.'}</p>}
         {review ? (
           <>
-            <p>Publish the full drafts of these shared items across the site.</p>
-            {pending.map((s) => (
-              <p key={keyOf(s.target)}>{s.target.label}</p>
-            ))}
-            <button className={styles.primary} disabled={busy} onClick={() => save('publish')}>
-              Publish shared changes
+            <PublishReview items={reviewItems} loading={busy && !saving} failed={reviewFailed} />
+            <button disabled={busy} onClick={() => void preparePublish()}>
+              Refresh review
             </button>
           </>
         ) : relation ? (
@@ -764,25 +845,29 @@ export function SharedContentEditor({
       <footer className={styles.footer}>
         <div className={styles.status}>
           <span role="status">
-            {busy
-              ? 'Updating…'
-              : dirty.length
-                ? `${dirty.length} shared ${dirty.length === 1 ? 'item' : 'items'} · Unsaved`
-                : pending.length
-                  ? 'Draft saved'
-                  : 'No pending changes'}
+            {review &&
+            reviewItems.length > 0 &&
+            reviewItems.every((item) => item.status === 'published')
+              ? 'All shared changes published.'
+              : busy
+                ? 'Updating…'
+                : dirty.length
+                  ? `${dirty.length} shared ${dirty.length === 1 ? 'item' : 'items'} · Unsaved`
+                  : Object.values(sessions).some((s) => s.base.status === 'draft')
+                    ? 'Draft saved'
+                    : 'No pending changes'}
           </span>
           <div>
             <button
               aria-label="Undo shared change"
-              disabled={busy || !session?.undo.length}
+              disabled={busy || review || !session?.undo.length}
               onClick={() => history('undo')}
             >
               ↶
             </button>
             <button
               aria-label="Redo shared change"
-              disabled={busy || !session?.redo.length}
+              disabled={busy || review || !session?.redo.length}
               onClick={() => history('redo')}
             >
               ↷
@@ -791,17 +876,21 @@ export function SharedContentEditor({
         </div>
         <div className={styles.inline}>
           <button
-            disabled={busy || !dirty.length || dirty.some((s) => !s.base.drafts)}
+            disabled={busy || review || !dirty.length || dirty.some((s) => !s.base.drafts)}
             onClick={() => save('save')}
           >
             Save draft
           </button>
           <button
             className={styles.primary}
-            disabled={busy || !pending.length}
-            onClick={() => setReview(true)}
+            disabled={
+              busy ||
+              Object.keys(recoveries).length > 0 ||
+              (review && (reviewFailed || !reviewItems.some((item) => item.status !== 'published')))
+            }
+            onClick={() => void (review ? save('publish') : preparePublish())}
           >
-            Publish all
+            {review ? 'Publish shared changes' : 'Publish all'}
           </button>
         </div>
       </footer>

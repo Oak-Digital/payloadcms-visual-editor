@@ -259,6 +259,14 @@ it('reports distinct save/publish states to the footer without duplicating them 
   let finish: (response: Response) => void = () => {}
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
     const body = JSON.parse(String(init?.body))
+    if (body.action === 'review')
+      return Response.json({
+        label: 'Page',
+        revision: 'one',
+        published: true,
+        draft: true,
+        changes: [{ path: 'title', before: 'Original', after: 'Saved draft' }],
+      })
     if (body.action !== 'read')
       return new Promise<Response>((resolve) => {
         finish = resolve
@@ -293,15 +301,23 @@ it('reports distinct save/publish states to the footer without duplicating them 
     expect(pending.mock.lastCall?.[3]).toBe('Draft saved.')
     expect(panel.textContent).not.toContain('Draft saved.')
     await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
+    expect(panel.textContent).toContain('Compare with published')
+    expect(actions.textContent).toContain('Publish now')
+    await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
     expect(pending.mock.lastCall?.[3]).toBe('Publishing…')
     await act(async () => finish(new Response('{}')))
     expect(pending.mock.lastCall?.[3]).toBe('All changes published.')
     expect(panel.textContent).not.toContain('All changes published.')
+    await act(async () =>
+      [...panel.querySelectorAll('button')]
+        .find((button) => button.textContent === 'Refresh review')!
+        .click(),
+    )
     await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
     await act(async () =>
       finish(new Response(JSON.stringify({ error: 'Rejected for verification' }), { status: 500 })),
     )
-    expect(pending.mock.lastCall?.[3]).toBe('Publish failed · Draft kept')
+    expect(pending.mock.lastCall?.[3]).toBe('Publish failed · Changes kept')
     expect(panel.querySelector('[role="alert"]')?.textContent).toContain(
       'Rejected for verification',
     )

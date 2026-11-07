@@ -1,0 +1,38 @@
+.review {
+  article {
+    border: 1px solid #5555;
+    border-radius: 12px;
+    padding: 16px;
+    margin: 12px 0;
+  }
+  h3 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  summary {
+    cursor: pointer;
+  }
+  p {
+    overflow-wrap: anywhere;
+  }
+}
+.change {
+  margin: 14px 0;
+  strong,
+  small {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+  pre {
+    font: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 180px;
+    overflow: auto;
+    border: 1px solid #9995;
+    border-radius: 6px;
+    padding: 8px;
+    margin: 4px 0 8px;
+  }
+}

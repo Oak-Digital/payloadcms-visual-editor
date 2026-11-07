@@ -777,3 +777,44 @@ it('enforces query-scoped document update access before previewing or reading fi
     }),
   )
 })
+
+it('reviews saved and pending content against published values without writing', async () => {
+  const f = fixture()
+  f.collection.admin = { useAsTitle: 'other' }
+  const published = structuredClone(f.doc)
+  published.layout[0].heading = 'Published heading'
+  f.payload.find.mockResolvedValue({ docs: [published] } as any)
+  const { revision } = await (await f.call()).json()
+  const result = await f.call({
+    action: 'review',
+    revision,
+    changes: [{ path: 'layout.1.heading', value: 'Pending heading' }],
+    orders: [],
+  })
+  expect(result.status).toBe(200)
+  expect(await result.json()).toMatchObject({
+    revision,
+    published: true,
+    changes: expect.arrayContaining([
+      { path: 'layout.0.heading', before: 'Published heading', after: 'First' },
+      { path: 'layout.1.heading', before: 'Second', after: 'Pending heading' },
+    ]),
+  })
+  expect(f.payload.find).toHaveBeenCalledWith(
+    expect.objectContaining({ draft: false, overrideAccess: false, locale: 'en' }),
+  )
+  expect(f.payload.update).not.toHaveBeenCalled()
+  expect(f.payload.db.updateVersion).not.toHaveBeenCalled()
+})
+
+it('identifies first publication and refuses stale review snapshots', async () => {
+  const f = fixture()
+  f.collection.admin = {}
+  f.payload.find.mockResolvedValue({ docs: [] })
+  const { revision } = await (await f.call()).json()
+  const result = await f.call({ action: 'review', revision, changes: [], orders: [] })
+  expect(await result.json()).toMatchObject({ published: false })
+  f.latest.updatedAt = 'newer'
+  expect((await f.call({ action: 'review', revision, changes: [], orders: [] })).status).toBe(409)
+  expect(f.payload.update).not.toHaveBeenCalled()
+})

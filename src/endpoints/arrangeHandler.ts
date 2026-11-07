@@ -1,3 +1,4 @@
+import { publishedChanges } from '../utils/publish-review.js'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import {
@@ -36,7 +37,7 @@ export const createArrangeHandler =
       const body = await req.json?.()
       if (
         !body ||
-        !['publish', 'read', 'save', 'preview'].includes(body.action) ||
+        !['publish', 'read', 'save', 'preview', 'review'].includes(body.action) ||
         typeof body.collection !== 'string' ||
         !['number', 'string'].includes(typeof body.id) ||
         !Array.isArray(body.paths) ||
@@ -307,7 +308,7 @@ export const createArrangeHandler =
         throw new Error('Invalid pending changes')
       }
       // Lock the version that normal Payload writers retire, including admin autosaves.
-      for (const latestFlag of body.action === 'preview' ? [] : [false, true]) {
+      for (const latestFlag of ['preview', 'review'].includes(body.action) ? [] : [false, true]) {
         await req.payload.db.updateVersion({
           id: latest.id,
           collection: collection.slug,
@@ -317,7 +318,7 @@ export const createArrangeHandler =
       }
       const complete = await req.payload.findByID({
         ...options,
-        overrideAccess: body.action !== 'preview',
+        overrideAccess: !['preview', 'review'].includes(body.action),
       })
       await appendDraftBlocks(collection.fields, complete, body.orders, req, collections)
       const proposed = structuredClone(complete)
@@ -470,6 +471,31 @@ export const createArrangeHandler =
         )
         roots.add(order.path.split('.')[0])
       }
+      if (body.action === 'review') {
+        const publishedResult = await req.payload.find({
+          collection: collection.slug,
+          depth: 0,
+          draft: false,
+          locale: req.locale,
+          fallbackLocale: false,
+          overrideAccess: false,
+          req,
+          limit: 1,
+          where: { and: [{ id: { equals: body.id } }, { _status: { equals: 'published' } }] },
+        })
+        const published = publishedResult.docs[0]
+        const usage = await layoutUsages(req, collections, collection.slug, body.id)
+        await commitTransaction(req)
+        transaction = false
+        return Response.json({
+          label: String(visible[collection.admin?.useAsTitle || 'title'] || body.id),
+          revision,
+          published: Boolean(published),
+          draft: visible._status === 'draft',
+          changes: publishedChanges(published || {}, proposed),
+          usage,
+        })
+      }
       if (body.action === 'preview') {
         const document = await populatePreview(collection.fields, proposed, req)
         const sourceMap = buildSourceMap(collection.fields, proposed)
@@ -483,6 +509,7 @@ export const createArrangeHandler =
         ...options,
         data: { ...data, _status: status },
         draft: body.action === 'save',
+        ...(body.action === 'publish' && req.locale ? { publishSpecificLocale: req.locale } : {}),
         overrideAccess: false,
       })
       if (!result || result._status !== status) {

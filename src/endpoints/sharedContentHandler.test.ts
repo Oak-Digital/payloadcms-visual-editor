@@ -217,3 +217,43 @@ it('enforces relationship filters before accepting draft changes', async () => {
   })
   expect(f.update).not.toHaveBeenCalled()
 })
+
+it.each([false, true])(
+  'reviews shared content against published without writes; global=%s',
+  async (global) => {
+    const f = fixture(global)
+    const published = { title: 'Public menu', items: [], _status: 'published' }
+    f.payload.find = vi.fn(async () => ({ docs: [published] }))
+    if (global) {
+      const read = f.payload.findGlobal.getMockImplementation()
+      f.payload.findGlobal.mockImplementation((options: any) =>
+        options.draft === false ? published : read(options),
+      )
+    }
+    const { revision } = await (await f.call()).json()
+    const response = await f.call({
+      action: 'review',
+      revision,
+      operations: [{ type: 'set', path: 'title', value: 'Proposed menu' }],
+    })
+    expect(response.status).toBe(200)
+    const result = await response.json()
+    expect(result).toMatchObject({
+      revision,
+      published: true,
+      changes: expect.arrayContaining([
+        { path: 'title', before: 'Public menu', after: 'Proposed menu' },
+      ]),
+    })
+    expect(JSON.stringify(result)).not.toContain('keep')
+    expect(f.update).not.toHaveBeenCalled()
+  },
+)
+
+it('enforces query-constrained update access for shared review', async () => {
+  const f = fixture()
+  f.cfg.access.update = () => ({ owner: { equals: 'other' } })
+  f.payload.find = vi.fn(async () => ({ docs: [] }))
+  expect((await f.call({ action: 'review', revision: 'irrelevant' })).status).toBe(400)
+  expect(f.update).not.toHaveBeenCalled()
+})

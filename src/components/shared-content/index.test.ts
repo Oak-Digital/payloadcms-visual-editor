@@ -153,3 +153,78 @@ it.each([false, true])('recovers shared edits after remount; conflict=%s', async
     vi.useRealTimers()
   }
 })
+
+it('reviews earlier saved shared drafts and retries only documents that did not publish', async () => {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  const published = new Set<string>()
+  const attempts: string[] = []
+  let fail = true
+  const snapshot = (id: string) => ({
+    revision: id,
+    drafts: true,
+    status: published.has(id) ? 'published' : 'draft',
+    nodes: [],
+    document: { title: id },
+  })
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    const body = JSON.parse(String(init?.body))
+    if (body.action === 'review')
+      return Response.json({
+        revision: body.id,
+        published: true,
+        changes: published.has(body.id) ? [] : [{ path: 'title', before: 'Old', after: body.id }],
+      })
+    if (body.action === 'publish') {
+      attempts.push(body.id)
+      if (body.id === 'second' && fail)
+        return Response.json({ error: 'Second failed' }, { status: 500 })
+      published.add(body.id)
+    }
+    return Response.json(snapshot(body.id))
+  })
+  const props = {
+    apiRoute: '/api',
+    locale: 'en',
+    onClose: vi.fn(),
+    onCollapse: vi.fn(),
+    onPreview: vi.fn(),
+    onSaved: vi.fn(),
+    onStateChange: vi.fn(),
+    onOpen: vi.fn(),
+    enabledSources: [],
+  }
+  const render = (id: string) =>
+    act(async () =>
+      root.render(
+        createElement(SharedContentEditor, {
+          ...props,
+          target: { slug: 'navigation', id, label: id },
+        }),
+      ),
+    )
+  const button = (label: string) =>
+    [...container.querySelectorAll('button')].find((button) => button.textContent === label)!
+  try {
+    await render('first')
+    await render('second')
+    await act(async () => button('Publish all').click())
+    expect(attempts).toEqual([])
+    expect(container.textContent).toContain('Review 2 documents')
+    await act(async () => button('Publish shared changes').click())
+    expect(container.querySelectorAll('[data-publish-status="published"]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-publish-status="failed"]')).toHaveLength(1)
+    expect(button('Publish shared changes').disabled).toBe(true)
+    fail = false
+    await act(async () => button('Refresh review').click())
+    expect(container.textContent).toContain('Review 1 document')
+    await act(async () => button('Publish shared changes').click())
+    expect(attempts).toEqual(['first', 'second', 'second'])
+    expect(props.onSaved).toHaveBeenCalledTimes(2)
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+    fetcher.mockRestore()
+  }
+})

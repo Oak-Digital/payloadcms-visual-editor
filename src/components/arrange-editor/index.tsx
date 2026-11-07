@@ -31,6 +31,7 @@ import {
 import { documentKey, fieldDocument } from '../../utils/field-target.js'
 import { type MediaChoice, MediaPicker } from '../media-picker/index.js'
 import { imageFieldAt, previewImages } from '../media-picker/preview.js'
+import { PublishReview, type PublishReviewItem } from '../publish-review/index.js'
 import { RevisionHistory } from '../revision-history/index.js'
 import { RichTextSidebar } from '../rich-text-editor/sidebar.js'
 import { EditorIcon } from '../workspace/icons.js'
@@ -135,9 +136,13 @@ export function ArrangeEditor({
     window.addEventListener('payload:preview-rendered', rendered)
     return () => window.removeEventListener('payload:preview-rendered', rendered)
   }, [])
-  const [tab, setTab] = useState<'menu' | 'content' | 'revisions' | 'changes'>(
+  const [tab, setTab] = useState<'menu' | 'content' | 'revisions' | 'changes' | 'publish'>(
     panelContainer ? 'content' : 'menu',
   )
+  const [reviewItems, setReviewItems] = useState<PublishReviewItem[]>([])
+  const [reviewLoading, setReviewLoading] = useState(false)
+  const [reviewFailed, setReviewFailed] = useState(false)
+  const reviewSessions = useRef<Record<string, Session>>({})
   const [blockMode, setBlockMode] = useState<'edit' | 'rearrange'>('edit')
   const [adding, setAdding] = useState<Target>()
   const [revisionRefresh, setRevisionRefresh] = useState(0)
@@ -361,6 +366,11 @@ export function ArrangeEditor({
   ])
 
   function goBack() {
+    if (busy) return
+    if (tab === 'publish') {
+      setTab('menu')
+      return
+    }
     if (pickerSelection) setPickerSelection(undefined)
     else if (picker) setPicker(undefined)
     else if (adding) setAdding(undefined)
@@ -686,7 +696,7 @@ export function ArrangeEditor({
       const inline = element.closest<HTMLElement>('[data-arrange-inline]')
       if (!inline || element.closest('a')) event.preventDefault()
       event.stopImmediatePropagation()
-      if (busy || needsSync || blockMode === 'rearrange') {
+      if (busy || needsSync || tab === 'publish' || blockMode === 'rearrange') {
         return
       }
       const editable = element.closest('[data-payload-path]')
@@ -745,6 +755,7 @@ export function ArrangeEditor({
     sessions,
     documentInfo,
     blockMode,
+    tab,
     previewEpoch,
     layoutView,
     historical,
@@ -752,7 +763,7 @@ export function ArrangeEditor({
 
   function undo() {
     const previous = undoStack.at(-1)
-    if (!previous || busy || needsSync || historical) return
+    if (!previous || busy || needsSync || historical || tab === 'publish') return
     setRedoStack((stack) => [...stack, sessions])
     setUndoStack((stack) => stack.slice(0, -1))
     setSessions(previous)
@@ -760,7 +771,7 @@ export function ArrangeEditor({
   }
   function redo() {
     const next = redoStack.at(-1)
-    if (!next || busy || needsSync || historical) return
+    if (!next || busy || needsSync || historical || tab === 'publish') return
     setUndoStack((stack) => [...stack, sessions])
     setRedoStack((stack) => stack.slice(0, -1))
     setSessions(next)
@@ -825,7 +836,7 @@ export function ArrangeEditor({
   }, [])
   useLayoutEffect(() => {
     canvasText.current?.update({
-      enabled: active && !historical && blockMode === 'edit',
+      enabled: active && !historical && tab !== 'publish' && blockMode === 'edit',
       blocked: busy || needsSync,
       refreshing,
       resolve: (element) => {
@@ -1449,10 +1460,104 @@ export function ArrangeEditor({
     }
   }
 
+  async function preparePublish() {
+    if (saving.current || busy || needsSync || historical || Object.keys(recoveries).length) return
+    setTab('publish')
+    setPicker(undefined)
+    setAdding(undefined)
+    setBusy(true)
+    setOperation('refresh')
+    setReviewLoading(true)
+    setReviewFailed(false)
+    setError('')
+    setReviewItems([])
+    const candidates = { ...sessions }
+    try {
+      // Retain previously saved sources even when their last reference was removed.
+      try {
+        const saved: unknown = JSON.parse(
+          sessionStorage.getItem(`visual-editor-drafts:${documentKey(documentInfo)}`) || '[]',
+        )
+        if (Array.isArray(saved))
+          for (const key of saved) {
+            if (typeof key !== 'string' || candidates[key]) continue
+            const [collection, id, locale] = JSON.parse(key)
+            if (
+              typeof collection !== 'string' ||
+              !['string', 'number'].includes(typeof id) ||
+              (locale !== undefined && locale !== null && typeof locale !== 'string')
+            )
+              continue
+            const owner = { collection, id, locale: locale || undefined, hasDrafts: true }
+            const snapshot = await request(owner, { action: 'read', paths: [], orderPaths: [] })
+            candidates[key] = { owner, snapshot, additions: {}, changes: {}, media: {}, orders: {} }
+          }
+      } catch (cause) {
+        // A missing/inaccessible saved source must not silently disappear from the review.
+        if (
+          cause instanceof SyntaxError ||
+          (cause instanceof DOMException && cause.name === 'SecurityError')
+        ) {
+          /* Optional storage may be unavailable; current sessions remain reviewable. */
+        } else throw cause
+      }
+      const items: PublishReviewItem[] = []
+      const prepared: Record<string, Session> = {}
+      for (const [key, candidate] of Object.entries(candidates)) {
+        const pending = !!(
+          Object.keys(candidate.changes).length || Object.keys(candidate.orders).length
+        )
+        const paths = Object.keys(candidate.snapshot.fields)
+        const orderPaths = Object.keys(candidate.snapshot.orders)
+        const snapshot = pending
+          ? candidate.snapshot
+          : await request(candidate.owner, { action: 'read', paths, orderPaths })
+        const session = { ...candidate, snapshot }
+        const result = await request(session.owner, {
+          action: 'review',
+          paths,
+          orderPaths,
+          revision: snapshot.revision,
+          changes: Object.entries(session.changes).map(([path, value]) => ({ path, value })),
+          orders: Object.entries(session.orders).map(([path, ids]) => ({
+            path,
+            ids,
+            additions: session.additions[path] ?? [],
+          })),
+        })
+        if (!pending && result.published && !result.changes.length) continue
+        prepared[key] = structuredClone(session)
+        items.push({
+          ...result,
+          key,
+          collection: session.owner.collection,
+          locale: session.owner.locale,
+          pending,
+          status: 'ready',
+        })
+      }
+      reviewSessions.current = prepared
+      setReviewItems(items)
+    } catch (cause) {
+      setReviewFailed(true)
+      setError(cause instanceof Error ? cause.message : 'Unable to prepare publish review')
+    } finally {
+      setReviewLoading(false)
+      setBusy(false)
+    }
+  }
+
   async function submit(action: 'publish' | 'save'): Promise<boolean> {
     if (saving.current || busy || needsSync || historical || Object.keys(recoveries).length) {
       return false
     }
+    if (
+      action === 'publish' &&
+      (tab !== 'publish' ||
+        reviewFailed ||
+        !reviewItems.some((item) => item.status !== 'published'))
+    )
+      return false
     let success = false
     saving.current = true
     setOperation(action)
@@ -1477,18 +1582,28 @@ export function ArrangeEditor({
         /* Storage is optional. */
       }
     }
-    const publishPrimaryDraft = count === 0 && savedOwners.length === 0
+    let activeKey: string | undefined
     try {
-      for (const [key, session] of Object.entries(sessions)) {
-        const changed = Object.keys(session.changes).length || Object.keys(session.orders).length
+      for (const [key, session] of Object.entries(
+        action === 'publish' ? reviewSessions.current : sessions,
+      )) {
         if (
-          !changed &&
-          (action !== 'publish' ||
-            (!savedOwners.includes(key) &&
-              !(publishPrimaryDraft && key === documentKey(documentInfo))))
-        ) {
+          action === 'publish' &&
+          reviewItems.find((item) => item.key === key)?.status === 'published'
+        )
           continue
-        }
+        const changed = Object.keys(session.changes).length || Object.keys(session.orders).length
+        if (!changed && action === 'save') continue
+        activeKey = key
+        if (
+          action === 'publish' &&
+          sessions[key] &&
+          !same(
+            [sessions[key].changes, sessions[key].orders, sessions[key].additions],
+            [session.changes, session.orders, session.additions],
+          )
+        )
+          throw new Error('Pending edits changed. Refresh the publish review.')
         const paths = Object.keys(session.snapshot.fields)
         const orderPaths = Object.keys(session.snapshot.orders)
         await request(session.owner, {
@@ -1514,6 +1629,12 @@ export function ArrangeEditor({
           }
         }
         completed++
+        if (action === 'publish')
+          setReviewItems((items) =>
+            items.map((item) =>
+              item.key === key ? { ...item, status: 'published', error: undefined } : item,
+            ),
+          )
         setRevisionRefresh((value) => value + 1)
         committed.current.add(key)
         if (
@@ -1539,17 +1660,39 @@ export function ArrangeEditor({
         setRedoStack([])
         setSessions((previous) => ({
           ...previous,
-          [key]: { ...previous[key], additions: {}, changes: {}, media: {}, orders: {} },
+          [key]: {
+            ...(previous[key] || session),
+            additions: {},
+            changes: {},
+            media: {},
+            orders: {},
+          },
         }))
       }
       success = true
       setStatus(action === 'publish' ? 'All changes published.' : 'Draft saved.')
     } catch (cause) {
+      if (action === 'publish') {
+        setReviewFailed(true)
+        setReviewItems((items) =>
+          items.map((item) =>
+            item.key === activeKey
+              ? {
+                  ...item,
+                  status: 'failed',
+                  error: cause instanceof Error ? cause.message : 'Publish failed',
+                }
+              : item,
+          ),
+        )
+      }
       setStatus(
         completed
-          ? 'Some changes saved · Retry remaining'
+          ? action === 'publish'
+            ? `${completed} published · Review remaining`
+            : 'Some changes saved · Retry remaining'
           : action === 'publish'
-            ? 'Publish failed · Draft kept'
+            ? 'Publish failed · Changes kept'
             : 'Save failed · Changes kept',
       )
       setError(
@@ -1581,7 +1724,7 @@ export function ArrangeEditor({
           <>
             <button
               aria-label="Undo"
-              disabled={busy || needsSync || !!historical || !undoStack.length}
+              disabled={busy || needsSync || !!historical || tab === 'publish' || !undoStack.length}
               type="button"
               onClick={undo}
             >
@@ -1589,7 +1732,7 @@ export function ArrangeEditor({
             </button>
             <button
               aria-label="Redo"
-              disabled={busy || needsSync || !!historical || !redoStack.length}
+              disabled={busy || needsSync || !!historical || tab === 'publish' || !redoStack.length}
               type="button"
               onClick={redo}
             >
@@ -1641,23 +1784,25 @@ export function ArrangeEditor({
                       ? pickerSelection
                         ? 'Image preview'
                         : 'Media library'
-                      : tab === 'changes'
-                        ? 'Changes'
-                        : adding
-                          ? 'Add block'
-                          : tab === 'menu'
-                            ? 'Menu'
-                            : tab === 'revisions'
-                              ? 'Revision history'
-                              : target
-                                ? field?.type === 'relationship'
-                                  ? 'Saved layout'
-                                  : 'Edit content'
-                                : blockLabel
-                                  ? humanize(blockLabel)
-                                  : blockMode === 'edit'
-                                    ? layoutView?.label || 'Page blocks'
-                                    : 'Rearrange content'}
+                      : tab === 'publish'
+                        ? 'Review publish'
+                        : tab === 'changes'
+                          ? 'Changes'
+                          : adding
+                            ? 'Add block'
+                            : tab === 'menu'
+                              ? 'Menu'
+                              : tab === 'revisions'
+                                ? 'Revision history'
+                                : target
+                                  ? field?.type === 'relationship'
+                                    ? 'Saved layout'
+                                    : 'Edit content'
+                                  : blockLabel
+                                    ? humanize(blockLabel)
+                                    : blockMode === 'edit'
+                                      ? layoutView?.label || 'Page blocks'
+                                      : 'Rearrange content'}
                   </h2>
                 </div>
                 <div className={styles.headerActions}>
@@ -2322,6 +2467,20 @@ export function ArrangeEditor({
                       ])}
                     </ul>
                   </details>
+                  {tab === 'publish' && (
+                    <>
+                      <PublishReview
+                        items={reviewItems}
+                        loading={reviewLoading}
+                        failed={reviewFailed}
+                      />
+                      {!busy && (
+                        <button type="button" onClick={() => void preparePublish()}>
+                          Refresh review
+                        </button>
+                      )}
+                    </>
+                  )}
                   {tab === 'revisions' && (
                     <>
                       {Object.keys(sessions).length > 1 && (
@@ -2381,7 +2540,7 @@ export function ArrangeEditor({
                 className={actionsContainer ? styles.actions : undefined}
               >
                 <button
-                  disabled={busy || needsSync || !!historical || !count}
+                  disabled={busy || needsSync || !!historical || tab === 'publish' || !count}
                   onClick={() => void submit('save')}
                   type="button"
                 >
@@ -2391,12 +2550,19 @@ export function ArrangeEditor({
                 <button
                   className={styles.primary}
                   disabled={
-                    busy || needsSync || !!historical || !ready || !Object.keys(sessions).length
+                    busy ||
+                    needsSync ||
+                    !!historical ||
+                    !ready ||
+                    !Object.keys(sessions).length ||
+                    Object.keys(recoveries).length > 0 ||
+                    (tab === 'publish' &&
+                      (reviewFailed || !reviewItems.some((item) => item.status !== 'published')))
                   }
-                  onClick={() => void submit('publish')}
+                  onClick={() => void (tab === 'publish' ? submit('publish') : preparePublish())}
                   type="button"
                 >
-                  Publish all
+                  {tab === 'publish' ? 'Publish now' : 'Publish all'}
                 </button>
               </footer>
             </Portal>
