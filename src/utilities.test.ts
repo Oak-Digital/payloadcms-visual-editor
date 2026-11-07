@@ -69,3 +69,24 @@ it('does not resolve malformed ownership to the parent page', async () => {
   })
   expect(fieldDocument(element, owner)?.collection).toBe('layouts')
 })
+
+it('keeps original field targets when preview rows have moved', () => {
+  const owner = { id: 'page', collection: 'pages', locale: 'en', hasDrafts: true }
+  const document = {
+    layout: [
+      { id: 'second', heading: 'Second' },
+      { id: 'first', heading: 'First' },
+    ],
+  }
+  const bound = bindSourceMap(
+    document,
+    { 'layout.0.heading': 'text', 'layout.1.heading': 'text' },
+    owner,
+    {
+      second: 'layout.1',
+      first: 'layout.0',
+    },
+  )
+  expect(editableField(bound.layout[0], 'heading')?.['data-payload-path']).toBe('layout.1.heading')
+  expect(editableField(bound.layout[1], 'heading')?.['data-payload-path']).toBe('layout.0.heading')
+})

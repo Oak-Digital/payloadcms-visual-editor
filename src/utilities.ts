@@ -36,6 +36,7 @@ export function bindSourceMap<T>(
   document: T,
   sourceMap: SourceMap | undefined,
   owner: PayloadCMSDocument,
+  rowPaths?: Record<string, string>,
 ): T {
   if (!sourceMap) return document
   const attrs = createEditableAttrs(sourceMap, owner)
@@ -48,19 +49,38 @@ export function bindSourceMap<T>(
     fields[name] = attrs(fieldPath)
     fieldsByParent.set(parent, fields)
   }
-  function bind(value: unknown, path: string): unknown {
+  function bind(value: unknown, path: string, sourcePath = path): unknown {
     if (Array.isArray(value))
-      return value.map((item, index) => bind(item, path ? `${path}.${index}` : String(index)))
+      return value.map((item, index) => {
+        const nextPath = path ? `${path}.${index}` : String(index)
+        const stablePath =
+          item && typeof item === 'object' && typeof item.id === 'string'
+            ? rowPaths?.[item.id]
+            : undefined
+        if (rowPaths && !stablePath) return item
+        return bind(
+          item,
+          nextPath,
+          stablePath ?? (sourcePath ? `${sourcePath}.${index}` : String(index)),
+        )
+      })
     if (!value || typeof value !== 'object') return value
     const result: Record<string, unknown> = {}
     const fields = fieldsByParent.get(path)
     for (const [name, child] of Object.entries(value)) {
       if (name === '_sourceMap' || name.startsWith('_visualEditor')) continue
       const childPath = path ? `${path}.${name}` : name
-      result[name] = bind(child, childPath)
+      result[name] = bind(child, childPath, sourcePath ? `${sourcePath}.${name}` : name)
     }
-    if (fields) result._visualEditorFields = fields
-    if (Object.hasOwn(sourceMap!, path)) result._visualEditor = attrs(path)
+    if (fields)
+      result._visualEditorFields = Object.fromEntries(
+        Object.entries(fields).map(([name, field]) => [
+          name,
+          { ...field, 'data-payload-path': sourcePath ? `${sourcePath}.${name}` : name },
+        ]),
+      )
+    if (Object.hasOwn(sourceMap!, path))
+      result._visualEditor = { ...attrs(path), 'data-payload-path': sourcePath }
     return result
   }
   return bind(document, '') as T

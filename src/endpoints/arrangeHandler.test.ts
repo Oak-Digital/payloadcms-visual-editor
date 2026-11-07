@@ -629,3 +629,23 @@ it('duplicates a pending new block even when its source is removed', async () =>
     heading: 'Copy of pending source',
   })
 })
+
+it('previews pending content without saving a document or writing versions', async () => {
+  const { call, payload } = fixture()
+  const { revision } = await (await call()).json()
+  const response = await call({
+    action: 'preview',
+    revision,
+    changes: [{ path: 'layout.0.heading', value: 'Unsaved preview' }],
+    orders: [{ path: 'layout', ids: ['b', 'a'] }],
+  })
+  expect(response.status).toBe(200)
+  const result = await response.json()
+  expect(result.document.layout[1].heading).toBe('Unsaved preview')
+  expect(result.rowPaths.a).toBe('layout.0')
+  expect(payload.update).not.toHaveBeenCalled()
+  expect(payload.db.updateVersion).not.toHaveBeenCalled()
+  expect(payload.findByID).toHaveBeenLastCalledWith(
+    expect.objectContaining({ overrideAccess: false }),
+  )
+})

@@ -20,6 +20,7 @@ import {
 } from '../utils/arrange.js'
 import { assertFieldAccess, assertSupportedRichText, resolveField } from '../utils/rich-text.js'
 import { appendDraftBlocks } from '../utils/draft-blocks.js'
+import { populatePreview } from '../utils/populate-preview.js'
 import { buildSourceMap } from '../utils/source-map.js'
 import { uploadTargets, validateMedia } from '../utils/upload-fields.js'
 
@@ -34,7 +35,7 @@ export const createArrangeHandler =
       const body = await req.json?.()
       if (
         !body ||
-        !['publish', 'read', 'save'].includes(body.action) ||
+        !['publish', 'read', 'save', 'preview'].includes(body.action) ||
         typeof body.collection !== 'string' ||
         !['number', 'string'].includes(typeof body.id) ||
         !Array.isArray(body.paths) ||
@@ -260,7 +261,7 @@ export const createArrangeHandler =
         throw new Error('Invalid pending changes')
       }
       // Lock the version that normal Payload writers retire, including admin autosaves.
-      for (const latestFlag of [false, true]) {
+      for (const latestFlag of body.action === 'preview' ? [] : [false, true]) {
         await req.payload.db.updateVersion({
           id: latest.id,
           collection: collection.slug,
@@ -268,9 +269,27 @@ export const createArrangeHandler =
           versionData: { latest: latestFlag, version: structuredClone(latest.version) },
         })
       }
-      const complete = await req.payload.findByID({ ...options, overrideAccess: true })
+      const complete = await req.payload.findByID({
+        ...options,
+        overrideAccess: body.action !== 'preview',
+      })
       await appendDraftBlocks(collection.fields, complete, body.orders, req)
       const proposed = structuredClone(complete)
+      const rowPaths: Record<string, string> = {}
+      const collectRows = (value: unknown, path = '') => {
+        if (Array.isArray(value)) {
+          value.forEach((row, index) => {
+            const rowPath = `${path}.${index}`
+            if (row && typeof row === 'object' && 'id' in row && typeof row.id === 'string')
+              rowPaths[row.id] = rowPath
+            collectRows(row, rowPath)
+          })
+        } else if (value && typeof value === 'object') {
+          for (const [key, child] of Object.entries(value))
+            collectRows(child, path ? `${path}.${key}` : key)
+        }
+      }
+      if (body.action === 'preview') collectRows(complete)
       const roots = new Set<string>()
       for (const change of body.changes as ArrangeChange[]) {
         const field = snapshot.fields[change.path]
@@ -398,6 +417,13 @@ export const createArrangeHandler =
           ['update'],
         )
         roots.add(order.path.split('.')[0])
+      }
+      if (body.action === 'preview') {
+        const document = await populatePreview(collection.fields, proposed, req)
+        const sourceMap = buildSourceMap(collection.fields, proposed)
+        await commitTransaction(req)
+        transaction = false
+        return Response.json({ document, sourceMap, rowPaths, revision })
       }
       const status = body.action === 'publish' ? 'published' : 'draft'
       const data = Object.fromEntries([...roots].map((root) => [root, proposed[root]]))

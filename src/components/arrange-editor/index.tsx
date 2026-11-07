@@ -121,6 +121,12 @@ export function ArrangeEditor({
   onHome?: () => void
   panelContainer?: HTMLElement
 }) {
+  const [previewEpoch, setPreviewEpoch] = useState(0)
+  useEffect(() => {
+    const rendered = () => setPreviewEpoch((value) => value + 1)
+    window.addEventListener('payload:preview-rendered', rendered)
+    return () => window.removeEventListener('payload:preview-rendered', rendered)
+  }, [])
   const [tab, setTab] = useState<'menu' | 'content' | 'revisions' | 'changes'>(
     panelContainer ? 'content' : 'menu',
   )
@@ -636,7 +642,7 @@ export function ArrangeEditor({
       document.removeEventListener('keydown', keyboard, true)
       document.removeEventListener('click', select, true)
     }
-  }, [active, busy, needsSync, sessions, documentInfo, blockMode])
+  }, [active, busy, needsSync, sessions, documentInfo, blockMode, previewEpoch])
 
   function undo() {
     const previous = undoStack.at(-1)
@@ -654,8 +660,42 @@ export function ArrangeEditor({
     setSessions(next)
     setStatus('')
   }
+  useEffect(() => {
+    if (!ready || refreshing || !document.querySelector('[data-payload-live-preview]')) return
+    for (const session of Object.values(sessions)) {
+      const dirty = Object.keys(session.changes).length || Object.keys(session.orders).length
+      window.dispatchEvent(
+        new CustomEvent('payload:render-preview', {
+          detail: {
+            owner: session.owner,
+            request:
+              dirty &&
+              !committed.current.has(documentKey(session.owner)) &&
+              !(busy && ['save', 'publish', 'refresh'].includes(operation))
+                ? {
+                    ...session.owner,
+                    revision: session.snapshot.revision,
+                    paths: Object.keys(session.snapshot.fields),
+                    orderPaths: Object.keys(session.snapshot.orders),
+                    changes: Object.entries(session.changes).map(([path, value]) => ({
+                      path,
+                      value,
+                    })),
+                    orders: Object.entries(session.orders).map(([path, ids]) => ({
+                      path,
+                      ids,
+                      additions: session.additions[path] ?? [],
+                    })),
+                  }
+                : null,
+          },
+        }),
+      )
+    }
+  }, [sessions, ready, refreshing, busy, operation])
   const draftPreviews = useRef<ReturnType<typeof createDraftBlockPreviews> | undefined>(undefined)
   useLayoutEffect(() => {
+    if (document.querySelector('[data-payload-live-preview]')) return
     draftPreviews.current = createDraftBlockPreviews(document, documentInfo)
     return () => draftPreviews.current?.destroy()
   }, [documentInfo])
@@ -738,8 +778,10 @@ export function ArrangeEditor({
             }) as Annotation,
         ),
       )
-    restore.push(previewImages(mediaAnnotations, document, documentInfo))
+    if (!document.querySelector('[data-payload-live-preview]'))
+      restore.push(previewImages(mediaAnnotations, document, documentInfo))
     for (const list of document.querySelectorAll<HTMLElement>('[data-payload-block-list]')) {
+      if (list.closest('[data-payload-live-preview]')) continue
       const current = sessions[documentKey(fieldDocument(list, documentInfo))]
       const ids = current?.orders[list.dataset.payloadBlockList!]
       if (!ids || committed.current.has(documentKey(current.owner))) {
@@ -761,7 +803,7 @@ export function ArrangeEditor({
       }
     }
     return () => restore.reverse().forEach((undo) => undo())
-  }, [active, sessions, target, documentInfo, refreshing])
+  }, [active, sessions, target, documentInfo, refreshing, previewEpoch])
 
   function stage(target: Target, value: unknown, media?: MediaChoice) {
     const current = sessions[target.key]
