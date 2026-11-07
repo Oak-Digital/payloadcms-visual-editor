@@ -93,6 +93,8 @@ The selected reference offers source selection, **Edit shared layout**, and **Ma
 
 ## Workspace
 
+Collection sources can set `createLabel` (for example, `New page`) to show a creation button above search. It opens the native Payload creation form in a new tab with the current locale, preserving pending workspace edits.
+
 `VisualEditorWorkspace` from the `/client` export surrounds an authenticated preview with a persistent frame, searchable content navigation, desktop/mobile preview widths, editing tools, and the existing contextual editor. Supply `documentInfo` and `sources` (`slug`, `label`, optional `titleField` and `previewURL(document)`). Sources without a preview resolver open the native collection editor in a new tab; `global: true` opens that Global's native editor. Listing uses Payload's REST API and its access checks.
 
 The workspace renders a same-origin iframe so responsive styles and fixed elements use the preview's actual viewport. The canvas portals its editing panel, history controls and save actions into the floating Oak sidebar. Rich text, the media library and feedback notes use layered sidebar views with a Back action. Host the component only in authenticated draft previews. The `visual-editor-canvas=1` query parameter provides the standalone toolbar for integration tests; it does not grant preview access.

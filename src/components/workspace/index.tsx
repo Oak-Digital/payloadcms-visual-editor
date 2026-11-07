@@ -13,6 +13,8 @@ import { VisualEditorToolbar } from '../toolbar/index.js'
 import styles from './styles.module.scss'
 
 export type WorkspaceSource = {
+  /** Show a native collection creation link with this label. */
+  createLabel?: string
   global?: boolean
   editable?: boolean
   label: string
@@ -977,6 +979,23 @@ function WorkspaceShell({
                   </a>
                 ) : (
                   <>
+                    {source?.createLabel && (
+                      <a
+                        className={styles.row}
+                        href={`${adminRoute}/collections/${encodeURIComponent(source.slug)}/create${
+                          current.locale ? `?${new URLSearchParams({ locale: current.locale })}` : ''
+                        }`}
+                        rel="noreferrer"
+                        target="_blank"
+                        title={`${source.createLabel} in Payload (opens in a new tab)`}
+                      >
+                        <EditorIcon name="plus" />
+                        <span className={styles.grow}>
+                          <strong>{source.createLabel}</strong>
+                        </span>
+                        <span aria-hidden="true">↗</span>
+                      </a>
+                    )}
                     <input
                       aria-label="Search content"
                       placeholder="Search content…"
