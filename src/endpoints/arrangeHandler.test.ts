@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('payload', () => ({
   initTransaction: vi.fn(async () => true),
@@ -37,7 +38,7 @@ const richText = {
     direction: null,
   },
 }
-function fixture() {
+function fixture(enabled: Record<string, true> = { pages: true }) {
   const text: any = { name: 'heading', type: 'text' }
   const block: any = {
     name: 'layout',
@@ -86,7 +87,7 @@ function fixture() {
     db: { findVersions: vi.fn(async () => ({ docs: [latest] })), updateVersion: vi.fn() },
     logger: { error: vi.fn() },
   }
-  const handler = createArrangeHandler({ pages: true })
+  const handler = createArrangeHandler(enabled)
   const base = {
     id: 'page',
     collection: 'pages',
@@ -647,5 +648,132 @@ it('previews pending content without saving a document or writing versions', asy
   expect(payload.db.updateVersion).not.toHaveBeenCalled()
   expect(payload.findByID).toHaveBeenLastCalledWith(
     expect.objectContaining({ overrideAccess: false }),
+  )
+})
+
+it('offers and validates only accessible opted-in saved layout choices', async () => {
+  const f = fixture({ pages: true, layouts: true })
+  f.block.blocks[0].fields.push({
+    name: 'source',
+    type: 'relationship',
+    relationTo: 'layouts',
+    custom: { visualEditorLayout: 'layout' },
+  })
+  f.payload.config.collections.push({
+    slug: 'layouts',
+    admin: { useAsTitle: 'title' },
+    versions: { drafts: true },
+    fields: [],
+  } as any)
+  f.payload.find.mockResolvedValue({ docs: [{ id: 'new', title: 'Reusable' }] } as any)
+  const snapshot = await (await f.call()).json()
+  expect(snapshot.fields['layout.0.source']).toMatchObject({
+    type: 'relationship',
+    collection: 'layouts',
+    choices: [{ id: 'new', label: 'Reusable' }],
+  })
+  const invalid = await f.call({
+    action: 'save',
+    revision: snapshot.revision,
+    changes: [{ path: 'layout.0.source', value: 'hidden' }],
+    orders: [],
+  })
+  expect(invalid.status).not.toBe(200)
+  expect(f.payload.update).not.toHaveBeenCalled()
+  const valid = await f.call({
+    action: 'save',
+    revision: snapshot.revision,
+    changes: [{ path: 'layout.0.source', value: 'new' }],
+    orders: [],
+  })
+  expect(valid.status).toBe(200)
+  expect(f.payload.update).toHaveBeenCalled()
+})
+
+it('copies schema-owned source blocks with independent IDs and rejects changed source revisions', async () => {
+  const f = fixture({ pages: true, layouts: true })
+  f.block.blocks[0].fields.push({
+    name: 'source',
+    type: 'relationship',
+    relationTo: 'layouts',
+    custom: { visualEditorLayout: 'layout' },
+  })
+  f.payload.config.collections.push({
+    slug: 'layouts',
+    admin: { useAsTitle: 'title' },
+    versions: { drafts: true },
+    fields: [f.block],
+  } as any)
+  const source = {
+    id: 'template',
+    layout: [
+      {
+        id: 'source-row',
+        blockType: 'section',
+        heading: 'Shared heading',
+        secretExtra: 'Must not copy',
+      },
+    ],
+  }
+  const sourceVersion = { id: 'source-version', version: source, latest: true }
+  f.payload.findByID.mockImplementation(
+    async (options: any = {}) =>
+      structuredClone(options.collection === 'layouts' ? source : f.doc) as any,
+  )
+  f.payload.db.findVersions.mockImplementation(
+    async (options: any = {}) =>
+      ({ docs: [options.collection === 'layouts' ? sourceVersion : f.latest] }) as any,
+  )
+  const id = 'a'.repeat(24)
+  const addition = {
+    id,
+    blockType: 'section',
+    layoutSource: {
+      collection: 'layouts',
+      id: 'template',
+      path: 'layout',
+      rowId: 'source-row',
+      revision: createHash('sha256').update(JSON.stringify(sourceVersion)).digest('hex'),
+    },
+  }
+  const orders = [{ path: 'layout', ids: ['a', id, 'b'], additions: [addition] }]
+  const prepared = await (await f.call({ orders })).json()
+  expect(prepared.fields['layout.2.heading'].value).toBe('Shared heading')
+  expect(f.payload.update).not.toHaveBeenCalled()
+  const saved = await f.call({ action: 'save', revision: prepared.revision, changes: [], orders })
+  expect(saved.status).toBe(200)
+  const copy = f.payload.update.mock.calls[0][0].data.layout[1]
+  expect(copy).toMatchObject({ id, heading: 'Shared heading' })
+  expect(copy.secretExtra).toBeUndefined()
+  f.payload.findByID.mockImplementation(async (options: any = {}) => {
+    if (options.collection === 'layouts') throw new Error('Access denied')
+    return structuredClone(f.doc)
+  })
+  expect((await f.call({ orders })).status).not.toBe(200)
+  f.payload.findByID.mockImplementation(
+    async (options: any = {}) =>
+      structuredClone(options.collection === 'layouts' ? source : f.doc) as any,
+  )
+  f.text.access = { update: () => false }
+  expect((await f.call({ orders })).status).not.toBe(200)
+  delete f.text.access
+  sourceVersion.version.layout[0].heading = 'New source'
+  const stale = await f.call({ orders })
+  expect(stale.status).not.toBe(200)
+  expect((await stale.json()).error).toContain('shared layout changed')
+})
+
+it('enforces query-scoped document update access before previewing or reading fields', async () => {
+  const f = fixture()
+  f.collection.access.update.mockReturnValue({ owner: { equals: 'someone-else' } })
+  f.payload.find.mockResolvedValue({ docs: [] })
+  const response = await f.call()
+  expect(response.status).not.toBe(200)
+  expect(f.payload.db.findVersions).not.toHaveBeenCalled()
+  expect(f.payload.find).toHaveBeenCalledWith(
+    expect.objectContaining({
+      overrideAccess: false,
+      where: { and: [{ owner: { equals: 'someone-else' } }, { id: { equals: 'page' } }] },
+    }),
   )
 })

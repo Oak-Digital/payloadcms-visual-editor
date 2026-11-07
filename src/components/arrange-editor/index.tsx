@@ -22,7 +22,12 @@ import {
   type RecoveryRecord,
 } from '../../utils/recovery.js'
 import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
-import { type ArrayRow, type ArrangeSnapshot, remapArrangePath } from '../../utils/arrange.js'
+import {
+  type ArrayRow,
+  type ArrangeSnapshot,
+  type LayoutSource,
+  remapArrangePath,
+} from '../../utils/arrange.js'
 import { documentKey, fieldDocument } from '../../utils/field-target.js'
 import { type MediaChoice, MediaPicker } from '../media-picker/index.js'
 import { imageFieldAt, previewImages } from '../media-picker/preview.js'
@@ -35,7 +40,10 @@ import { createDraftBlockPreviews } from './draft-block-preview.js'
 import { createCanvasTextEditor } from './canvas-text.js'
 
 type Session = {
-  additions: Record<string, { id: string; blockType: string; sourceId?: string }[]>
+  additions: Record<
+    string,
+    { id: string; blockType: string; sourceId?: string; layoutSource?: LayoutSource }[]
+  >
   changes: Record<string, unknown>
   media: Record<string, MediaChoice>
   orders: Record<string, string[]>
@@ -152,6 +160,18 @@ export function ArrangeEditor({
     path: string
     id: string
   }>()
+  const [previewRequest, setPreviewRequest] = useState(0)
+  useEffect(() => {
+    const request = () => setPreviewRequest((value) => value + 1)
+    window.addEventListener('payload:preview-request', request)
+    return () => window.removeEventListener('payload:preview-request', request)
+  }, [])
+  const [layoutView, setLayoutView] = useState<{
+    key: string
+    label: string
+    target?: Target
+    block?: { key: string; path: string; id: string }
+  }>()
   const heading = useRef<HTMLHeadingElement>(null)
   const selectedSession = selectedBlock && sessions[selectedBlock.key]
   const selectedIndex =
@@ -189,12 +209,23 @@ export function ArrangeEditor({
         ? `${selectedBlock.key}:${selectedBlock.id}`
         : adding
           ? `add:${adding.key}:${adding.path}`
-          : 'blocks'
+          : (layoutView?.key ?? 'blocks')
   useEffect(() => {
     if (active && !document.activeElement?.hasAttribute('data-arrange-inline'))
       heading.current?.focus({ preventScroll: true })
   }, [viewKey, active, tab])
+  function selectOwner(key: string) {
+    if (key === documentKey(documentInfo)) setLayoutView(undefined)
+    else if (layoutView?.key !== key)
+      setLayoutView({
+        key,
+        label: sessions[key]?.snapshot.label || 'Shared layout',
+        target,
+        block: selectedBlock,
+      })
+  }
   function selectBlock(key: string, path: string, id: string) {
+    selectOwner(key)
     onReveal?.()
     for (const list of document.querySelectorAll<HTMLElement>('[data-payload-block-list]')) {
       if (
@@ -220,6 +251,7 @@ export function ArrangeEditor({
     setBlockMode('edit')
   }
   function selectField(key: string, path: string) {
+    selectOwner(key)
     onReveal?.()
     const order = Object.entries(expandedOrders(sessions[key]))
       .filter(([orderPath]) => path.startsWith(`${orderPath}.`))
@@ -262,7 +294,9 @@ export function ArrangeEditor({
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
-  const [operation, setOperation] = useState<'save' | 'publish' | 'refresh' | 'add'>('save')
+  const [operation, setOperation] = useState<'save' | 'publish' | 'refresh' | 'add' | 'load'>(
+    'save',
+  )
   const [ready, setReady] = useState(false)
   const [needsSync, setNeedsSync] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -290,7 +324,7 @@ export function ArrangeEditor({
       busy,
       count,
       busy
-        ? !ready
+        ? !ready || operation === 'load'
           ? 'Loading content…'
           : refreshing || operation === 'refresh'
             ? 'Updating preview…'
@@ -333,7 +367,11 @@ export function ArrangeEditor({
     } else if (target) setTarget(undefined)
     else if (selectedRow) setSelectedRow(undefined)
     else if (selectedBlock) setSelectedBlock(undefined)
-    else if (onHome) onHome()
+    else if (layoutView) {
+      setTarget(layoutView.target)
+      setSelectedBlock(layoutView.block)
+      setLayoutView(undefined)
+    } else if (onHome) onHome()
     else setTab('menu')
   }
   useEffect(() => {
@@ -409,6 +447,61 @@ export function ArrangeEditor({
     [apiRoute],
   )
 
+  async function openLayout() {
+    if (!target || field?.type !== 'relationship' || typeof value !== 'string' || busy) return
+    const owner = {
+      collection: field.collection,
+      id: value,
+      locale: session?.owner.locale,
+      hasDrafts: true,
+    }
+    const key = documentKey(owner)
+    setOperation('load')
+    setBusy(true)
+    setError('')
+    try {
+      let source = sessions[key]
+      if (!source) {
+        const snapshot: ArrangeSnapshot = await request(owner, {
+          action: 'read',
+          paths: [],
+          orderPaths: [field.layoutPath],
+        })
+        source = { owner, snapshot, additions: {}, changes: {}, media: {}, orders: {} }
+        setSessions((previous) => ({ ...previous, [key]: source }))
+        try {
+          const recovered = readRecovery(
+            window.localStorage,
+            recoveryScope(source),
+            snapshot.revision,
+            isRecoverySession,
+          )
+          if (recovered.status === 'available' && documentKey(recovered.record.value.owner) === key)
+            setRecoveries((previous) => ({ ...previous, [key]: recovered }))
+          else if (recovered.status !== 'empty') {
+            unreadRecovery.current.add(key)
+            setRecoveryNotice('Stored edits could not be read. Save your draft before leaving.')
+          }
+        } catch {
+          unreadRecovery.current.add(key)
+          setRecoveryNotice('Browser recovery is unavailable. Save your draft before leaving.')
+        }
+      }
+      setLayoutView({
+        key,
+        label: source.snapshot.label || 'Shared layout',
+        target,
+        block: selectedBlock,
+      })
+      setTarget(undefined)
+      setSelectedBlock(undefined)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to open layout')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function recoveryScope(session: Session) {
     return {
       api: apiRoute,
@@ -442,10 +535,10 @@ export function ArrangeEditor({
   }, [sessions, recoveries, ready, busy])
 
   const readSession = useCallback(
-    async (owner: PayloadCMSDocument) => {
+    async (owner: PayloadCMSDocument, known?: ArrangeSnapshot) => {
       const key = documentKey(owner)
-      const paths = new Set<string>()
-      const orderPaths = new Set<string>()
+      const paths = new Set<string>(Object.keys(known?.fields ?? {}))
+      const orderPaths = new Set<string>(Object.keys(known?.orders ?? {}))
       for (const element of document.querySelectorAll(
         '[data-payload-path], [data-payload-block-list], [data-payload-array-path]',
       )) {
@@ -642,7 +735,7 @@ export function ArrangeEditor({
       document.removeEventListener('keydown', keyboard, true)
       document.removeEventListener('click', select, true)
     }
-  }, [active, busy, needsSync, sessions, documentInfo, blockMode, previewEpoch])
+  }, [active, busy, needsSync, sessions, documentInfo, blockMode, previewEpoch, layoutView])
 
   function undo() {
     const previous = undoStack.at(-1)
@@ -692,7 +785,7 @@ export function ArrangeEditor({
         }),
       )
     }
-  }, [sessions, ready, refreshing, busy, operation])
+  }, [sessions, ready, refreshing, busy, operation, previewRequest])
   const draftPreviews = useRef<ReturnType<typeof createDraftBlockPreviews> | undefined>(undefined)
   useLayoutEffect(() => {
     if (document.querySelector('[data-payload-live-preview]')) return
@@ -986,6 +1079,166 @@ export function ArrangeEditor({
     }
   }
 
+  async function makeIndependent() {
+    if (
+      !target ||
+      !selectedBlock ||
+      !session ||
+      field?.type !== 'relationship' ||
+      typeof value !== 'string' ||
+      busy
+    )
+      return
+    setOperation('add')
+    setBusy(true)
+    setError('')
+    try {
+      const sourceOwner = {
+        collection: field.collection,
+        id: value,
+        locale: session.owner.locale,
+        hasDrafts: true,
+      }
+      const sourceKey = documentKey(sourceOwner)
+      if (recoveries[sourceKey] || unreadRecovery.current.has(sourceKey))
+        throw new Error('Review the shared layout recovery before copying.')
+      const source: Session = sessions[sourceKey] ?? {
+        owner: sourceOwner,
+        snapshot: await request(sourceOwner, {
+          action: 'read',
+          paths: [],
+          orderPaths: [field.layoutPath],
+        }),
+        additions: {},
+        changes: {},
+        orders: {},
+        media: {},
+      }
+      if (!sessions[sourceKey]) {
+        const stored = readRecovery(
+          window.localStorage,
+          recoveryScope(source),
+          source.snapshot.revision,
+          isRecoverySession,
+        )
+        if (stored.status !== 'empty')
+          throw new Error('Open the shared layout to review stored edits before copying.')
+      }
+      const sourceRows = expandedOrders(source)[field.layoutPath] ?? []
+      const sourceIds = source.orders[field.layoutPath] ?? sourceRows.map((row) => row.id)
+      if (!sourceIds.length) throw new Error('This layout has no blocks to copy.')
+      const path = selectedBlock.path
+      const previousAdditions = session.additions[path] ?? []
+      const copies = sourceIds.map((sourceId) => {
+        const row = sourceRows.find((row) => row.id === sourceId)!
+        let persisted = sourceId
+        const visited = new Set<string>()
+        while (!source.snapshot.orders[field.layoutPath].some((row) => row.id === persisted)) {
+          if (visited.has(persisted)) throw new Error('Invalid layout copy source')
+          visited.add(persisted)
+          const addition = source.additions[field.layoutPath]?.find((row) => row.id === persisted)
+          if (!addition?.sourceId) {
+            persisted = ''
+            break
+          }
+          persisted = addition.sourceId
+        }
+        return {
+          id: Array.from(crypto.getRandomValues(new Uint8Array(12)), (byte) =>
+            byte.toString(16).padStart(2, '0'),
+          ).join(''),
+          blockType: row.blockType!,
+          ...(persisted
+            ? {
+                layoutSource: {
+                  collection: field.collection,
+                  id: value,
+                  path: field.layoutPath,
+                  rowId: persisted,
+                  revision: source.snapshot.revision,
+                },
+              }
+            : {}),
+        }
+      })
+      const ids = [...(session.orders[path] ?? session.snapshot.orders[path].map((row) => row.id))]
+      ids.splice(ids.indexOf(selectedBlock.id), 1, ...copies.map((copy) => copy.id))
+      const additions = [...previousAdditions, ...copies]
+      const orders = { ...session.orders, [path]: ids }
+      const prepared: ArrangeSnapshot = await request(session.owner, {
+        action: 'read',
+        paths: [],
+        orderPaths: Object.keys(session.snapshot.orders),
+        orders: Object.entries(orders).map(([orderPath, ids]) => ({
+          path: orderPath,
+          ids,
+          additions: orderPath === path ? additions : (session.additions[orderPath] ?? []),
+        })),
+      })
+      if (prepared.revision !== session.snapshot.revision)
+        throw new Error('This page changed. Reload before copying; pending edits are retained.')
+      const removedPrefix = `${path}.${expandedOrders(session)[path].findIndex((row) => row.id === selectedBlock.id)}.`
+      const changes = Object.fromEntries(
+        Object.entries(session.changes).filter(([path]) => !path.startsWith(removedPrefix)),
+      )
+      const media = Object.fromEntries(
+        Object.entries(session.media).filter(([path]) => !path.startsWith(removedPrefix)),
+      )
+      for (let index = 0; index < copies.length; index++) {
+        const prefix = `${field.layoutPath}.${sourceRows.findIndex((row) => row.id === sourceIds[index])}.`
+        const destination = `${path}.${session.snapshot.orders[path].length + previousAdditions.length + index}.`
+        for (const [sourcePath, sourceField] of Object.entries(source.snapshot.fields)) {
+          if (!sourcePath.startsWith(prefix)) continue
+          const destinationPath = destination + sourcePath.slice(prefix.length)
+          const destinationField = prepared.fields[destinationPath]
+          if (!destinationField) continue
+          let content = structuredClone(
+            Object.hasOwn(source.changes, sourcePath)
+              ? source.changes[sourcePath]
+              : sourceField.value,
+          )
+          if (
+            sourceField.type === 'array' &&
+            destinationField.type === 'array' &&
+            Array.isArray(content)
+          ) {
+            const originalIds = sourceField.value.map((row) => ('id' in row ? row.id : undefined))
+            content = content.map((row: ArrayRow) => {
+              if (!('id' in row)) return row
+              const mapped = destinationField.value[originalIds.indexOf(row.id)]
+              if (!mapped || !('id' in mapped)) throw new Error('Unable to copy nested rows')
+              return { id: mapped.id }
+            })
+          }
+          if (!same(content, destinationField.value)) changes[destinationPath] = content
+          if (source.media[sourcePath]) media[destinationPath] = source.media[sourcePath]
+        }
+      }
+      rememberEdit()
+      setSessions((previous) => ({
+        ...previous,
+        [selectedBlock.key]: {
+          ...session,
+          changes,
+          media,
+          orders,
+          additions: { ...session.additions, [path]: additions },
+          snapshot: {
+            ...session.snapshot,
+            fields: { ...session.snapshot.fields, ...prepared.fields },
+          },
+        },
+      }))
+      setTarget(undefined)
+      setSelectedBlock({ key: selectedBlock.key, path, id: copies[0].id })
+      setStatus('Independent copy added.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to copy layout')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function removeBlock(key: string, path: string, id: string) {
     const session = sessions[key]
     const ids = session.orders[path] ?? session.snapshot.orders[path].map((row) => row.id)
@@ -1007,7 +1260,8 @@ export function ArrangeEditor({
       await refreshPreview()
       const loaded = await Promise.all(
         [...committed.current].map(
-          async (key) => [key, await readSession(sessions[key].owner)] as const,
+          async (key) =>
+            [key, await readSession(sessions[key].owner, sessions[key].snapshot)] as const,
         ),
       )
       setSessions((previous) => ({
@@ -1273,7 +1527,7 @@ export function ArrangeEditor({
                   <h2
                     ref={heading}
                     tabIndex={-1}
-                    title={blockLabel ? humanize(blockLabel) : undefined}
+                    title={blockLabel ? humanize(blockLabel) : layoutView?.label}
                   >
                     {picker && panelContainer
                       ? pickerSelection
@@ -1288,11 +1542,13 @@ export function ArrangeEditor({
                             : tab === 'revisions'
                               ? 'Revision history'
                               : target
-                                ? 'Edit content'
+                                ? field?.type === 'relationship'
+                                  ? 'Saved layout'
+                                  : 'Edit content'
                                 : blockLabel
                                   ? humanize(blockLabel)
                                   : blockMode === 'edit'
-                                    ? 'Page blocks'
+                                    ? layoutView?.label || 'Page blocks'
                                     : 'Rearrange content'}
                   </h2>
                 </div>
@@ -1470,6 +1726,9 @@ export function ArrangeEditor({
                   )}
                   {tab === 'content' && (
                     <div key={viewKey} className={styles.drawerView}>
+                      {layoutView && (selectedBlock || target || adding) && (
+                        <p title={layoutView.label}>Shared layout · {layoutView.label}</p>
+                      )}
                       {adding && sessions[adding.key] && (
                         <section aria-label="Add block">
                           {(sessions[adding.key].snapshot.blockTypes?.[adding.path] ?? []).map(
@@ -1492,10 +1751,14 @@ export function ArrangeEditor({
                       )}
                       {field && field.type !== 'array' && target && (
                         <section aria-label="Selected content">
-                          <h3>{field.type === 'upload' ? 'Image' : 'Text'}</h3>
-                          <small className={styles.path}>
-                            {session && fieldLabel(target.path, session)}
-                          </small>
+                          {field.type !== 'relationship' && (
+                            <h3>{field.type === 'upload' ? 'Image' : 'Text'}</h3>
+                          )}
+                          {field.type !== 'relationship' && (
+                            <small className={styles.path}>
+                              {session && fieldLabel(target.path, session)}
+                            </small>
+                          )}
                           {(field.type === 'text' || field.type === 'textarea') && (
                             <>
                               <label>
@@ -1519,6 +1782,42 @@ export function ArrangeEditor({
                                 Restore text
                               </button>
                             </>
+                          )}
+                          {field.type === 'relationship' && (
+                            <div>
+                              <select
+                                aria-label="Saved layout"
+                                value={typeof value === 'string' ? value : ''}
+                                disabled={busy || needsSync}
+                                onChange={(event) => stage(target, event.target.value)}
+                              >
+                                <option value="" disabled>
+                                  Select a layout
+                                </option>
+                                {field.choices.map((choice) => (
+                                  <option key={choice.id} value={choice.id}>
+                                    {choice.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <p>Changes to this shared layout apply wherever it is used.</p>
+                              <button
+                                type="button"
+                                disabled={busy || needsSync || !value}
+                                className={styles.fieldLink}
+                                onClick={openLayout}
+                              >
+                                Edit shared layout
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy || needsSync || !value}
+                                className={styles.fieldLink}
+                                onClick={makeIndependent}
+                              >
+                                Make independent
+                              </button>
+                            </div>
                           )}
                           {field.type === 'upload' && (
                             <>
@@ -1667,134 +1966,163 @@ export function ArrangeEditor({
                           (session) => Object.keys(session.snapshot.orders).length > 0,
                         ) && (
                           <section aria-label="Blocks">
-                            {Object.entries(sessions).flatMap(([key, session]) =>
-                              Object.entries(expandedOrders(session)).map(([path, rows]) => {
-                                const ids = session.orders[path] ?? rows.map((row) => row.id)
-                                return (
-                                  <div key={`${key}:${path}`}>
-                                    <ol
-                                      aria-label={`${path} block order`}
-                                      className={styles.blocks}
-                                    >
-                                      {ids.map((id, index) => (
-                                        <li
-                                          key={id}
-                                          onDragOver={(event) => {
-                                            if (
-                                              blockMode === 'rearrange' &&
-                                              dragging?.key === key &&
-                                              dragging.path === path
-                                            ) {
-                                              event.preventDefault()
-                                            }
-                                          }}
-                                          onDrop={(event) => {
-                                            event.preventDefault()
-                                            if (
-                                              blockMode === 'rearrange' &&
-                                              !busy &&
-                                              !needsSync &&
-                                              dragging?.key === key &&
-                                              dragging.path === path
-                                            ) {
-                                              move(key, path, dragging.id, index)
-                                            }
-                                            setDragging(undefined)
-                                          }}
-                                        >
-                                          {blockMode === 'rearrange' && (
-                                            <button
-                                              aria-label={`Drag ${humanize(rows.find((row) => row.id === id)?.label || 'Block')}`}
-                                              className={styles.handle}
-                                              draggable={!busy && !needsSync}
-                                              onDragEnd={() => setDragging(undefined)}
-                                              onDragStart={(event) => {
-                                                event.dataTransfer.setData('text/plain', id)
-                                                event.dataTransfer.effectAllowed = 'move'
-                                                setDragging({ id, key, path })
-                                              }}
-                                              type="button"
-                                            >
-                                              ⠿
-                                            </button>
-                                          )}
-                                          {blockMode === 'edit' ? (
-                                            <button
-                                              className={styles.blockSelect}
-                                              title={humanize(
-                                                rows.find((row) => row.id === id)?.label || 'Block',
-                                              )}
-                                              aria-label={`Edit ${humanize(rows.find((row) => row.id === id)?.label || session.additions[path]?.find((addition) => addition.id === id)?.blockType || 'Block')}`}
-                                              disabled={busy || needsSync}
-                                              onClick={() => selectBlock(key, path, id)}
-                                              type="button"
-                                            >
-                                              {humanize(
-                                                rows.find((row) => row.id === id)?.label ||
-                                                  session.additions[path]?.find(
-                                                    (addition) => addition.id === id,
-                                                  )?.blockType ||
-                                                  'Block',
-                                              )}
-                                              <span aria-hidden="true"> ›</span>
-                                            </button>
-                                          ) : (
-                                            <span
-                                              className={styles.blockLabel}
-                                              title={humanize(
-                                                rows.find((row) => row.id === id)?.label || 'Block',
-                                              )}
-                                            >
-                                              {humanize(
-                                                rows.find((row) => row.id === id)?.label || 'Block',
-                                              )}
-                                            </span>
-                                          )}
-                                          {blockMode === 'rearrange' && (
-                                            <>
-                                              <button
-                                                aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} up`}
-                                                disabled={busy || needsSync || index === 0}
-                                                onClick={() => move(key, path, id, index - 1)}
-                                                type="button"
-                                              >
-                                                ↑
-                                              </button>
-                                              <button
-                                                aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} down`}
-                                                disabled={
-                                                  busy || needsSync || index === ids.length - 1
-                                                }
-                                                onClick={() => move(key, path, id, index + 1)}
-                                                type="button"
-                                              >
-                                                ↓
-                                              </button>
-                                            </>
-                                          )}
-                                        </li>
-                                      ))}
-                                    </ol>
-                                    {blockMode === 'edit' && (
-                                      <button
-                                        className={styles.addBlock}
-                                        disabled={
-                                          busy ||
-                                          needsSync ||
-                                          (session.snapshot.blockLimits?.[path]?.max !==
-                                            undefined &&
-                                            ids.length >= session.snapshot.blockLimits[path].max!)
-                                        }
-                                        onClick={() => setAdding({ key, path })}
-                                        type="button"
-                                      >
-                                        Add block
-                                      </button>
-                                    )}
-                                  </div>
-                                )
-                              }),
+                            {layoutView && (
+                              <section aria-label="Shared layout usage">
+                                <p>
+                                  Shared layout · Used on{' '}
+                                  {sessions[layoutView.key]?.snapshot.usage?.usages.length ?? 0}{' '}
+                                  pages
+                                </p>
+                                <ul>
+                                  {sessions[layoutView.key]?.snapshot.usage?.usages.map((usage) => (
+                                    <li key={`${usage.collection}:${usage.id}`}>
+                                      {usage.label} · {usage.published ? 'Published' : 'Draft only'}
+                                    </li>
+                                  ))}
+                                </ul>
+                                {sessions[layoutView.key]?.snapshot.usage?.incomplete && (
+                                  <p>Some usages are hidden by your access permissions.</p>
+                                )}
+                                {sessions[layoutView.key]?.snapshot.usage?.hasMore && (
+                                  <p>More pages use this layout.</p>
+                                )}
+                              </section>
                             )}
+                            {Object.entries(sessions)
+                              .filter(
+                                ([key]) => key === (layoutView?.key ?? documentKey(documentInfo)),
+                              )
+                              .flatMap(([key, session]) =>
+                                Object.entries(expandedOrders(session)).map(([path, rows]) => {
+                                  const ids = session.orders[path] ?? rows.map((row) => row.id)
+                                  return (
+                                    <div key={`${key}:${path}`}>
+                                      <ol
+                                        aria-label={`${path} block order`}
+                                        className={styles.blocks}
+                                      >
+                                        {ids.map((id, index) => (
+                                          <li
+                                            key={id}
+                                            onDragOver={(event) => {
+                                              if (
+                                                blockMode === 'rearrange' &&
+                                                dragging?.key === key &&
+                                                dragging.path === path
+                                              ) {
+                                                event.preventDefault()
+                                              }
+                                            }}
+                                            onDrop={(event) => {
+                                              event.preventDefault()
+                                              if (
+                                                blockMode === 'rearrange' &&
+                                                !busy &&
+                                                !needsSync &&
+                                                dragging?.key === key &&
+                                                dragging.path === path
+                                              ) {
+                                                move(key, path, dragging.id, index)
+                                              }
+                                              setDragging(undefined)
+                                            }}
+                                          >
+                                            {blockMode === 'rearrange' && (
+                                              <button
+                                                aria-label={`Drag ${humanize(rows.find((row) => row.id === id)?.label || 'Block')}`}
+                                                className={styles.handle}
+                                                draggable={!busy && !needsSync}
+                                                onDragEnd={() => setDragging(undefined)}
+                                                onDragStart={(event) => {
+                                                  event.dataTransfer.setData('text/plain', id)
+                                                  event.dataTransfer.effectAllowed = 'move'
+                                                  setDragging({ id, key, path })
+                                                }}
+                                                type="button"
+                                              >
+                                                ⠿
+                                              </button>
+                                            )}
+                                            {blockMode === 'edit' ? (
+                                              <button
+                                                className={styles.blockSelect}
+                                                title={humanize(
+                                                  rows.find((row) => row.id === id)?.label ||
+                                                    'Block',
+                                                )}
+                                                aria-label={`Edit ${humanize(rows.find((row) => row.id === id)?.label || session.additions[path]?.find((addition) => addition.id === id)?.blockType || 'Block')}`}
+                                                disabled={busy || needsSync}
+                                                onClick={() => selectBlock(key, path, id)}
+                                                type="button"
+                                              >
+                                                {humanize(
+                                                  rows.find((row) => row.id === id)?.label ||
+                                                    session.additions[path]?.find(
+                                                      (addition) => addition.id === id,
+                                                    )?.blockType ||
+                                                    'Block',
+                                                )}
+                                                <span aria-hidden="true"> ›</span>
+                                              </button>
+                                            ) : (
+                                              <span
+                                                className={styles.blockLabel}
+                                                title={humanize(
+                                                  rows.find((row) => row.id === id)?.label ||
+                                                    'Block',
+                                                )}
+                                              >
+                                                {humanize(
+                                                  rows.find((row) => row.id === id)?.label ||
+                                                    'Block',
+                                                )}
+                                              </span>
+                                            )}
+                                            {blockMode === 'rearrange' && (
+                                              <>
+                                                <button
+                                                  aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} up`}
+                                                  disabled={busy || needsSync || index === 0}
+                                                  onClick={() => move(key, path, id, index - 1)}
+                                                  type="button"
+                                                >
+                                                  ↑
+                                                </button>
+                                                <button
+                                                  aria-label={`Move ${humanize(rows.find((row) => row.id === id)?.label || 'Block')} down`}
+                                                  disabled={
+                                                    busy || needsSync || index === ids.length - 1
+                                                  }
+                                                  onClick={() => move(key, path, id, index + 1)}
+                                                  type="button"
+                                                >
+                                                  ↓
+                                                </button>
+                                              </>
+                                            )}
+                                          </li>
+                                        ))}
+                                      </ol>
+                                      {blockMode === 'edit' && (
+                                        <button
+                                          className={styles.addBlock}
+                                          disabled={
+                                            busy ||
+                                            needsSync ||
+                                            (session.snapshot.blockLimits?.[path]?.max !==
+                                              undefined &&
+                                              ids.length >= session.snapshot.blockLimits[path].max!)
+                                          }
+                                          onClick={() => setAdding({ key, path })}
+                                          type="button"
+                                        >
+                                          Add block
+                                        </button>
+                                      )}
+                                    </div>
+                                  )
+                                }),
+                              )}
                           </section>
                         )}
                     </div>

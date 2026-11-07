@@ -1,8 +1,15 @@
+export type LayoutSource = {
+  collection: string
+  id: string
+  path: string
+  rowId: string
+  revision: string
+}
 export type ArrangeChange = { path: string; value: unknown }
 export type ArrangeOrder = {
   ids: string[]
   path: string
-  additions?: { id: string; blockType: string; sourceId?: string }[]
+  additions?: { id: string; blockType: string; sourceId?: string; layoutSource?: LayoutSource }[]
 }
 export type ArrayRow = { id: string } | { relationship: string }
 export type ArrangeArrayField = {
@@ -16,6 +23,13 @@ export type ArrangeArrayField = {
 }
 export type ArrangeField =
   | { type: 'richText' | 'text' | 'textarea' | 'upload'; value: unknown; schemaPath?: string }
+  | {
+      type: 'relationship'
+      value: string | null
+      collection: string
+      layoutPath: string
+      choices: { id: string; label: string }[]
+    }
   | ArrangeArrayField
 
 /** Retained rows come from the server, never from client-supplied content. */
@@ -49,6 +63,12 @@ export function arrangeArrayRows(
   })
 }
 export type ArrangeSnapshot = {
+  label?: string
+  usage?: {
+    usages: { collection: string; id: string; label: string; draft: boolean; published: boolean }[]
+    hasMore: boolean
+    incomplete?: boolean
+  }
   recoveryUser?: string
   fields: Record<string, ArrangeField>
   orders: Record<string, { id: string; label: string; blockType?: string }[]>

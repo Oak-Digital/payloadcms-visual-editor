@@ -1,7 +1,9 @@
-import type { Field, PayloadRequest } from 'payload'
+import { createHash } from 'node:crypto'
+import type { CollectionSlug, Field, PayloadRequest } from 'payload'
 
 import { type ArrangeOrder, safePath, setPath } from './arrange.js'
-import { duplicateBlock } from './duplicate-block.js'
+import { layoutReferences } from './layout-references.js'
+import { duplicateBlock, projectBlockFields } from './duplicate-block.js'
 import { assertFieldAccess, resolveField } from './rich-text.js'
 
 export function blockDefaults(fields: Field[], label: string): Record<string, unknown> {
@@ -83,6 +85,7 @@ export async function appendDraftBlocks(
   document: Record<string, unknown>,
   orders: unknown,
   req: PayloadRequest,
+  enabled: Record<string, unknown>,
 ) {
   if (orders === undefined) {
     return
@@ -141,6 +144,70 @@ export async function appendDraftBlocks(
         }
         await check(source, `${order.path}.${sourceIndex}`)
         cloned = duplicateBlock(block.fields, source, addition.id)
+      }
+      if (addition.layoutSource !== undefined) {
+        if (addition.sourceId !== undefined) throw new Error('Choose one copy source')
+        const source = addition.layoutSource
+        if (
+          !source ||
+          !['collection', 'id', 'path', 'rowId', 'revision'].every(
+            (key) => typeof source[key as keyof typeof source] === 'string',
+          ) ||
+          !layoutReferences(fields).some(
+            (ref) => ref.collection === source.collection && ref.layoutPath === source.path,
+          )
+        )
+          throw new Error('Layout source is unavailable')
+        if (!enabled[source.collection]) throw new Error('Layout collection is not enabled')
+        const sourceCollection = req.payload.config.collections.find(
+          (item) => item.slug === source.collection,
+        )
+        if (!sourceCollection?.versions?.drafts) throw new Error('Layout source requires drafts')
+        const sourceDocument = await req.payload.findByID({
+          collection: source.collection as CollectionSlug,
+          id: source.id,
+          depth: 0,
+          draft: true,
+          overrideAccess: false,
+          req,
+        })
+        const versions = await req.payload.db.findVersions({
+          collection: source.collection as CollectionSlug,
+          limit: 1,
+          pagination: false,
+          req,
+          sort: '-updatedAt',
+          where: { and: [{ parent: { equals: source.id } }, { latest: { equals: true } }] },
+        })
+        if (
+          !versions.docs[0] ||
+          createHash('sha256').update(JSON.stringify(versions.docs[0])).digest('hex') !==
+            source.revision
+        )
+          throw new Error('The shared layout changed. Select it again before copying.')
+        const sourceField = resolveField(sourceCollection.fields, sourceDocument, source.path)
+        if (sourceField?.field.type !== 'blocks' || !Array.isArray(sourceField.value))
+          throw new Error('Source layout is unavailable')
+        const sourceRow = sourceField.value.find(
+          (row) => row.id === source.rowId && row.blockType === addition.blockType,
+        )
+        if (!sourceRow) throw new Error('Source block is unavailable')
+        cloned = {
+          ...duplicateBlock(block.fields, projectBlockFields(block.fields, sourceRow), addition.id),
+          blockType: block.slug,
+        }
+        const proposed = structuredClone(document)
+        setPath(proposed, order.path, [...rows, cloned])
+        const check = async (value: unknown, path: string): Promise<void> => {
+          if (!value || typeof value !== 'object') return
+          for (const [key, child] of Object.entries(value)) {
+            if (key === 'id' || key === 'blockType') continue
+            const target = resolveField(fields, proposed, `${path}.${key}`)
+            if (target) await assertFieldAccess(target, proposed, req)
+            await check(child, `${path}.${key}`)
+          }
+        }
+        await check(cloned, `${order.path}.${rows.length}`)
       }
       ids.add(addition.id)
       rows.push({

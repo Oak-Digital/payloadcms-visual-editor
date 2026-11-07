@@ -20,6 +20,7 @@ import {
 } from '../utils/arrange.js'
 import { assertFieldAccess, assertSupportedRichText, resolveField } from '../utils/rich-text.js'
 import { appendDraftBlocks } from '../utils/draft-blocks.js'
+import { layoutUsages } from '../utils/layout-references.js'
 import { populatePreview } from '../utils/populate-preview.js'
 import { buildSourceMap } from '../utils/source-map.js'
 import { uploadTargets, validateMedia } from '../utils/upload-fields.js'
@@ -74,8 +75,16 @@ export const createArrangeHandler =
         req,
       }
       const visible = await req.payload.findByID({ ...options, overrideAccess: false })
-      if ((await collection.access.update({ id: body.id, data: visible, req })) === false) {
-        throw new Error('Collection update access denied')
+      const updateAccess = await collection.access.update({ id: body.id, data: visible, req })
+      if (!updateAccess) throw new Error('Collection update access denied')
+      if (typeof updateAccess === 'object') {
+        const allowed = await req.payload.find({
+          ...options,
+          where: { and: [updateAccess, { id: { equals: body.id } }] },
+          limit: 1,
+          overrideAccess: false,
+        })
+        if (!allowed.docs.length) throw new Error('Collection update access denied')
       }
       const versions = await req.payload.db.findVersions({
         collection: collection.slug,
@@ -90,7 +99,7 @@ export const createArrangeHandler =
         throw new Error('A saved version is required')
       }
       const revision = createHash('sha256').update(JSON.stringify(latest)).digest('hex')
-      await appendDraftBlocks(collection.fields, visible, body.orders, req)
+      await appendDraftBlocks(collection.fields, visible, body.orders, req, collections)
       const sourceMap = buildSourceMap(collection.fields, visible)
       const snapshot: ArrangeSnapshot = {
         fields: {},
@@ -177,6 +186,37 @@ export const createArrangeHandler =
               ),
             }
           }
+          if (
+            resolved.field.type === 'relationship' &&
+            typeof resolved.field.custom?.visualEditorLayout === 'string' &&
+            !resolved.field.hasMany &&
+            typeof resolved.field.relationTo === 'string'
+          ) {
+            const related = resolved.field.relationTo
+            if (!collections[related]) continue
+            const source = req.payload.config.collections.find((item) => item.slug === related)
+            if (!source?.versions?.drafts) continue
+            const title = source.admin.useAsTitle || 'id'
+            const choices = await req.payload.find({
+              collection: related,
+              depth: 0,
+              draft: true,
+              pagination: false,
+              limit: 0,
+              overrideAccess: false,
+              req,
+            })
+            snapshot.fields[path] = {
+              type: 'relationship',
+              collection: related,
+              layoutPath: resolved.field.custom.visualEditorLayout,
+              value: resolved.value == null ? null : String(resolved.value),
+              choices: choices.docs.map((doc) => ({
+                id: String(doc.id),
+                label: String(doc[title] || doc.id),
+              })),
+            }
+          }
           if (type === 'richText') {
             assertSupportedRichText(resolved.field, resolved.value)
           }
@@ -223,9 +263,15 @@ export const createArrangeHandler =
         }
       }
       if (body.action === 'read') {
+        const usage = await layoutUsages(req, collections, collection.slug, body.id)
         await commitTransaction(req)
         transaction = false
-        return Response.json({ ...snapshot, recoveryUser: `${req.user.collection}:${req.user.id}` })
+        return Response.json({
+          ...snapshot,
+          label: String(visible[collection.admin?.useAsTitle || 'title'] || body.id),
+          usage,
+          recoveryUser: `${req.user.collection}:${req.user.id}`,
+        })
       }
       if (body.revision !== revision) {
         await killTransaction(req)
@@ -273,7 +319,7 @@ export const createArrangeHandler =
         ...options,
         overrideAccess: body.action !== 'preview',
       })
-      await appendDraftBlocks(collection.fields, complete, body.orders, req)
+      await appendDraftBlocks(collection.fields, complete, body.orders, req, collections)
       const proposed = structuredClone(complete)
       const rowPaths: Record<string, string> = {}
       const collectRows = (value: unknown, path = '') => {
@@ -308,7 +354,13 @@ export const createArrangeHandler =
         if (field.type === 'array') {
           continue // Apply row edits after child field edits, at their original paths.
         }
-        if (field.type === 'richText') {
+        if (field.type === 'relationship') {
+          if (
+            typeof change.value !== 'string' ||
+            !field.choices.some((choice) => choice.id === change.value)
+          )
+            throw new Error('Select an available saved layout')
+        } else if (field.type === 'richText') {
           assertSupportedRichText(resolved.field, change.value)
         } else if (field.type !== 'upload' && typeof change.value !== 'string') {
           throw new Error('Text must be a string')

@@ -47,7 +47,7 @@ export const createMediaHandler =
         overrideAccess: false,
         req,
       })
-      await appendDraftBlocks(collection.fields, doc, body.orders, req)
+      await appendDraftBlocks(collection.fields, doc, body.orders, req, collections)
       const target = uploadTargets(collection.fields, doc).get(body.path)
       if (!target) throw new Error('Unsupported upload field')
       await assertUploadAccess(target, req, doc, body.id)

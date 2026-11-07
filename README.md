@@ -85,6 +85,12 @@ Render the returned document with the host's actual block components. Pass `rowP
 
 The `/payload-visual-editor/arrange` endpoint validates collection/field access, upload restrictions, Lexical round trips, retained block IDs, allowed new block types, and row limits. Each document uses a version check and transaction; new rows are prepared in memory from the allowed schema, field edits apply at stable paths, then block ordering/removal is applied. Preparing fields or browsing media for a new row does not save a document version. A stale snapshot is rejected without saving. Multiple owning documents save sequentially, not atomically; partial failures report completed documents and require reloading before further edits.
 
+## Reusable layouts
+
+Opt a single relationship into layout editing with `custom: { visualEditorLayout: 'layout' }`, where the value is the source's blocks path. Enable both collections in the plugin and enable native drafts on the source. Bind rendered source blocks to their actual owner and source map; never reuse the parent page's ownership. The host preview boundary must render both collection types and dispatch `payload:preview-request` when a source boundary mounts so pending sessions can be replayed.
+
+The selected reference offers source selection, **Edit shared layout**, and **Make independent**. Shared blocks use a separate drawer view with access-filtered draft/published usage information. Independent copies resolve source data on the server, reject stale revisions and inaccessible sources, project onto destination fields, and generate fresh row IDs. Pending source field/array edits are carried into the page copy. Both paths retain normal save, undo and recovery behavior. Layout preparation never writes documents.
+
 ## Workspace
 
 `VisualEditorWorkspace` from the `/client` export surrounds an authenticated preview with a persistent frame, searchable content navigation, desktop/mobile preview widths, editing tools, and the existing contextual editor. Supply `documentInfo` and `sources` (`slug`, `label`, optional `titleField` and `previewURL(document)`). Sources without a preview resolver open the native collection editor in a new tab; `global: true` opens that Global's native editor. Listing uses Payload's REST API and its access checks.

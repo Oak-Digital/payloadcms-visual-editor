@@ -1,6 +1,6 @@
 import type { Field } from 'payload'
 import { expect, it } from 'vitest'
-import { duplicateBlock } from './duplicate-block.js'
+import { duplicateBlock, projectBlockFields } from './duplicate-block.js'
 
 it('gives nested rows deterministic fresh IDs without changing linked media or the source', () => {
   const fields: Field[] = [
@@ -61,4 +61,16 @@ it('handles named tabs and nested block schemas', () => {
   ) as any
   expect(copy.content.sections[0].id).toMatch(/^[a-f0-9]{24}$/)
   expect(copy.content.sections[0].title).toBe('Heading')
+})
+
+it('projects cross-collection copies onto destination fields', () => {
+  const fields: Field[] = [
+    { name: 'rows', type: 'array', fields: [{ name: 'title', type: 'text' }] },
+  ]
+  expect(
+    projectBlockFields(fields, {
+      hidden: 'Secret',
+      rows: [{ id: 'row', title: 'Visible', extra: 'Excluded' }],
+    }),
+  ).toEqual({ rows: [{ id: 'row', title: 'Visible' }] })
 })

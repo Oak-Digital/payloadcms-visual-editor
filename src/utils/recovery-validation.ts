@@ -11,6 +11,8 @@ const list = (value: unknown, valid: (item: any) => boolean): boolean =>
 const row = (value: unknown): boolean => record(value) && text(value.id) && text(value.label)
 const field = (value: unknown): boolean => {
   if (!record(value)) return false
+  if (value.type === 'relationship')
+    return text(value.collection) && safePath(value.layoutPath) && list(value.choices, row)
   if (['text', 'textarea', 'upload', 'richText'].includes(value.type)) return true
   return (
     value.type === 'array' &&

@@ -4,7 +4,7 @@ import { uploadTargets } from './upload-fields.js'
 
 export type SourceMap = Record<
   string,
-  string | { type: 'richText' } | { type: 'upload'; value: string | number | null }
+  string | { type: 'richText' | 'relationship' } | { type: 'upload'; value: string | number | null }
 >
 
 // =============================================================================
@@ -147,6 +147,15 @@ function addEditableFields({
         break
       }
 
+      case 'relationship': {
+        if (
+          typeof field.custom?.visualEditorLayout === 'string' &&
+          !field.hasMany &&
+          typeof field.relationTo === 'string'
+        )
+          sourceMap[appendPath(path, field.name)] = { type: 'relationship' }
+        break
+      }
       case 'richText': {
         const value = getNamedValue(source, field.name)
         if (isRecord(value) && isRecord(value.root)) {
