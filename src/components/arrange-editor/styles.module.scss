@@ -136,9 +136,6 @@
   object-fit: contain;
   border-radius: 8px;
 }
-.restoreText {
-  margin-top: 12px;
-}
 .blocks,
 .pending {
   list-style: none;
@@ -556,10 +553,40 @@
   iframe[title='Rich-text editor'] {
     height: 320px;
   }
+}
+.panel .fieldActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  button {
+    width: auto;
+    min-height: 36px;
+    margin: 0;
+    padding: 7px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 20px;
+    white-space: nowrap;
+  }
+  .restoreText {
+    color: #bbb;
+    border-color: #3b3b3b;
+    background: transparent;
+    &:not(:disabled):hover {
+      color: #fff;
+      background: #2c2c2c;
+    }
+  }
   .doneField {
-    display: block;
-    margin-top: 12px;
-    padding: 8px 12px;
+    margin-left: auto;
+    color: #171717;
+    border-color: #ddd;
+    background: #ddd;
+    &:not(:disabled):hover {
+      border-color: #fff;
+      background: #fff;
+    }
   }
 }
 .panel .blockActions {
@@ -598,7 +625,7 @@
 }
 @media (pointer: coarse) {
   .panel .blockActions button,
-  .panel .doneField {
+  .panel .fieldActions button {
     min-height: 44px;
   }
 }

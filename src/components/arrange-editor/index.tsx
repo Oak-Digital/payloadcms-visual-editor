@@ -1793,14 +1793,6 @@ export function ArrangeEditor({
               value={typeof value === 'string' ? value : ''}
             />
           </label>
-          <button
-            className={styles.restoreText}
-            disabled={busy || needsSync || !Object.hasOwn(session.changes, target.path)}
-            onClick={() => stage(target, field.value)}
-            type="button"
-          >
-            Restore text
-          </button>
         </>
       )}
       {field.type === 'relationship' && (
@@ -1871,15 +1863,29 @@ export function ArrangeEditor({
           onChange={(next) => stage(target, next)}
         />
       )}
-      {inlineFields && (
-        <button
-          type="button"
-          className={styles.doneField}
-          disabled={busy || needsSync}
-          onClick={closeField}
-        >
-          Done
-        </button>
+      {(inlineFields || field.type === 'text' || field.type === 'textarea') && (
+        <div className={styles.fieldActions}>
+          {(field.type === 'text' || field.type === 'textarea') && (
+            <button
+              className={styles.restoreText}
+              disabled={busy || needsSync || !Object.hasOwn(session.changes, target.path)}
+              onClick={() => stage(target, field.value)}
+              type="button"
+            >
+              Restore text
+            </button>
+          )}
+          {inlineFields && (
+            <button
+              type="button"
+              className={styles.doneField}
+              disabled={busy || needsSync}
+              onClick={closeField}
+            >
+              Done
+            </button>
+          )}
+        </div>
       )}
     </section>
   )
