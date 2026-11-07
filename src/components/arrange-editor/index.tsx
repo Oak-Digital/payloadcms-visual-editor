@@ -37,6 +37,7 @@ import { PublishReview, type PublishReviewItem } from '../publish-review/index.j
 import { RevisionHistory } from '../revision-history/index.js'
 import { RichTextSidebar } from '../rich-text-editor/sidebar.js'
 import { EditorIcon } from '../workspace/icons.js'
+import { AutoSizeTextarea } from '../auto-size-textarea/index.js'
 import { imagePlaceholder } from '../../utils/image-placeholder.js'
 import styles from './styles.module.scss'
 import { ArrayEditor } from './array-editor.js'
@@ -1782,18 +1783,25 @@ export function ArrangeEditor({
         <small className={styles.path}>{session && fieldLabel(target.path, session)}</small>
       )}
       {(field.type === 'text' || field.type === 'textarea') && (
-        <>
-          <label>
-            Replacement text
-            <textarea
-              aria-label="Replacement text"
+        <label>
+          {humanize(target.path.split('.').at(-1) || 'Text')}
+          {field.type === 'textarea' ? (
+            <AutoSizeTextarea
+              aria-label={humanize(target.path.split('.').at(-1) || 'Text')}
               disabled={busy || needsSync}
               onChange={(event) => stage(target, event.target.value)}
-              rows={5}
               value={typeof value === 'string' ? value : ''}
             />
-          </label>
-        </>
+          ) : (
+            <input
+              aria-label={humanize(target.path.split('.').at(-1) || 'Text')}
+              type="text"
+              disabled={busy || needsSync}
+              onChange={(event) => stage(target, event.target.value)}
+              value={typeof value === 'string' ? value : ''}
+            />
+          )}
+        </label>
       )}
       {field.type === 'relationship' && (
         <div>
@@ -1865,16 +1873,23 @@ export function ArrangeEditor({
       )}
       {(inlineFields || field.type === 'text' || field.type === 'textarea') && (
         <div className={styles.fieldActions}>
-          {(field.type === 'text' || field.type === 'textarea') && (
-            <button
-              className={styles.restoreText}
-              disabled={busy || needsSync || !Object.hasOwn(session.changes, target.path)}
-              onClick={() => stage(target, field.value)}
-              type="button"
-            >
-              Restore text
-            </button>
-          )}
+          {(field.type === 'text' || field.type === 'textarea') &&
+            Object.hasOwn(session.changes, target.path) && (
+              <button
+                className={styles.resetField}
+                disabled={busy || needsSync}
+                onClick={(event) => {
+                  event.currentTarget
+                    .closest('section')
+                    ?.querySelector<HTMLElement>('input, textarea')
+                    ?.focus()
+                  stage(target, field.value)
+                }}
+                type="button"
+              >
+                Reset
+              </button>
+            )}
           {inlineFields && (
             <button
               type="button"

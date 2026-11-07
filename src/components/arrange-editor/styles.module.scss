@@ -68,6 +68,7 @@
     cursor: default;
   }
   button:focus-visible,
+  input:focus-visible,
   select:focus-visible,
   textarea:focus-visible {
     outline: 2px solid #27baff;
@@ -83,11 +84,10 @@
     border: 1px solid #656565;
     border-radius: 8px;
   }
+  input,
   textarea {
     display: block;
     width: 100%;
-    resize: vertical;
-    min-height: 100px;
     margin-top: 8px;
     border: 1px solid #656565;
     background: #232323;
@@ -95,6 +95,12 @@
     border-radius: 8px;
     padding: 10px;
     font: inherit;
+  }
+  textarea {
+    max-height: 240px;
+    overflow-y: auto;
+    resize: none;
+    line-height: 1.65;
   }
   section + section {
     margin-top: 24px;
@@ -546,10 +552,6 @@
   margin: 0;
   border: 0;
   animation: drawerEnter 180ms ease-out;
-  textarea {
-    min-height: 160px;
-    line-height: 1.65;
-  }
   iframe[title='Rich-text editor'] {
     height: 320px;
   }
@@ -569,7 +571,7 @@
     line-height: 20px;
     white-space: nowrap;
   }
-  .restoreText {
+  .resetField {
     color: #bbb;
     border-color: #3b3b3b;
     background: transparent;

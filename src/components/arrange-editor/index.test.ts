@@ -96,9 +96,9 @@ it('separates rearranging from editing and locates the selected block after movi
       button.textContent?.startsWith('Heading'),
     )!
     await act(async () => headingField.click())
-    const input = container.querySelector('textarea')!
+    const input = container.querySelector('input')!
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
         input,
         'Before saving',
       )
@@ -120,133 +120,144 @@ it('separates rearranging from editing and locates the selected block after movi
   }
 })
 
-it('keeps workspace drafts and save actions mounted while hidden and rejects unrelated frame messages', async () => {
-  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-  document.body.innerHTML =
-    '<main><h1 data-payload-path="title">Original</h1></main><div id="editor"></div><div id="panel"></div><div id="heading"></div><div id="actions"></div><div id="history" data-feedback-toolbar></div>'
-  const root = createRoot(document.getElementById('editor')!)
-  const panel = document.getElementById('panel')!
-  const heading = document.getElementById('heading')!
-  const actions = document.getElementById('actions')!
-  const reveal = vi.fn()
-  const home = vi.fn()
-  const pending = vi.fn()
-  const props = {
-    active: true,
-    adminRoute: '/admin',
-    apiRoute: '/api',
-    documentInfo: { id: 'page', collection: 'pages', hasDrafts: true },
-    panelContainer: panel,
-    headerContainer: heading,
-    actionsContainer: actions,
-    historyContainer: document.getElementById('history')!,
-    onClose: vi.fn(),
-    onHome: home,
-    onReveal: reveal,
-    onPendingChange: pending,
-  }
-  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-    new Response(
-      JSON.stringify({ fields: { title: { type: 'text', value: 'Original' } }, orders: {} }),
-    ),
-  )
-  const message = async (
-    data: Record<string, unknown>,
-    origin = window.location.origin,
-    source: MessageEventSource | null = window.parent,
-  ) => {
-    await act(async () =>
-      window.dispatchEvent(new MessageEvent('message', { data, origin, source })),
+it.each(['text', 'textarea'])(
+  'keeps %s drafts and save actions mounted while hidden and rejects unrelated frame messages',
+  async (type) => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    document.body.innerHTML =
+      '<main><h1 data-payload-path="title">Original</h1></main><div id="editor"></div><div id="panel"></div><div id="heading"></div><div id="actions"></div><div id="history" data-feedback-toolbar></div>'
+    const root = createRoot(document.getElementById('editor')!)
+    const panel = document.getElementById('panel')!
+    const heading = document.getElementById('heading')!
+    const actions = document.getElementById('actions')!
+    const reveal = vi.fn()
+    const home = vi.fn()
+    const pending = vi.fn()
+    const props = {
+      active: true,
+      adminRoute: '/admin',
+      apiRoute: '/api',
+      documentInfo: { id: 'page', collection: 'pages', hasDrafts: true },
+      panelContainer: panel,
+      headerContainer: heading,
+      actionsContainer: actions,
+      historyContainer: document.getElementById('history')!,
+      onClose: vi.fn(),
+      onHome: home,
+      onReveal: reveal,
+      onPendingChange: pending,
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ fields: { title: { type, value: 'Original' } }, orders: {} })),
     )
-  }
-  try {
-    await act(async () => root.render(createElement(ArrangeEditor, props)))
-    await act(async () => (document.querySelector('h1') as HTMLElement).click())
-    expect(reveal).toHaveBeenCalled()
-    const input = panel.querySelector('textarea')!
-    expect(input.value).toBe('Original')
-    const restoreText = [...panel.querySelectorAll('button')].find(
-      (button) => button.textContent === 'Restore text',
-    )!
-    expect(restoreText.disabled).toBe(true)
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
-        input,
-        'Pending draft',
+    const message = async (
+      data: Record<string, unknown>,
+      origin = window.location.origin,
+      source: MessageEventSource | null = window.parent,
+    ) => {
+      await act(async () =>
+        window.dispatchEvent(new MessageEvent('message', { data, origin, source })),
       )
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    expect(document.querySelector('h1')?.textContent).toBe('Pending draft')
-    expect(restoreText.disabled).toBe(false)
-    expect(actions.querySelector('button')?.disabled).toBe(false)
-    await message({ type: 'visual-editor:show', view: 'changes' }, 'https://unrelated.example')
-    expect(panel.querySelector('textarea')).toBe(input)
-    await message({ type: 'visual-editor:show', view: 'changes' }, window.location.origin, null)
-    expect(panel.querySelector('textarea')).toBe(input)
-    // Browsing and collapsing hide the host, without unmounting the field or action portals.
-    await act(async () => {
-      panel.hidden = true
-      root.render(createElement(ArrangeEditor, { ...props, active: false }))
-    })
-    expect(panel.querySelector('textarea')).toBe(input)
-    expect(input.value).toBe('Pending draft')
-    expect(actions.querySelector('button')?.disabled).toBe(false)
-    await act(async () => {
-      panel.hidden = false
-      root.render(createElement(ArrangeEditor, props))
-    })
-    expect(input.value).toBe('Pending draft')
-    await act(async () =>
-      (document.querySelector('[aria-label="Undo"]') as HTMLButtonElement).click(),
-    )
-    expect(input.value).toBe('Original')
-    expect(document.querySelector('h1')?.textContent).toBe('Original')
-    expect(actions.querySelector('button')?.disabled).toBe(true)
-    await act(async () => root.render(createElement(ArrangeEditor, { ...props, active: false })))
-    await act(async () => root.render(createElement(ArrangeEditor, props)))
-    await act(async () =>
-      (document.querySelector('[aria-label="Redo"]') as HTMLButtonElement).click(),
-    )
-    expect(input.value).toBe('Pending draft')
-    expect(actions.querySelector('button')?.disabled).toBe(false)
-    await act(async () => {
-      const canvas = document.querySelector('h1')!
-      canvas.focus()
-      canvas.textContent = 'Inline draft'
-      canvas.dispatchEvent(new InputEvent('input', { bubbles: true }))
-    })
-    expect(input.value).toBe('Inline draft')
-    expect(document.activeElement).toBe(document.querySelector('h1'))
-    await act(async () =>
-      (document.querySelector('[aria-label="Undo"]') as HTMLButtonElement).click(),
-    )
-    expect(input.value).toBe('Pending draft')
-    expect(document.querySelector('h1')?.textContent).toBe('Pending draft')
-    await act(async () =>
-      (document.querySelector('[aria-label="Redo"]') as HTMLButtonElement).click(),
-    )
-    expect(input.value).toBe('Inline draft')
-    await act(async () => restoreText.click())
-    expect(input.value).toBe('Original')
-    expect(document.querySelector('h1')?.textContent).toBe('Original')
-    expect(restoreText.disabled).toBe(true)
-    expect(actions.querySelector('button')?.disabled).toBe(true)
-    await act(async () =>
-      (document.querySelector('[aria-label="Undo"]') as HTMLButtonElement).click(),
-    )
-    expect(input.value).toBe('Inline draft')
-    await message({ type: 'visual-editor:show', view: 'changes' })
-    expect(panel.querySelector('details')?.open).toBe(true)
-    expect(panel.textContent).toContain('Inline draft')
-    await message({ type: 'visual-editor:back' })
-    expect(home).toHaveBeenCalled()
-    expect(pending).toHaveBeenLastCalledWith(true, false, 1, '', 0)
-  } finally {
-    await act(async () => root.unmount())
-    document.body.innerHTML = ''
-    vi.restoreAllMocks()
-  }
-})
+    }
+    try {
+      await act(async () => root.render(createElement(ArrangeEditor, props)))
+      await act(async () => (document.querySelector('h1') as HTMLElement).click())
+      expect(reveal).toHaveBeenCalled()
+      const input = panel.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+        '[aria-label="Title"]',
+      )!
+      expect(input.value).toBe('Original')
+      const reset = () =>
+        [...panel.querySelectorAll('button')].find((button) => button.textContent === 'Reset')
+      expect(reset()).toBeUndefined()
+      expect(input.tagName).toBe(type === 'text' ? 'INPUT' : 'TEXTAREA')
+      if (input instanceof HTMLTextAreaElement) expect(input.rows).toBe(3)
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(
+          type === 'text' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype,
+          'value',
+        )!.set!.call(input, 'Pending draft')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      expect(document.querySelector('h1')?.textContent).toBe('Pending draft')
+      expect(reset()?.disabled).toBe(false)
+      expect(actions.querySelector('button')?.disabled).toBe(false)
+      await message({ type: 'visual-editor:show', view: 'changes' }, 'https://unrelated.example')
+      expect(
+        panel.querySelector<HTMLInputElement | HTMLTextAreaElement>('[aria-label="Title"]'),
+      ).toBe(input)
+      await message({ type: 'visual-editor:show', view: 'changes' }, window.location.origin, null)
+      expect(
+        panel.querySelector<HTMLInputElement | HTMLTextAreaElement>('[aria-label="Title"]'),
+      ).toBe(input)
+      // Browsing and collapsing hide the host, without unmounting the field or action portals.
+      await act(async () => {
+        panel.hidden = true
+        root.render(createElement(ArrangeEditor, { ...props, active: false }))
+      })
+      expect(
+        panel.querySelector<HTMLInputElement | HTMLTextAreaElement>('[aria-label="Title"]'),
+      ).toBe(input)
+      expect(input.value).toBe('Pending draft')
+      expect(actions.querySelector('button')?.disabled).toBe(false)
+      await act(async () => {
+        panel.hidden = false
+        root.render(createElement(ArrangeEditor, props))
+      })
+      expect(input.value).toBe('Pending draft')
+      await act(async () =>
+        (document.querySelector('[aria-label="Undo"]') as HTMLButtonElement).click(),
+      )
+      expect(input.value).toBe('Original')
+      expect(document.querySelector('h1')?.textContent).toBe('Original')
+      expect(actions.querySelector('button')?.disabled).toBe(true)
+      await act(async () => root.render(createElement(ArrangeEditor, { ...props, active: false })))
+      await act(async () => root.render(createElement(ArrangeEditor, props)))
+      await act(async () =>
+        (document.querySelector('[aria-label="Redo"]') as HTMLButtonElement).click(),
+      )
+      expect(input.value).toBe('Pending draft')
+      expect(actions.querySelector('button')?.disabled).toBe(false)
+      await act(async () => {
+        const canvas = document.querySelector('h1')!
+        canvas.focus()
+        canvas.textContent = 'Inline draft'
+        canvas.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      })
+      expect(input.value).toBe('Inline draft')
+      expect(document.activeElement).toBe(document.querySelector('h1'))
+      await act(async () =>
+        (document.querySelector('[aria-label="Undo"]') as HTMLButtonElement).click(),
+      )
+      expect(input.value).toBe('Pending draft')
+      expect(document.querySelector('h1')?.textContent).toBe('Pending draft')
+      await act(async () =>
+        (document.querySelector('[aria-label="Redo"]') as HTMLButtonElement).click(),
+      )
+      expect(input.value).toBe('Inline draft')
+      await act(async () => reset()!.click())
+      expect(input.value).toBe('Original')
+      expect(document.activeElement).toBe(input)
+      expect(document.querySelector('h1')?.textContent).toBe('Original')
+      expect(reset()).toBeUndefined()
+      expect(actions.querySelector('button')?.disabled).toBe(true)
+      await act(async () =>
+        (document.querySelector('[aria-label="Undo"]') as HTMLButtonElement).click(),
+      )
+      expect(input.value).toBe('Inline draft')
+      await message({ type: 'visual-editor:show', view: 'changes' })
+      expect(panel.querySelector('details')?.open).toBe(true)
+      expect(panel.textContent).toContain('Inline draft')
+      await message({ type: 'visual-editor:back' })
+      expect(home).toHaveBeenCalled()
+      expect(pending).toHaveBeenLastCalledWith(true, false, 1, '', 0)
+    } finally {
+      await act(async () => root.unmount())
+      document.body.innerHTML = ''
+      vi.restoreAllMocks()
+    }
+  },
+)
 
 it('reports distinct save/publish states to the footer without duplicating them in the field panel', async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
@@ -393,6 +404,7 @@ it('opens one workspace field inline and retains values, native editors and exac
               value: { root: { children: [{ text: 'Body copy' }] } },
             },
             'layout.0.heading': { type: 'text', value: 'Original heading' },
+            'layout.0.link.label': { type: 'text', value: '' },
             'layout.0.image': { type: 'upload', value: null },
           },
           orders: { layout: [{ id: 'first', label: 'First' }] },
@@ -437,31 +449,48 @@ it('opens one workspace field inline and retains values, native editors and exac
     expect(panel.querySelectorAll('[aria-label="Selected content"]')).toHaveLength(1)
     expect(panel.querySelector('[aria-label="Block fields"]')).toBeTruthy()
     expect(heading.querySelector('h2')?.textContent).toBe('First')
-    let input = panel.querySelector('textarea')!
+    let input = panel.querySelector('input')!
     await interact(() => {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
         input,
         'Pending heading',
       )
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     expect(row('heading').textContent).toContain('Pending heading')
-    expect(panel.querySelector('textarea')).toBe(input)
+    expect(panel.querySelector('input')).toBe(input)
     await interact(() => row('body').click())
-    expect(panel.querySelector('textarea')).toBeNull()
+    expect(panel.querySelector('input')).toBeNull()
     expect(panel.querySelectorAll('iframe[title="Rich-text editor"]')).toHaveLength(1)
     expect(row('body').getAttribute('aria-expanded')).toBe('true')
     await interact(() => heading.querySelector<HTMLButtonElement>('[aria-label="Back"]')!.click())
     expect(panel.querySelector('iframe[title="Rich-text editor"]')).toBeNull()
     expect(document.activeElement).toBe(row('body'))
     await interact(() => row('heading').click())
-    input = panel.querySelector('textarea')!
+    input = panel.querySelector('input')!
     expect(input.value).toBe('Pending heading')
     await interact(() =>
       [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Done')!.click(),
     )
     expect(document.activeElement).toBe(row('heading'))
+    expect(panel.querySelector('input')).toBeNull()
+    await interact(() => row('link.label').click())
+    const label = panel.querySelector<HTMLInputElement>('input[aria-label="Label"]')!
+    expect(label.value).toBe('')
     expect(panel.querySelector('textarea')).toBeNull()
+    await interact(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        label,
+        'Explore',
+      )
+      label.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(row('link.label').textContent).toContain('Explore')
+    await interact(() =>
+      [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Reset')!.click(),
+    )
+    expect(label.value).toBe('')
+    expect([...panel.querySelectorAll('button')].some((b) => b.textContent === 'Reset')).toBe(false)
     await interact(() => row('image').click())
     expect(panel.querySelector('[aria-label="Replace image from preview"]')).toBeTruthy()
     expect(panel.querySelectorAll('[aria-label="Selected content"]')).toHaveLength(1)

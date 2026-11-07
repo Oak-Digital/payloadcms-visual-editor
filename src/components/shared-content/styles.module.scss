@@ -141,8 +141,10 @@
   font: inherit;
 }
 .editor textarea {
-  min-height: 95px;
-  resize: vertical;
+  max-height: 240px;
+  overflow-y: auto;
+  resize: none;
+  line-height: 1.65;
 }
 .editor input[type='checkbox'] {
   accent-color: #bbb;

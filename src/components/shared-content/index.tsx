@@ -18,6 +18,7 @@ import {
 import { EditorRequestError } from '../../utils/editor-error.js'
 import { PublishReview, type PublishReviewItem } from '../publish-review/index.js'
 import { EditorIcon } from '../workspace/icons.js'
+import { AutoSizeTextarea } from '../auto-size-textarea/index.js'
 import styles from './styles.module.scss'
 
 type Session = {
@@ -570,7 +571,7 @@ export function SharedContentEditor({
               ))}
             </select>
           ) : n.type === 'textarea' ? (
-            <textarea
+            <AutoSizeTextarea
               value={String(value(n) ?? '')}
               onChange={(e) => setValue(n, e.target.value)}
             />
