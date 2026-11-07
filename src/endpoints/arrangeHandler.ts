@@ -215,7 +215,7 @@ export const createArrangeHandler =
       if (body.action === 'read') {
         await commitTransaction(req)
         transaction = false
-        return Response.json(snapshot)
+        return Response.json({ ...snapshot, recoveryUser: `${req.user.collection}:${req.user.id}` })
       }
       if (body.revision !== revision) {
         await killTransaction(req)

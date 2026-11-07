@@ -265,13 +265,18 @@ function WorkspaceShell({
   const [hasNext, setHasNext] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const navigationActions = useRef<{ save: () => Promise<boolean>; discard: () => boolean } | null>(
+    null,
+  )
+  const [switching, setSwitching] = useState(false)
+  const [navigationError, setNavigationError] = useState('')
   const [pagePending, setPending] = useState(false)
   const [pageBusy, setBusy] = useState(false)
   const [sharedPending, setSharedPending] = useState(false)
   const [sharedBusy, setSharedBusy] = useState(false)
   const [sharedEpoch, setSharedEpoch] = useState(0)
   const pending = pagePending || sharedPending
-  const busy = pageBusy || sharedBusy
+  const busy = pageBusy || sharedBusy || switching
   const [mode, setMode] = useState<Mode>('edit')
   const [viewport, setViewport] = useState('desktop')
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -356,6 +361,48 @@ function WorkspaceShell({
     window.addEventListener('keydown', keyboard)
     return () => window.removeEventListener('keydown', keyboard)
   }, [open, view, annotationEditing, send, collapse, reveal, sharedVisible])
+
+  async function finishNavigation(action: 'save' | 'discard') {
+    if (!navigation || busy) return
+    setSwitching(true)
+    setNavigationError('')
+    try {
+      const shared = navigationActions.current
+      if (shared && !(action === 'save' ? await shared.save() : shared.discard())) {
+        throw new Error(
+          'Shared edits could not be saved or discarded. Review them before switching.',
+        )
+      }
+      const success = await new Promise<boolean>((resolve) => {
+        const requestId = crypto.randomUUID()
+        const receive = (event: MessageEvent) => {
+          if (
+            event.origin !== window.location.origin ||
+            event.source !== iframe.current?.contentWindow ||
+            event.data?.type !== 'visual-editor:navigation-result' ||
+            event.data.requestId !== requestId
+          )
+            return
+          clearTimeout(timer)
+          window.removeEventListener('message', receive)
+          resolve(event.data.success === true)
+        }
+        const timer = setTimeout(() => {
+          window.removeEventListener('message', receive)
+          resolve(false)
+        }, 30000)
+        window.addEventListener('message', receive)
+        send('visual-editor:navigation-action', { action, requestId })
+      })
+      if (!success)
+        throw new Error('Page edits could not be saved or discarded. Review them before switching.')
+      navigate(navigation)
+    } catch (cause) {
+      setNavigationError(cause instanceof Error ? cause.message : 'Unable to switch pages.')
+    } finally {
+      setSwitching(false)
+    }
+  }
 
   const navigate = useCallback(
     (entry: Entry) => {
@@ -1126,6 +1173,7 @@ function WorkspaceShell({
         {sharedTarget && (
           <SharedContentEditor
             key={`${current.locale}:${sharedEpoch}`}
+            navigationActions={navigationActions}
             onStateChange={(pending, busy) => {
               setSharedPending(pending)
               setSharedBusy(busy)
@@ -1160,16 +1208,23 @@ function WorkspaceShell({
         <dialog
           aria-labelledby="navigation-title"
           className={styles.scrim}
-          onCancel={() => setNavigation(undefined)}
+          onCancel={(event) => {
+            if (switching) event.preventDefault()
+            else setNavigation(undefined)
+          }}
           ref={dialog}
         >
           <section className={styles.confirm}>
             <h2 id="navigation-title">Unsaved changes</h2>
             <p>Save your draft before switching pages, or discard the pending changes.</p>
-            <button onClick={() => setNavigation(undefined)} type="button">
+            {navigationError && <p role="alert">{navigationError}</p>}
+            <button disabled={busy} onClick={() => void finishNavigation('save')} type="button">
+              {switching ? 'Switching…' : 'Save and switch'}
+            </button>
+            <button disabled={switching} onClick={() => setNavigation(undefined)} type="button">
               Keep editing
             </button>
-            <button disabled={busy} onClick={() => navigate(navigation)} type="button">
+            <button disabled={busy} onClick={() => void finishNavigation('discard')} type="button">
               Discard and switch
             </button>
           </section>

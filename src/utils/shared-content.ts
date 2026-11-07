@@ -28,6 +28,7 @@ export type SharedNode = {
   blocks?: { value: string; label: string }[]
 }
 export type SharedSnapshot = {
+  recoveryUser?: string
   revision: string
   nodes: SharedNode[]
   document: Record<string, any>

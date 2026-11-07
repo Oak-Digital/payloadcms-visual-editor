@@ -67,3 +67,89 @@ it('retains edits on collapse and failed saves, and freezes fields during persis
     vi.useRealTimers()
   }
 })
+
+it.each([false, true])('recovers shared edits after remount; conflict=%s', async (conflict) => {
+  vi.useFakeTimers()
+  const records = new Map<string, string>()
+  const storage = {
+    getItem: (key: string) => records.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      records.set(key, value)
+    },
+    removeItem: (key: string) => {
+      records.delete(key)
+    },
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage')
+  Object.defineProperty(window, 'localStorage', { configurable: true, value: storage })
+  const container = document.createElement('div')
+  document.body.append(container)
+  let root = createRoot(container)
+  let revision = 'one'
+  let fail = true
+  const snapshot = (flag: boolean) => ({
+    revision,
+    recoveryUser: 'users:test',
+    drafts: true,
+    status: 'published',
+    document: { flag },
+    nodes: [{ path: 'flag', label: 'Enabled', type: 'checkbox', value: flag }],
+  })
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    const body = JSON.parse(String(init?.body))
+    if (body.action === 'save' && fail)
+      return Response.json({ error: 'Save failed' }, { status: 500 })
+    return Response.json(snapshot(body.action !== 'read'))
+  })
+  const props = {
+    target: { slug: 'settings', global: true, label: 'Settings' },
+    apiRoute: '/api',
+    locale: 'en',
+    onClose: vi.fn(),
+    onCollapse: vi.fn(),
+    onPreview: vi.fn(),
+    onSaved: vi.fn(),
+    onStateChange: vi.fn(),
+    onOpen: vi.fn(),
+    enabledSources: [],
+  }
+  const mount = () => act(async () => root.render(createElement(SharedContentEditor, props)))
+  const button = (label: string) =>
+    [...container.querySelectorAll('button')].find((b) => b.textContent === label)!
+  try {
+    await mount()
+    await act(async () => container.querySelector<HTMLInputElement>('input')!.click())
+    await act(async () => vi.advanceTimersByTimeAsync(300))
+    expect(records.size).toBe(1)
+    await act(async () => root.unmount())
+    if (conflict) revision = 'newer'
+    root = createRoot(container)
+    await mount()
+    expect(button('Restore edits')).toBeTruthy()
+    expect(container.querySelector<HTMLInputElement>('input')!.checked).toBe(false)
+    expect(button('Restore edits').disabled).toBe(conflict)
+    if (conflict) {
+      expect(container.textContent).toContain('newer changes')
+      expect(records.size).toBe(1)
+      await act(async () => button('Discard stored edits').click())
+      expect(records.size).toBe(0)
+    } else {
+      await act(async () => button('Restore edits').click())
+      await act(async () => vi.advanceTimersByTimeAsync(300))
+      expect(container.querySelector<HTMLInputElement>('input')!.checked).toBe(true)
+      await act(async () => button('Save draft').click())
+      expect(records.size).toBe(1)
+      expect(container.textContent).toContain('Save failed')
+      fail = false
+      await act(async () => button('Save draft').click())
+      expect(records.size).toBe(0)
+      expect(props.onSaved).toHaveBeenCalledOnce()
+    }
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+    fetcher.mockRestore()
+    if (descriptor) Object.defineProperty(window, 'localStorage', descriptor)
+    vi.useRealTimers()
+  }
+})

@@ -49,6 +49,7 @@ export function arrangeArrayRows(
   })
 }
 export type ArrangeSnapshot = {
+  recoveryUser?: string
   fields: Record<string, ArrangeField>
   orders: Record<string, { id: string; label: string }[]>
   blockTypes?: Record<string, { slug: string; label: string }[]>

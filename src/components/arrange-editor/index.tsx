@@ -13,6 +13,14 @@ import { createPortal, flushSync } from 'react-dom'
 
 import type { Annotation, PayloadCMSDocument } from '../../types.js'
 
+import { validPageRecovery } from '../../utils/recovery-validation.js'
+import {
+  clearRecovery,
+  readRecovery,
+  recoveryValue,
+  writeRecovery,
+  type RecoveryRecord,
+} from '../../utils/recovery.js'
 import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
 import { type ArrayRow, type ArrangeSnapshot, remapArrangePath } from '../../utils/arrange.js'
 import { documentKey, fieldDocument } from '../../utils/field-target.js'
@@ -33,6 +41,9 @@ type Session = {
   orders: Record<string, string[]>
   owner: PayloadCMSDocument
   snapshot: ArrangeSnapshot
+}
+function isRecoverySession(value: unknown): value is Session {
+  return validPageRecovery(value)
 }
 function expandedOrders(session: Session) {
   return Object.fromEntries(
@@ -116,6 +127,11 @@ export function ArrangeEditor({
   const [adding, setAdding] = useState<Target>()
   const [revisionRefresh, setRevisionRefresh] = useState(0)
   const [sessions, setSessions] = useState<Record<string, Session>>({})
+  const [recoveries, setRecoveries] = useState<
+    Record<string, { record: RecoveryRecord<Session>; conflict: boolean }>
+  >({})
+  const unreadRecovery = useRef(new Set<string>())
+  const [recoveryNotice, setRecoveryNotice] = useState('')
   const [undoStack, setUndoStack] = useState<Record<string, Session>[]>([])
   const [redoStack, setRedoStack] = useState<Record<string, Session>[]>([])
   function rememberEdit() {
@@ -263,7 +279,7 @@ export function ArrangeEditor({
   )
   useEffect(() => {
     onPendingChange?.(
-      count > 0 || needsSync,
+      count > 0 || needsSync || Object.keys(recoveries).length > 0,
       busy,
       count,
       busy
@@ -287,7 +303,18 @@ export function ArrangeEditor({
         0,
       ),
     )
-  }, [count, needsSync, busy, status, sessions, onPendingChange, ready, refreshing, operation])
+  }, [
+    count,
+    needsSync,
+    busy,
+    status,
+    sessions,
+    recoveries,
+    onPendingChange,
+    ready,
+    refreshing,
+    operation,
+  ])
 
   function goBack() {
     if (pickerSelection) setPickerSelection(undefined)
@@ -375,6 +402,38 @@ export function ArrangeEditor({
     [apiRoute],
   )
 
+  function recoveryScope(session: Session) {
+    return {
+      api: apiRoute,
+      user: session.snapshot.recoveryUser || '',
+      kind: 'page' as const,
+      document: documentKey(session.owner),
+      locale: session.owner.locale,
+    }
+  }
+  useEffect(() => {
+    if (!ready || busy) return
+    for (const [key, session] of Object.entries(sessions)) {
+      if (recoveries[key] || unreadRecovery.current.has(key) || !session.snapshot.recoveryUser)
+        continue
+      const dirty = Object.keys(session.changes).length || Object.keys(session.orders).length
+      try {
+        const stored = dirty
+          ? writeRecovery(
+              window.localStorage,
+              recoveryScope(session),
+              session.snapshot.revision,
+              session,
+            )
+          : clearRecovery(window.localStorage, recoveryScope(session))
+        if (!stored)
+          setRecoveryNotice('Browser recovery is unavailable. Save your draft before leaving.')
+      } catch {
+        setRecoveryNotice('Browser recovery is unavailable. Save your draft before leaving.')
+      }
+    }
+  }, [sessions, recoveries, ready, busy])
+
   const readSession = useCallback(
     async (owner: PayloadCMSDocument) => {
       const key = documentKey(owner)
@@ -458,6 +517,28 @@ export function ArrangeEditor({
           failures.push(cause instanceof Error ? cause.message : 'Unable to load content')
         }
       }
+      const recovered: typeof recoveries = {}
+      for (const [key, session] of Object.entries(loaded)) {
+        if (!session.snapshot.recoveryUser) continue
+        try {
+          const result = readRecovery(
+            window.localStorage,
+            recoveryScope(session),
+            session.snapshot.revision,
+            isRecoverySession,
+          )
+          if (result.status === 'available' && documentKey(result.record.value.owner) === key) {
+            recovered[key] = result
+          } else if (result.status !== 'empty') {
+            unreadRecovery.current.add(key)
+            setRecoveryNotice('Stored edits could not be read. Save your draft before leaving.')
+          }
+        } catch {
+          setRecoveryNotice('Browser recovery is unavailable. Save your draft before leaving.')
+        }
+      }
+      setRecoveries(recovered)
+      if (Object.keys(recovered).length) onReveal?.()
       setSessions(loaded)
       setError(failures.join(' '))
       setReady(true)
@@ -884,10 +965,53 @@ export function ArrangeEditor({
     }
   }
 
-  async function submit(action: 'publish' | 'save') {
-    if (saving.current || busy || needsSync) {
-      return
+  useEffect(() => {
+    const receive = async (event: MessageEvent) => {
+      if (
+        event.source !== window.parent ||
+        event.origin !== window.location.origin ||
+        event.data?.type !== 'visual-editor:navigation-action'
+      )
+        return
+      const { action, requestId } = event.data
+      let success = false
+      if (action === 'save') success = await submit('save')
+      else if (action === 'discard' && !busy && !saving.current) {
+        try {
+          success = Object.values(sessions).every(
+            (s) => !s.snapshot.recoveryUser || clearRecovery(window.localStorage, recoveryScope(s)),
+          )
+          if (success) {
+            setRecoveries({})
+            setSessions((all) =>
+              Object.fromEntries(
+                Object.entries(all).map(([key, s]) => [
+                  key,
+                  { ...s, changes: {}, orders: {}, additions: {}, media: {} },
+                ]),
+              ),
+            )
+            setUndoStack([])
+            setRedoStack([])
+          }
+        } catch {
+          success = false
+        }
+      }
+      window.parent.postMessage(
+        { type: 'visual-editor:navigation-result', requestId, success },
+        window.location.origin,
+      )
     }
+    window.addEventListener('message', receive)
+    return () => window.removeEventListener('message', receive)
+  }, [sessions, recoveries, busy, needsSync, count])
+
+  async function submit(action: 'publish' | 'save'): Promise<boolean> {
+    if (saving.current || busy || needsSync || Object.keys(recoveries).length) {
+      return false
+    }
+    let success = false
     saving.current = true
     setOperation(action)
     setBusy(true)
@@ -940,6 +1064,13 @@ export function ArrangeEditor({
           paths,
           revision: session.snapshot.revision,
         })
+        if (session.snapshot.recoveryUser) {
+          try {
+            clearRecovery(window.localStorage, recoveryScope(session))
+          } catch {
+            /* Saving succeeded. */
+          }
+        }
         completed++
         setRevisionRefresh((value) => value + 1)
         committed.current.add(key)
@@ -969,6 +1100,7 @@ export function ArrangeEditor({
           [key]: { ...previous[key], additions: {}, changes: {}, media: {}, orders: {} },
         }))
       }
+      success = true
       setStatus(action === 'publish' ? 'All changes published.' : 'Draft saved.')
     } catch (cause) {
       setStatus(
@@ -997,6 +1129,7 @@ export function ArrangeEditor({
       saving.current = false
       setBusy(false)
     }
+    return success
   }
 
   return (
@@ -1095,6 +1228,83 @@ export function ArrangeEditor({
               </header>
             </Portal>
             <div className={styles.content}>
+              {recoveryNotice && <p role="status">{recoveryNotice}</p>}
+              {Object.entries(recoveries).map(([key, recovery]) => (
+                <section key={key} aria-label="Recover unsaved edits">
+                  <p>Unsaved edits · {new Date(recovery.record.savedAt).toLocaleString()}</p>
+                  {recovery.conflict && (
+                    <p>
+                      This document has newer changes. Your stored edits remain available below for
+                      review.
+                    </p>
+                  )}
+                  {recovery.conflict && (
+                    <details>
+                      <summary>Review stored edits</summary>
+                      <dl>
+                        {Object.entries(recovery.record.value.changes).map(([path, value]) => (
+                          <div key={path}>
+                            <dt>{fieldLabel(path, recovery.record.value)}</dt>
+                            <dd>{recoveryValue(value)}</dd>
+                          </div>
+                        ))}
+                        {Object.entries(recovery.record.value.orders).map(([path, ids]) => (
+                          <div key={path}>
+                            <dt>Section order</dt>
+                            <dd>
+                              {ids
+                                .map(
+                                  (id) =>
+                                    expandedOrders(recovery.record.value)[path]?.find(
+                                      (row) => row.id === id,
+                                    )?.label || 'New section',
+                                )
+                                .join(' → ')}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </details>
+                  )}
+                  <button
+                    type="button"
+                    disabled={busy || recovery.conflict || count > 0}
+                    onClick={() => {
+                      rememberEdit()
+                      setSessions((all) => ({ ...all, [key]: recovery.record.value }))
+                      setRecoveries((all) => {
+                        const next = { ...all }
+                        delete next[key]
+                        return next
+                      })
+                    }}
+                  >
+                    Restore edits
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      try {
+                        if (!clearRecovery(window.localStorage, recoveryScope(sessions[key]))) {
+                          setRecoveryNotice('Stored edits could not be discarded.')
+                          return
+                        }
+                        setRecoveries((all) => {
+                          const next = { ...all }
+                          delete next[key]
+                          return next
+                        })
+                      } catch {
+                        setRecoveryNotice('Stored edits could not be discarded.')
+                      }
+                    }}
+                  >
+                    Discard stored edits
+                  </button>
+                </section>
+              ))}
+
               {picker && panelContainer && (
                 <MediaPicker
                   embedded

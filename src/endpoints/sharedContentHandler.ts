@@ -490,6 +490,7 @@ export const createSharedContentHandler =
       await commitTransaction(req)
       transaction = false
       return Response.json({
+        recoveryUser: `${req.user.collection}:${req.user.id}`,
         revision,
         nodes: tree,
         document: previewDocument,

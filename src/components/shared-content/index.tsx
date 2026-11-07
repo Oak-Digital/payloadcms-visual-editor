@@ -1,12 +1,20 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { type RefObject, useEffect, useRef, useState } from 'react'
 import type {
   SharedNode,
   SharedOperation,
   SharedSnapshot,
   SharedTarget,
 } from '../../utils/shared-content.js'
+import { validSharedRecovery } from '../../utils/recovery-validation.js'
+import {
+  clearRecovery,
+  readRecovery,
+  recoveryValue,
+  writeRecovery,
+  type RecoveryRecord,
+} from '../../utils/recovery.js'
 import { EditorIcon } from '../workspace/icons.js'
 import styles from './styles.module.scss'
 
@@ -17,6 +25,9 @@ type Session = {
   operations: SharedOperation[]
   undo: SharedOperation[][]
   redo: SharedOperation[][]
+}
+function isRecoverySession(value: unknown): value is Session {
+  return validSharedRecovery(value)
 }
 type Layer = { path: string; row?: string; label: string }
 const keyOf = (t: SharedTarget) => `${t.global ? 'global' : 'collection'}:${t.slug}:${t.id ?? ''}`
@@ -41,6 +52,7 @@ export function SharedContentEditor({
   enabledSources,
   onOpen,
   hidden = false,
+  navigationActions,
 }: {
   target: SharedTarget
   locale?: string
@@ -52,9 +64,15 @@ export function SharedContentEditor({
   onStateChange: (pending: boolean, busy: boolean) => void
   enabledSources: { slug: string; label: string; global?: boolean }[]
   onOpen: (target: SharedTarget) => void
+  navigationActions?: RefObject<{ save: () => Promise<boolean>; discard: () => boolean } | null>
   hidden?: boolean
 }) {
   const [sessions, setSessions] = useState<Record<string, Session>>({})
+  const [recoveries, setRecoveries] = useState<
+    Record<string, { record: RecoveryRecord<Session>; conflict: boolean }>
+  >({})
+  const unreadRecovery = useRef(new Set<string>())
+  const [recoveryNotice, setRecoveryNotice] = useState('')
   const [layers, setLayers] = useState<Layer[]>([])
   const layerCache = useRef<Record<string, Layer[]>>({})
   const previousKey = useRef(keyOf(target))
@@ -88,8 +106,30 @@ export function SharedContentEditor({
   )
   const dirty = Object.values(sessions).filter((s) => s.operations.length)
   useEffect(() => {
-    onStateChange(dirty.length > 0, busy)
-  }, [dirty.length, busy])
+    onStateChange(dirty.length > 0 || Object.keys(recoveries).length > 0, busy)
+  }, [dirty.length, busy, recoveries])
+  const recoveryScope = (s: Session) => ({
+    api: apiRoute,
+    user: s.base.recoveryUser || '',
+    kind: 'shared' as const,
+    document: keyOf(s.target),
+    locale,
+  })
+  useEffect(() => {
+    if (saving) return
+    for (const [key, s] of Object.entries(sessions)) {
+      if (!s.base.recoveryUser || recoveries[key] || unreadRecovery.current.has(key)) continue
+      try {
+        const stored = s.operations.length
+          ? writeRecovery(window.localStorage, recoveryScope(s), s.base.revision, s)
+          : clearRecovery(window.localStorage, recoveryScope(s))
+        if (!stored)
+          setRecoveryNotice('Browser recovery is unavailable. Save your draft before leaving.')
+      } catch {
+        setRecoveryNotice('Browser recovery is unavailable. Save your draft before leaving.')
+      }
+    }
+  }, [sessions, recoveries, saving])
   const request = async (t: SharedTarget, body: Record<string, unknown>) => {
     const response = await fetch(`${apiRoute}/payload-visual-editor/shared-content`, {
       method: 'POST',
@@ -116,11 +156,38 @@ export function SharedContentEditor({
     setBusy(true)
     request(target, { action: 'read' })
       .then((snapshot: SharedSnapshot) => {
-        if (active)
+        if (active) {
+          const loaded: Session = {
+            target,
+            base: snapshot,
+            snapshot,
+            operations: [],
+            undo: [],
+            redo: [],
+          }
+          if (snapshot.recoveryUser) {
+            try {
+              const result = readRecovery(
+                window.localStorage,
+                recoveryScope(loaded),
+                snapshot.revision,
+                isRecoverySession,
+              )
+              if (result.status === 'available' && keyOf(result.record.value.target) === key) {
+                setRecoveries((all) => ({ ...all, [key]: result }))
+              } else if (result.status !== 'empty') {
+                unreadRecovery.current.add(key)
+                setRecoveryNotice('Stored edits could not be read.')
+              }
+            } catch {
+              setRecoveryNotice('Browser recovery is unavailable.')
+            }
+          }
           setSessions((all) => ({
             ...all,
-            [key]: { target, base: snapshot, snapshot, operations: [], undo: [], redo: [] },
+            [key]: loaded,
           }))
+        }
       })
       .catch((e) => {
         if (active) setError(e.message)
@@ -270,6 +337,8 @@ export function SharedContentEditor({
     })
   }
   const save = async (action: 'save' | 'publish') => {
+    if (busy || saving || Object.keys(recoveries).length) return false
+    if (action === 'save' && !dirty.length) return true
     setBusy(true)
     setSaving(true)
     setError('')
@@ -280,6 +349,11 @@ export function SharedContentEditor({
           revision: s.base.revision,
           operations: s.operations,
         })
+        try {
+          clearRecovery(window.localStorage, recoveryScope(s))
+        } catch {
+          /* Saved successfully. */
+        }
         setSessions((all) => ({
           ...all,
           [keyOf(s.target)]: { ...s, base: snapshot, snapshot, operations: [], undo: [], redo: [] },
@@ -288,13 +362,47 @@ export function SharedContentEditor({
       }
       setReview(false)
       onSaved()
+      return true
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed. Remaining changes are retained.')
+      return false
     } finally {
       setSaving(false)
       setBusy(false)
     }
   }
+  useEffect(() => {
+    if (!navigationActions) return
+    navigationActions.current = {
+      save: () => save('save'),
+      discard: () => {
+        if (busy || saving) return false
+        try {
+          const success = Object.values(sessions).every(
+            (s) => !s.base.recoveryUser || clearRecovery(window.localStorage, recoveryScope(s)),
+          )
+          if (success) {
+            setRecoveries({})
+            setSessions((all) =>
+              Object.fromEntries(
+                Object.entries(all).map(([key, s]) => [
+                  key,
+                  { ...s, snapshot: s.base, operations: [], undo: [], redo: [] },
+                ]),
+              ),
+            )
+            setValues({})
+          }
+          return success
+        } catch {
+          return false
+        }
+      },
+    }
+    return () => {
+      navigationActions.current = null
+    }
+  })
   const rowLabel = (n: SharedNode) => (n.rows ? `${n.rows.length} items` : '')
   const value = (n: SharedNode) => (Object.hasOwn(values, n.path) ? values[n.path] : n.value)
   const openRelation = (n: SharedNode) => {
@@ -414,12 +522,100 @@ export function SharedContentEditor({
         inert={saving}
         key={`${key}:${current?.path ?? ''}:${current?.row ?? ''}:${!!relation}:${review}`}
       >
+        {recoveryNotice && <p role="status">{recoveryNotice}</p>}
+        {recoveries[key] && session && (
+          <section aria-label="Recover shared edits">
+            <p>Unsaved edits · {new Date(recoveries[key].record.savedAt).toLocaleString()}</p>
+            {recoveries[key].conflict && (
+              <>
+                <p>
+                  This content has newer changes. Review your stored edits before discarding them.
+                </p>
+                <details>
+                  <summary>Review stored edits</summary>
+                  <ul>
+                    {recoveries[key].record.value.operations.map((op, index) => (
+                      <li key={index}>
+                        {find(recoveries[key].record.value.snapshot.nodes, op.path)?.label ||
+                          op.path}
+                        :{' '}
+                        {op.type === 'set'
+                          ? recoveryValue(op.value)
+                          : op.type === 'add'
+                            ? 'Added item'
+                            : op.type === 'remove'
+                              ? 'Removed item'
+                              : 'Moved item'}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </>
+            )}
+            <button
+              type="button"
+              disabled={busy || recoveries[key].conflict || dirty.length > 0}
+              onClick={() => {
+                const restored = recoveries[key].record.value
+                setSessions((all) => ({
+                  ...all,
+                  [key]: { ...restored, undo: [[], ...restored.undo] },
+                }))
+                setRecoveries((all) => {
+                  const next = { ...all }
+                  delete next[key]
+                  return next
+                })
+              }}
+            >
+              Restore edits
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                try {
+                  if (!clearRecovery(window.localStorage, recoveryScope(session))) {
+                    setRecoveryNotice('Stored edits could not be discarded.')
+                    return
+                  }
+                  setRecoveries((all) => {
+                    const next = { ...all }
+                    delete next[key]
+                    return next
+                  })
+                } catch {
+                  setRecoveryNotice('Stored edits could not be discarded.')
+                }
+              }}
+            >
+              Discard stored edits
+            </button>
+          </section>
+        )}
         {error && (
           <>
             <p role="alert">{error}</p>
             <button
               disabled={busy}
               onClick={() => {
+                if (session?.base.recoveryUser) {
+                  try {
+                    if (!clearRecovery(window.localStorage, recoveryScope(session))) {
+                      setRecoveryNotice('Stored edits could not be discarded.')
+                      return
+                    }
+                  } catch {
+                    setRecoveryNotice('Stored edits could not be discarded.')
+                    return
+                  }
+                }
+                unreadRecovery.current.delete(key)
+                setRecoveries((all) => {
+                  const next = { ...all }
+                  delete next[key]
+                  return next
+                })
                 generation.current++
                 setSessions((all) => {
                   const next = { ...all }
