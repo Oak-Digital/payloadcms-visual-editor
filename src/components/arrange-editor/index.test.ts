@@ -365,3 +365,121 @@ it('reports distinct save/publish states to the footer without duplicating them 
     document.body.replaceChildren()
   }
 })
+
+it('opens one workspace field inline and retains values, native editors and exact hover ownership', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  vi.stubGlobal('matchMedia', () => ({ matches: true }))
+  const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView')
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+  document.body.innerHTML = `
+    <main data-payload-block-list="layout"><section data-payload-block-id="first">
+      <h2 data-payload-path="layout.0.heading">Original heading</h2>
+      <p data-payload-path="layout.0.body" data-payload-type="richText">Body copy</p>
+    </section></main>
+    <div data-payload-document='{"id":"other","collection":"pages","locale":"en"}'>
+      <h2 data-payload-path="layout.0.heading">Other document</h2>
+    </div>
+    <div id="editor"></div><div id="panel"></div><div id="heading" data-feedback-toolbar></div>`
+  const root = createRoot(document.getElementById('editor')!)
+  const panel = document.getElementById('panel')!
+  const heading = document.getElementById('heading')!
+  vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({
+          fields: {
+            'layout.0.body': {
+              type: 'richText',
+              value: { root: { children: [{ text: 'Body copy' }] } },
+            },
+            'layout.0.heading': { type: 'text', value: 'Original heading' },
+            'layout.0.image': { type: 'upload', value: null },
+          },
+          orders: { layout: [{ id: 'first', label: 'First' }] },
+          revision: 'revision',
+        }),
+      ),
+    ),
+  )
+  const row = (path: string) =>
+    panel.querySelector<HTMLButtonElement>(`[data-field-path="layout.0.${path}"]`)!
+  const interact = (action: () => void) =>
+    act(async () => {
+      action()
+      await Promise.resolve()
+    })
+  try {
+    await interact(() =>
+      root.render(
+        createElement(ArrangeEditor, {
+          active: true,
+          adminRoute: '/admin',
+          apiRoute: '/api',
+          documentInfo: { id: 'page', collection: 'pages', hasDrafts: true, locale: 'en' },
+          headerContainer: heading,
+          onClose: vi.fn(),
+          panelContainer: panel,
+        }),
+      ),
+    )
+    await interact(() =>
+      panel.querySelector<HTMLButtonElement>('[aria-label="Edit First"]')!.click(),
+    )
+    expect(panel.querySelector('[data-inline-fields="true"]')).toBeTruthy()
+    expect(row('heading').textContent).toContain('Original heading')
+    await interact(() => row('heading').focus())
+    expect(document.querySelector('main h2')!.hasAttribute('data-arrange-hovered')).toBe(true)
+    expect(
+      document.querySelector('[data-payload-document] h2')!.hasAttribute('data-arrange-hovered'),
+    ).toBe(false)
+    await interact(() => row('heading').click())
+    expect(row('heading').getAttribute('aria-expanded')).toBe('true')
+    expect(panel.querySelectorAll('[aria-label="Selected content"]')).toHaveLength(1)
+    expect(panel.querySelector('[aria-label="Block fields"]')).toBeTruthy()
+    expect(heading.querySelector('h2')?.textContent).toBe('First')
+    let input = panel.querySelector('textarea')!
+    await interact(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+        input,
+        'Pending heading',
+      )
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(row('heading').textContent).toContain('Pending heading')
+    expect(panel.querySelector('textarea')).toBe(input)
+    await interact(() => row('body').click())
+    expect(panel.querySelector('textarea')).toBeNull()
+    expect(panel.querySelectorAll('iframe[title="Rich-text editor"]')).toHaveLength(1)
+    expect(row('body').getAttribute('aria-expanded')).toBe('true')
+    await interact(() => heading.querySelector<HTMLButtonElement>('[aria-label="Back"]')!.click())
+    expect(panel.querySelector('iframe[title="Rich-text editor"]')).toBeNull()
+    expect(document.activeElement).toBe(row('body'))
+    await interact(() => row('heading').click())
+    input = panel.querySelector('textarea')!
+    expect(input.value).toBe('Pending heading')
+    await interact(() =>
+      [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Done')!.click(),
+    )
+    expect(document.activeElement).toBe(row('heading'))
+    expect(panel.querySelector('textarea')).toBeNull()
+    await interact(() => row('image').click())
+    expect(panel.querySelector('[aria-label="Replace image from preview"]')).toBeTruthy()
+    expect(panel.querySelectorAll('[aria-label="Selected content"]')).toHaveLength(1)
+    await interact(() => row('image').click())
+    expect(row('image').getAttribute('aria-expanded')).toBe('false')
+    expect(panel.querySelector('[aria-label="Replace image from preview"]')).toBeNull()
+    await interact(() => heading.querySelector<HTMLButtonElement>('[aria-label="Back"]')!.click())
+    expect(panel.querySelector('[data-inline-fields="true"]')).toBeNull()
+    expect(panel.querySelector('[aria-label="Blocks"]')).toBeTruthy()
+  } finally {
+    await interact(() => root.unmount())
+    if (originalScroll) {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScroll)
+    } else {
+      Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+    }
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  }
+})

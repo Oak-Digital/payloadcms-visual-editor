@@ -4,6 +4,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -164,6 +165,10 @@ export function ArrangeEditor({
     setRedoStack([])
   }
   const [target, setTarget] = useState<Target>()
+  const [hovered, setHovered] = useState<{ id?: string } & Target>()
+  const fieldId = useId()
+  const fieldButtons = useRef(new Map<string, HTMLButtonElement>())
+  const returnToField = useRef<string | undefined>(undefined)
   const [selectedRow, setSelectedRow] = useState<string>()
   const [selectedBlock, setSelectedBlock] = useState<{
     key: string
@@ -220,10 +225,6 @@ export function ArrangeEditor({
         : adding
           ? `add:${adding.key}:${adding.path}`
           : (layoutView?.key ?? 'blocks')
-  useEffect(() => {
-    if (active && !document.activeElement?.hasAttribute('data-arrange-inline'))
-      heading.current?.focus({ preventScroll: true })
-  }, [viewKey, active, tab])
   function selectOwner(key: string) {
     if (key === documentKey(documentInfo)) setLayoutView(undefined)
     else if (layoutView?.key !== key)
@@ -285,6 +286,53 @@ export function ArrangeEditor({
               )),
         )
       : []
+  const inlineFields = Boolean(
+    panelContainer &&
+      selectedBlock &&
+      blockFields.length &&
+      (!target ||
+        (target.key === selectedBlock.key && blockFields.some(([path]) => path === target.path))),
+  )
+  const drawerKey =
+    inlineFields && selectedBlock
+      ? `${selectedBlock.key}:${selectedBlock.id}:${selectedRow || ''}`
+      : viewKey
+  function closeField() {
+    if (inlineFields && target) returnToField.current = target.path
+    setTarget(undefined)
+  }
+  useEffect(() => {
+    if (!active || document.activeElement?.hasAttribute('data-arrange-inline')) return
+    const path = returnToField.current || (inlineFields ? target?.path : undefined)
+    const button = path ? fieldButtons.current.get(path) : undefined
+    returnToField.current = undefined
+    if (button) {
+      button.focus({ preventScroll: true })
+      button.scrollIntoView({ behavior: 'instant', block: 'nearest' })
+    } else heading.current?.focus({ preventScroll: true })
+  }, [viewKey, active, tab, inlineFields, target?.path])
+  useEffect(() => {
+    if (!active || tab !== 'content' || !hovered) return
+    const elements = hovered.id
+      ? [...document.querySelectorAll<HTMLElement>('[data-payload-block-list]')]
+          .filter(
+            (list) =>
+              list.dataset.payloadBlockList === hovered.path &&
+              documentKey(fieldDocument(list, documentInfo)) === hovered.key,
+          )
+          .flatMap((list) =>
+            [...list.children].filter(
+              (child) => (child as HTMLElement).dataset.payloadBlockId === hovered.id,
+            ),
+          )
+      : [...document.querySelectorAll<HTMLElement>('[data-payload-path]')].filter(
+          (element) =>
+            element.dataset.payloadPath === hovered.path &&
+            documentKey(fieldDocument(element, documentInfo)) === hovered.key,
+        )
+    elements.forEach((element) => element.setAttribute('data-arrange-hovered', ''))
+    return () => elements.forEach((element) => element.removeAttribute('data-arrange-hovered'))
+  }, [hovered, active, tab, documentInfo, previewEpoch])
   const [picker, setPicker] = useState<Target>()
   const pickerOrders = useMemo(() => {
     const session = picker && sessions[picker.key]
@@ -379,7 +427,7 @@ export function ArrangeEditor({
     else if (tab === 'revisions' || tab === 'changes' || tab === 'menu') {
       if (onHome) onHome()
       else setTab('menu')
-    } else if (target) setTarget(undefined)
+    } else if (target) closeField()
     else if (selectedRow) setSelectedRow(undefined)
     else if (selectedBlock) setSelectedBlock(undefined)
     else if (layoutView) {
@@ -1722,6 +1770,120 @@ export function ArrangeEditor({
     return success
   }
 
+  const selectedContent = field && field.type !== 'array' && target && (
+    <section
+      aria-label="Selected content"
+      className={inlineFields ? styles.inlineField : undefined}
+    >
+      {!inlineFields && field.type !== 'relationship' && (
+        <h3>{field.type === 'upload' ? 'Image' : 'Text'}</h3>
+      )}
+      {!inlineFields && field.type !== 'relationship' && (
+        <small className={styles.path}>{session && fieldLabel(target.path, session)}</small>
+      )}
+      {(field.type === 'text' || field.type === 'textarea') && (
+        <>
+          <label>
+            Replacement text
+            <textarea
+              aria-label="Replacement text"
+              disabled={busy || needsSync}
+              onChange={(event) => stage(target, event.target.value)}
+              rows={5}
+              value={typeof value === 'string' ? value : ''}
+            />
+          </label>
+          <button
+            className={styles.restoreText}
+            disabled={busy || needsSync || !Object.hasOwn(session.changes, target.path)}
+            onClick={() => stage(target, field.value)}
+            type="button"
+          >
+            Restore text
+          </button>
+        </>
+      )}
+      {field.type === 'relationship' && (
+        <div>
+          <select
+            aria-label="Saved layout"
+            value={typeof value === 'string' ? value : ''}
+            disabled={busy || needsSync}
+            onChange={(event) => stage(target, event.target.value)}
+          >
+            <option value="" disabled>
+              Select a layout
+            </option>
+            {field.choices.map((choice) => (
+              <option key={choice.id} value={choice.id}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+          <p>Changes to this shared layout apply wherever it is used.</p>
+          <button
+            type="button"
+            disabled={busy || needsSync || !value}
+            className={styles.fieldLink}
+            onClick={openLayout}
+          >
+            Edit shared layout
+          </button>
+          <button
+            type="button"
+            disabled={busy || needsSync || !value}
+            className={styles.fieldLink}
+            onClick={makeIndependent}
+          >
+            Make independent
+          </button>
+        </div>
+      )}
+      {field.type === 'upload' && (
+        <>
+          <button
+            aria-label="Replace image from preview"
+            className={styles.imagePreviewButton}
+            disabled={busy || needsSync}
+            onClick={() => setPicker(target)}
+            type="button"
+          >
+            <img
+              className={styles.imagePreview}
+              src={imagePreview || imagePlaceholder}
+              alt={imagePreview ? 'Current image' : 'Choose image'}
+            />
+          </button>
+          <button disabled={busy || needsSync} onClick={() => setPicker(target)} type="button">
+            Replace image
+          </button>
+        </>
+      )}
+      {field.type === 'richText' && session && (
+        <RichTextSidebar
+          key={`${target.key}:${target.path}`}
+          adminRoute={adminRoute}
+          documentInfo={session.owner}
+          path={target.path}
+          schemaPath={field.schemaPath}
+          value={value}
+          disabled={busy || needsSync}
+          onChange={(next) => stage(target, next)}
+        />
+      )}
+      {inlineFields && (
+        <button
+          type="button"
+          className={styles.doneField}
+          disabled={busy || needsSync}
+          onClick={closeField}
+        >
+          Done
+        </button>
+      )}
+    </section>
+  )
+
   return (
     <>
       {historyContainer &&
@@ -1752,6 +1914,7 @@ export function ArrangeEditor({
             aria-label="Edit content"
             className={styles.panel}
             data-feedback-toolbar
+            data-inline-fields={tab === 'content' && inlineFields}
             data-size={sidebarSize}
           >
             <Portal container={headerContainer}>
@@ -1799,7 +1962,7 @@ export function ArrangeEditor({
                               ? 'Menu'
                               : tab === 'revisions'
                                 ? 'Revision history'
-                                : target
+                                : target && !inlineFields
                                   ? field?.type === 'relationship'
                                     ? 'Saved layout'
                                     : 'Edit content'
@@ -1985,7 +2148,7 @@ export function ArrangeEditor({
                     </nav>
                   )}
                   {tab === 'content' && (
-                    <div key={viewKey} className={styles.drawerView}>
+                    <div key={drawerKey} className={styles.drawerView}>
                       {layoutView && (selectedBlock || target || adding) && (
                         <p title={layoutView.label}>Shared layout · {layoutView.label}</p>
                       )}
@@ -2009,114 +2172,7 @@ export function ArrangeEditor({
                           )}
                         </section>
                       )}
-                      {field && field.type !== 'array' && target && (
-                        <section aria-label="Selected content">
-                          {field.type !== 'relationship' && (
-                            <h3>{field.type === 'upload' ? 'Image' : 'Text'}</h3>
-                          )}
-                          {field.type !== 'relationship' && (
-                            <small className={styles.path}>
-                              {session && fieldLabel(target.path, session)}
-                            </small>
-                          )}
-                          {(field.type === 'text' || field.type === 'textarea') && (
-                            <>
-                              <label>
-                                Replacement text
-                                <textarea
-                                  aria-label="Replacement text"
-                                  disabled={busy || needsSync}
-                                  onChange={(event) => stage(target, event.target.value)}
-                                  rows={5}
-                                  value={typeof value === 'string' ? value : ''}
-                                />
-                              </label>
-                              <button
-                                className={styles.restoreText}
-                                disabled={
-                                  busy || needsSync || !Object.hasOwn(session.changes, target.path)
-                                }
-                                onClick={() => stage(target, field.value)}
-                                type="button"
-                              >
-                                Restore text
-                              </button>
-                            </>
-                          )}
-                          {field.type === 'relationship' && (
-                            <div>
-                              <select
-                                aria-label="Saved layout"
-                                value={typeof value === 'string' ? value : ''}
-                                disabled={busy || needsSync}
-                                onChange={(event) => stage(target, event.target.value)}
-                              >
-                                <option value="" disabled>
-                                  Select a layout
-                                </option>
-                                {field.choices.map((choice) => (
-                                  <option key={choice.id} value={choice.id}>
-                                    {choice.label}
-                                  </option>
-                                ))}
-                              </select>
-                              <p>Changes to this shared layout apply wherever it is used.</p>
-                              <button
-                                type="button"
-                                disabled={busy || needsSync || !value}
-                                className={styles.fieldLink}
-                                onClick={openLayout}
-                              >
-                                Edit shared layout
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busy || needsSync || !value}
-                                className={styles.fieldLink}
-                                onClick={makeIndependent}
-                              >
-                                Make independent
-                              </button>
-                            </div>
-                          )}
-                          {field.type === 'upload' && (
-                            <>
-                              <button
-                                aria-label="Replace image from preview"
-                                className={styles.imagePreviewButton}
-                                disabled={busy || needsSync}
-                                onClick={() => setPicker(target)}
-                                type="button"
-                              >
-                                <img
-                                  className={styles.imagePreview}
-                                  src={imagePreview || imagePlaceholder}
-                                  alt={imagePreview ? 'Current image' : 'Choose image'}
-                                />
-                              </button>
-                              <button
-                                disabled={busy || needsSync}
-                                onClick={() => setPicker(target)}
-                                type="button"
-                              >
-                                Replace image
-                              </button>
-                            </>
-                          )}
-                          {field.type === 'richText' && session && (
-                            <RichTextSidebar
-                              key={`${target.key}:${target.path}`}
-                              adminRoute={adminRoute}
-                              documentInfo={session.owner}
-                              path={target.path}
-                              schemaPath={field.schemaPath}
-                              value={value}
-                              disabled={busy || needsSync}
-                              onChange={(next) => stage(target, next)}
-                            />
-                          )}
-                        </section>
-                      )}
+                      {!inlineFields && selectedContent}
                       {Object.entries(sessions).flatMap(([key, session]) =>
                         Object.entries(session.snapshot.fields).map(([path, field]) =>
                           field.type === 'array' &&
@@ -2142,80 +2198,135 @@ export function ArrangeEditor({
                           ) : null,
                         ),
                       )}
-                      {!target && selectedBlock && blockPath && blockFields.length > 0 && (
-                        <section aria-label="Block fields">
-                          {blockFields.map(([path]) => (
-                            <button
-                              className={styles.fieldLink}
-                              key={path}
-                              type="button"
-                              disabled={busy || needsSync}
-                              onClick={() => setTarget({ key: selectedBlock.key, path })}
-                            >
-                              {humanize(
+                      {(!target || inlineFields) &&
+                        selectedBlock &&
+                        selectedSession &&
+                        blockPath &&
+                        blockFields.length > 0 && (
+                          <section aria-label="Block fields" className={styles.fieldList}>
+                            {blockFields.map(([path, descriptor], index) => {
+                              const label = humanize(
                                 path
                                   .slice((selectedRow || blockPath).length + 1)
                                   .replace(/\.(\d+)\./g, (_, index) => ` ${Number(index) + 1} `)
                                   .replaceAll('.', ' · '),
-                              )}{' '}
-                              <span aria-hidden="true">›</span>
-                            </button>
-                          ))}
-                        </section>
-                      )}
-                      {!target && selectedBlock && selectedSession && (
-                        <button
-                          type="button"
-                          className={styles.fieldLink}
-                          disabled={
-                            busy ||
-                            needsSync ||
-                            (
-                              selectedSession.orders[selectedBlock.path] ??
-                              selectedSession.snapshot.orders[selectedBlock.path]
-                            ).length >=
-                              (selectedSession.snapshot.blockLimits?.[selectedBlock.path]?.max ??
-                                Infinity)
-                          }
-                          onClick={() => {
-                            const row = expandedOrders(selectedSession)[selectedBlock.path].find(
-                              (row) => row.id === selectedBlock.id,
-                            )
-                            if (row?.blockType)
-                              void addBlock(
-                                selectedBlock.key,
-                                selectedBlock.path,
-                                row.blockType,
-                                row.id,
                               )
-                          }}
-                        >
-                          Duplicate block
-                        </button>
-                      )}
-                      {!target && selectedBlock && (
-                        <button
-                          className={styles.removeBlock}
-                          disabled={
-                            busy ||
-                            needsSync ||
-                            (
-                              selectedSession?.orders[selectedBlock.path] ??
-                              selectedSession?.snapshot.orders[selectedBlock.path]?.map(
-                                (row) => row.id,
-                              ) ??
-                              []
-                            ).length <=
-                              (selectedSession?.snapshot.blockLimits?.[selectedBlock.path]?.min ??
-                                0)
-                          }
-                          onClick={() =>
-                            removeBlock(selectedBlock.key, selectedBlock.path, selectedBlock.id)
-                          }
-                          type="button"
-                        >
-                          Remove block
-                        </button>
+                              const pendingValue = Object.hasOwn(selectedSession.changes, path)
+                                ? selectedSession.changes[path]
+                                : descriptor.value
+                              const summary =
+                                descriptor.type === 'upload'
+                                  ? pendingValue
+                                    ? 'Selected image'
+                                    : 'No image selected'
+                                  : descriptor.type === 'relationship'
+                                    ? descriptor.choices.find(
+                                        (choice) => choice.id === pendingValue,
+                                      )?.label || 'No layout selected'
+                                    : recoveryValue(pendingValue).replace(/\s+/g, ' ')
+                              const expanded = Boolean(inlineFields && target?.path === path)
+                              const controlId = `${fieldId}-${index}`
+                              return (
+                                <div className={styles.fieldItem} key={path}>
+                                  <button
+                                    aria-controls={inlineFields ? controlId : undefined}
+                                    aria-expanded={inlineFields ? expanded : undefined}
+                                    aria-label={label}
+                                    className={styles.fieldChoice}
+                                    data-field-path={path}
+                                    disabled={busy || needsSync}
+                                    onBlur={() => setHovered(undefined)}
+                                    onClick={() =>
+                                      expanded
+                                        ? closeField()
+                                        : setTarget({ key: selectedBlock.key, path })
+                                    }
+                                    onFocus={() => setHovered({ key: selectedBlock.key, path })}
+                                    onMouseEnter={() =>
+                                      setHovered({ key: selectedBlock.key, path })
+                                    }
+                                    onMouseLeave={() => setHovered(undefined)}
+                                    ref={(element) => {
+                                      if (element) {
+                                        fieldButtons.current.set(path, element)
+                                      } else {
+                                        fieldButtons.current.delete(path)
+                                      }
+                                    }}
+                                    title={`${humanize(blockLabel || 'Block')} / ${label} · ${summary}`}
+                                    type="button"
+                                  >
+                                    <span className={styles.fieldCopy}>
+                                      <strong>{label}</strong>
+                                      <small>{summary}</small>
+                                    </span>
+                                    <span aria-hidden="true">{expanded ? '−' : '›'}</span>
+                                  </button>
+                                  {inlineFields && (
+                                    <div hidden={!expanded} id={controlId}>
+                                      {expanded && selectedContent}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </section>
+                        )}
+                      {selectedBlock && (!target || inlineFields) && (
+                        <div className={styles.blockActions}>
+                          {selectedSession && (
+                            <button
+                              className={styles.fieldLink}
+                              disabled={
+                                busy ||
+                                needsSync ||
+                                (
+                                  selectedSession.orders[selectedBlock.path] ??
+                                  selectedSession.snapshot.orders[selectedBlock.path]
+                                ).length >=
+                                  (selectedSession.snapshot.blockLimits?.[selectedBlock.path]
+                                    ?.max ?? Infinity)
+                              }
+                              onClick={() => {
+                                const row = expandedOrders(selectedSession)[
+                                  selectedBlock.path
+                                ].find((row) => row.id === selectedBlock.id)
+                                if (row?.blockType)
+                                  void addBlock(
+                                    selectedBlock.key,
+                                    selectedBlock.path,
+                                    row.blockType,
+                                    row.id,
+                                  )
+                              }}
+                              type="button"
+                            >
+                              Duplicate block
+                            </button>
+                          )}
+                          <button
+                            className={styles.removeBlock}
+                            disabled={
+                              busy ||
+                              needsSync ||
+                              (
+                                selectedSession?.orders[selectedBlock.path] ??
+                                selectedSession?.snapshot.orders[selectedBlock.path]?.map(
+                                  (row) => row.id,
+                                ) ??
+                                []
+                              ).length <=
+                                (selectedSession?.snapshot.blockLimits?.[selectedBlock.path]?.min ??
+                                  0)
+                            }
+                            onClick={() =>
+                              removeBlock(selectedBlock.key, selectedBlock.path, selectedBlock.id)
+                            }
+                            type="button"
+                          >
+                            Remove block
+                          </button>
+                        </div>
                       )}
                       {!selectedBlock &&
                         !target &&
@@ -2303,14 +2414,18 @@ export function ArrangeEditor({
                                             )}
                                             {blockMode === 'edit' ? (
                                               <button
+                                                aria-label={`Edit ${humanize(rows.find((row) => row.id === id)?.label || session.additions[path]?.find((addition) => addition.id === id)?.blockType || 'Block')}`}
                                                 className={styles.blockSelect}
+                                                disabled={busy || needsSync}
+                                                onBlur={() => setHovered(undefined)}
+                                                onClick={() => selectBlock(key, path, id)}
+                                                onFocus={() => setHovered({ id, key, path })}
+                                                onMouseEnter={() => setHovered({ id, key, path })}
+                                                onMouseLeave={() => setHovered(undefined)}
                                                 title={humanize(
                                                   rows.find((row) => row.id === id)?.label ||
                                                     'Block',
                                                 )}
-                                                aria-label={`Edit ${humanize(rows.find((row) => row.id === id)?.label || session.additions[path]?.find((addition) => addition.id === id)?.blockType || 'Block')}`}
-                                                disabled={busy || needsSync}
-                                                onClick={() => selectBlock(key, path, id)}
                                                 type="button"
                                               >
                                                 {humanize(
@@ -2386,8 +2501,8 @@ export function ArrangeEditor({
                     </div>
                   )}
                   <details
-                    className={styles.changes}
                     aria-label="Pending changes"
+                    className={styles.changes}
                     hidden={Boolean(panelContainer) && tab !== 'changes'}
                     open={tab === 'changes' || undefined}
                   >

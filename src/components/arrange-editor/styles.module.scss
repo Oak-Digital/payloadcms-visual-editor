@@ -500,3 +500,105 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.fieldList {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.fieldItem {
+  min-width: 0;
+}
+.panel .fieldList .fieldChoice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 12px;
+  border: 1px solid #383838;
+  border-radius: 10px;
+  background: #222;
+  text-align: left;
+  &:hover,
+  &:focus-visible,
+  &[aria-expanded='true'] {
+    border-color: #8ccdea;
+    background: #222a2e;
+  }
+}
+.fieldCopy {
+  flex: 1;
+  min-width: 0;
+  strong,
+  small {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-weight: 400;
+  }
+  small {
+    margin-top: 2px;
+    color: #aaa;
+    font-size: 11px;
+  }
+}
+.panel .inlineField {
+  padding: 12px 4px 14px;
+  margin: 0;
+  border: 0;
+  animation: drawerEnter 180ms ease-out;
+  textarea {
+    min-height: 160px;
+    line-height: 1.65;
+  }
+  iframe[title='Rich-text editor'] {
+    height: 320px;
+  }
+  .doneField {
+    display: block;
+    margin-top: 12px;
+    padding: 8px 12px;
+  }
+}
+.panel .blockActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+  button {
+    width: auto;
+    margin: 0;
+    padding: 8px 10px;
+    font-size: 11px;
+    background: transparent;
+  }
+}
+.blocks:has(.blockSelect) li {
+  padding: 0;
+  min-height: 62px;
+  .blockSelect {
+    min-height: 60px;
+    padding: 12px;
+  }
+  &:hover,
+  &:focus-within {
+    border-color: #8ccdea;
+  }
+}
+:global([data-arrange-hovered]) {
+  outline: 2px solid #8ccdea;
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel .inlineField {
+    animation: none;
+  }
+}
+@media (pointer: coarse) {
+  .panel .blockActions button,
+  .panel .doneField {
+    min-height: 44px;
+  }
+}
