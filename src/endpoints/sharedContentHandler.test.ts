@@ -257,3 +257,18 @@ it('enforces query-constrained update access for shared review', async () => {
   expect((await f.call({ action: 'review', revision: 'irrelevant' })).status).toBe(400)
   expect(f.update).not.toHaveBeenCalled()
 })
+
+it('returns individual field errors for failed shared content publication', async () => {
+  const f = fixture()
+  const { revision } = await (await f.call()).json()
+  const fieldErrors = [{ path: 'title', label: 'Title', message: 'This field is required.' }]
+  f.update.mockRejectedValueOnce(
+    Object.assign(new Error('Long validation summary'), {
+      name: 'ValidationError',
+      data: { errors: fieldErrors },
+    }),
+  )
+  const response = await f.call({ action: 'publish', revision, operations: [] })
+  expect(response.status).toBe(400)
+  expect(await response.json()).toMatchObject({ fieldErrors })
+})

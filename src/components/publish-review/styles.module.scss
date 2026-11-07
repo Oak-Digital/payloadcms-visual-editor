@@ -36,3 +36,31 @@
     margin: 4px 0 8px;
   }
 }
+
+.failure {
+  margin-top: 16px;
+  overflow-wrap: anywhere;
+
+  p {
+    margin: 8px 0;
+  }
+}
+.issueGroup {
+  margin: 12px 0;
+  font-size: 0.875em;
+  line-height: 1.5;
+
+  strong {
+    display: block;
+    font-weight: 600;
+  }
+
+  ul {
+    margin: 4px 0 0;
+    padding-left: 20px;
+  }
+
+  li {
+    margin: 4px 0;
+  }
+}

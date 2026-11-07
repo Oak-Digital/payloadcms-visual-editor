@@ -1,3 +1,4 @@
+import { validationErrors } from '../utils/validation-errors.js'
 import { publishedChanges } from '../utils/publish-review.js'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
@@ -532,6 +533,7 @@ export const createArrangeHandler =
             : error instanceof Error
               ? error.message
               : 'Unable to save changes',
+          fieldErrors: validationErrors(error, req),
         },
         { status: conflict ? 409 : 400 },
       )

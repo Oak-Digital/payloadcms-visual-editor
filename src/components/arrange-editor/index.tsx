@@ -31,6 +31,7 @@ import {
 import { documentKey, fieldDocument } from '../../utils/field-target.js'
 import { type MediaChoice, MediaPicker } from '../media-picker/index.js'
 import { imageFieldAt, previewImages } from '../media-picker/preview.js'
+import { EditorRequestError } from '../../utils/editor-error.js'
 import { PublishReview, type PublishReviewItem } from '../publish-review/index.js'
 import { RevisionHistory } from '../revision-history/index.js'
 import { RichTextSidebar } from '../rich-text-editor/sidebar.js'
@@ -453,7 +454,7 @@ export function ArrangeEditor({
       })
       const result = await response.json()
       if (!response.ok) {
-        throw new Error(result.error || 'Unable to load editor')
+        throw new EditorRequestError(result.error || 'Unable to load editor', result.fieldErrors)
       }
       return result
     },
@@ -1681,6 +1682,7 @@ export function ArrangeEditor({
                   ...item,
                   status: 'failed',
                   error: cause instanceof Error ? cause.message : 'Publish failed',
+                  fieldErrors: cause instanceof EditorRequestError ? cause.fieldErrors : [],
                 }
               : item,
           ),
@@ -1696,7 +1698,9 @@ export function ArrangeEditor({
             : 'Save failed · Changes kept',
       )
       setError(
-        `${cause instanceof Error ? cause.message : 'Unable to save changes'}${completed ? ` ${completed} document(s) already saved. Remaining changes can be retried.` : ' Your changes are still here. Try saving again.'}`,
+        action === 'publish' && activeKey
+          ? ''
+          : `${cause instanceof Error ? cause.message : 'Unable to save changes'}${completed ? ` ${completed} document(s) already saved. Remaining changes can be retried.` : ' Your changes are still here. Try saving again.'}`,
       )
     } finally {
       if (committed.current.size) {
@@ -2473,6 +2477,20 @@ export function ArrangeEditor({
                         items={reviewItems}
                         loading={reviewLoading}
                         failed={reviewFailed}
+                        onEdit={(item) => {
+                          const session = reviewSessions.current[item.key]
+                          if (!session) return
+                          setSessions((previous) => ({
+                            ...previous,
+                            [item.key]: previous[item.key] ?? session,
+                          }))
+                          selectOwner(item.key)
+                          setTarget(undefined)
+                          setSelectedBlock(undefined)
+                          setSelectedRow(undefined)
+                          setTab('content')
+                          setBlockMode('edit')
+                        }}
                       />
                       {!busy && (
                         <button type="button" onClick={() => void preparePublish()}>

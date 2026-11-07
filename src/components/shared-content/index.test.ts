@@ -216,6 +216,13 @@ it('reviews earlier saved shared drafts and retries only documents that did not 
     expect(container.querySelectorAll('[data-publish-status="published"]')).toHaveLength(1)
     expect(container.querySelectorAll('[data-publish-status="failed"]')).toHaveLength(1)
     expect(button('Publish shared changes').disabled).toBe(true)
+    expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1)
+    expect(container.textContent?.split('Second failed')).toHaveLength(2)
+    expect(button('Discard edits and reload')).toBeUndefined()
+    await act(async () => button('Edit content').click())
+    expect(props.onOpen).toHaveBeenCalledWith({ slug: 'navigation', id: 'second', label: 'second' })
+    expect(container.querySelector('[aria-label="Publish review"]')).toBeNull()
+    await act(async () => button('Publish all').click())
     fail = false
     await act(async () => button('Refresh review').click())
     expect(container.textContent).toContain('Review 1 document')

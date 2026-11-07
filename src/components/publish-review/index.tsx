@@ -1,5 +1,6 @@
 'use client'
 
+import type { FieldIssue } from '../../utils/editor-error.js'
 import type { PublishReviewData } from '../../utils/publish-review.js'
 
 import { recoveryValue } from '../../utils/recovery.js'
@@ -8,20 +9,53 @@ import styles from './styles.module.scss'
 export type PublishReviewItem = {
   collection: string
   error?: string
+  fieldErrors?: FieldIssue[]
   key: string
   locale?: string
   pending: boolean
   status: 'failed' | 'published' | 'ready'
 } & PublishReviewData
 
+function groupIssues(issues: FieldIssue[]) {
+  const paths = issues.map((issue) =>
+    issue.label.includes(' > ')
+      ? issue.label.split(' > ')
+      : issue.label === issue.path
+        ? issue.path.replace(/\.(\d+)/g, (_, index) => ` ${Number(index) + 1}`).split('.')
+        : [issue.label],
+  )
+  let prefix = 0
+  while (paths.every((parts) => parts.length - prefix > 2 && parts[prefix] === paths[0][prefix])) {
+    prefix++
+  }
+  const groups = new Map<string, ({ field: string } & FieldIssue)[]>()
+  issues.forEach((issue, index) => {
+    const parts = paths[index]
+      .slice(prefix)
+      .map((part) =>
+        part.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (letter) => letter.toUpperCase()),
+      )
+    const field = parts.pop() || 'Content'
+    const group = parts.join(' › ')
+    const entries = groups.get(group) ?? []
+    if (!entries.some((entry) => entry.path === issue.path && entry.message === issue.message)) {
+      entries.push({ ...issue, field })
+    }
+    groups.set(group, entries)
+  })
+  return [...groups]
+}
+
 export function PublishReview({
   failed = false,
   items,
   loading,
+  onEdit,
 }: {
   failed?: boolean
   items: PublishReviewItem[]
   loading: boolean
+  onEdit: (item: PublishReviewItem) => void
 }) {
   return (
     <section aria-label="Publish review" className={styles.review}>
@@ -95,7 +129,35 @@ export function PublishReview({
                   </div>
                 ))}
               </details>
-              {item.error && <p role="alert">{item.error}</p>}
+              {item.error && (
+                <div className={styles.failure}>
+                  <div role="alert">
+                    {item.fieldErrors?.length ? (
+                      <>
+                        <p>Fix these fields before publishing:</p>
+                        {groupIssues(item.fieldErrors).map(([group, issues]) => (
+                          <div className={styles.issueGroup} key={group}>
+                            {group && <strong>{group}</strong>}
+                            <ul>
+                              {issues.map((issue) => (
+                                <li key={`${issue.path}:${issue.message}`}>
+                                  <span>{issue.field}:</span> {issue.message}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      <p>{item.error}</p>
+                    )}
+                  </div>
+                  <p>Your edits are kept.</p>
+                  <button onClick={() => onEdit(item)} type="button">
+                    Edit content
+                  </button>
+                </div>
+              )}
             </article>
           ))}
           <p>Publishes the selected locale and shared fields.</p>

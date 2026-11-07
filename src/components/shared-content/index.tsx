@@ -15,6 +15,7 @@ import {
   writeRecovery,
   type RecoveryRecord,
 } from '../../utils/recovery.js'
+import { EditorRequestError } from '../../utils/editor-error.js'
 import { PublishReview, type PublishReviewItem } from '../publish-review/index.js'
 import { EditorIcon } from '../workspace/icons.js'
 import styles from './styles.module.scss'
@@ -139,7 +140,11 @@ export function SharedContentEditor({
       body: JSON.stringify({ ...t, locale, ...body }),
     })
     const result = await response.json()
-    if (!response.ok) throw new Error(result.error || 'Unable to edit shared content')
+    if (!response.ok)
+      throw new EditorRequestError(
+        result.error || 'Unable to edit shared content',
+        result.fieldErrors,
+      )
     return result
   }
   useEffect(() => {
@@ -442,13 +447,20 @@ export function SharedContentEditor({
                   ...item,
                   status: 'failed',
                   error: e instanceof Error ? e.message : 'Publish failed',
+                  fieldErrors: e instanceof EditorRequestError ? e.fieldErrors : [],
                 }
               : item,
           ),
         )
       }
       if (completed) onSaved()
-      setError(e instanceof Error ? e.message : 'Save failed. Remaining changes are retained.')
+      setError(
+        action === 'publish' && activeKey
+          ? ''
+          : e instanceof Error
+            ? e.message
+            : 'Save failed. Remaining changes are retained.',
+      )
       return false
     } finally {
       setSaving(false)
@@ -718,7 +730,17 @@ export function SharedContentEditor({
         {!session && <p>{busy ? 'Loading…' : 'Content unavailable.'}</p>}
         {review ? (
           <>
-            <PublishReview items={reviewItems} loading={busy && !saving} failed={reviewFailed} />
+            <PublishReview
+              items={reviewItems}
+              loading={busy && !saving}
+              failed={reviewFailed}
+              onEdit={(item) => {
+                const session = sessions[item.key]
+                if (!session) return
+                setReview(false)
+                onOpen(session.target)
+              }}
+            />
             <button disabled={busy} onClick={() => void preparePublish()}>
               Refresh review
             </button>

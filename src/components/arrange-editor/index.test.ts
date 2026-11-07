@@ -321,6 +321,43 @@ it('reports distinct save/publish states to the footer without duplicating them 
     expect(panel.querySelector('[role="alert"]')?.textContent).toContain(
       'Rejected for verification',
     )
+    expect(panel.querySelectorAll('[role="alert"]')).toHaveLength(1)
+    await act(async () =>
+      [...panel.querySelectorAll('button')]
+        .find((button) => button.textContent === 'Edit content')!
+        .click(),
+    )
+    await act(() => {
+      const title = document.querySelector('h1')!
+      title.textContent = 'Still pending'
+      title.dispatchEvent(new InputEvent('input', { bubbles: true }))
+    })
+    await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
+    await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
+    await act(async () =>
+      finish(
+        Response.json(
+          {
+            error: 'The following fields are invalid: Content > Title',
+            fieldErrors: [{ path: 'title', label: 'Title', message: 'Enter a title.' }],
+          },
+          { status: 400 },
+        ),
+      ),
+    )
+    expect(panel.querySelectorAll('[role="alert"]')).toHaveLength(1)
+    expect(panel.textContent).toContain('Title: Enter a title.')
+    expect(panel.textContent).not.toContain('The following fields are invalid')
+    expect(panel.textContent).not.toContain('Try saving again')
+    await act(async () =>
+      [...panel.querySelectorAll('button')]
+        .find((button) => button.textContent === 'Edit content')!
+        .click(),
+    )
+    expect(panel.querySelector('[aria-label="Publish review"]')).toBeNull()
+    expect(actions.textContent).toContain('Publish all')
+    expect(document.querySelector('h1')?.textContent).toBe('Still pending')
+    expect(pending.mock.lastCall?.[0]).toBe(true)
   } finally {
     await act(async () => root.unmount())
     vi.restoreAllMocks()

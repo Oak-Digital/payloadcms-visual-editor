@@ -818,3 +818,25 @@ it('identifies first publication and refuses stale review snapshots', async () =
   expect((await f.call({ action: 'review', revision, changes: [], orders: [] })).status).toBe(409)
   expect(f.payload.update).not.toHaveBeenCalled()
 })
+
+it('returns individual validation messages when publication fails and rolls back', async () => {
+  const f = fixture()
+  const { revision } = await (await f.call()).json()
+  const fieldErrors = [
+    {
+      path: 'layout.0.heading',
+      label: 'Content > Layout > Block 1 (Introduction) > Heading',
+      message: 'This field is required.',
+    },
+  ]
+  f.payload.update.mockRejectedValueOnce(
+    Object.assign(new Error('Long validation summary'), {
+      name: 'ValidationError',
+      data: { errors: fieldErrors },
+    }),
+  )
+  const response = await f.call({ action: 'publish', revision, changes: [], orders: [] })
+  expect(response.status).toBe(400)
+  expect(await response.json()).toMatchObject({ fieldErrors })
+  expect(killTransaction).toHaveBeenCalled()
+})

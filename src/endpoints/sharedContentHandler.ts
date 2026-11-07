@@ -1,3 +1,4 @@
+import { validationErrors } from '../utils/validation-errors.js'
 import { publishedChanges } from '../utils/publish-review.js'
 import { createHash } from 'node:crypto'
 import {
@@ -547,7 +548,10 @@ export const createSharedContentHandler =
       if (transaction) await killTransaction(req)
       req.payload.logger.error({ err: error }, 'Shared content editor failed')
       return Response.json(
-        { error: error instanceof Error ? error.message : 'Unable to edit shared content' },
+        {
+          error: error instanceof Error ? error.message : 'Unable to edit shared content',
+          fieldErrors: validationErrors(error, req),
+        },
         { status: 400 },
       )
     }
