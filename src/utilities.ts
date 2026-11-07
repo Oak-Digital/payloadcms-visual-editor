@@ -1,3 +1,5 @@
+export { imagePlaceholder } from './utils/image-placeholder.js'
+
 import type { PayloadCMSDocument } from './types.js'
 import type { SourceMap } from './utils/source-map.js'
 

@@ -36,6 +36,7 @@ import { PublishReview, type PublishReviewItem } from '../publish-review/index.j
 import { RevisionHistory } from '../revision-history/index.js'
 import { RichTextSidebar } from '../rich-text-editor/sidebar.js'
 import { EditorIcon } from '../workspace/icons.js'
+import { imagePlaceholder } from '../../utils/image-placeholder.js'
 import styles from './styles.module.scss'
 import { ArrayEditor } from './array-editor.js'
 import { createDraftBlockPreviews } from './draft-block-preview.js'
@@ -1823,7 +1824,7 @@ export function ArrangeEditor({
             <div className={styles.content}>
               {recoveryNotice && <p role="status">{recoveryNotice}</p>}
               {Object.entries(recoveries).map(([key, recovery]) => (
-                <section key={key} aria-label="Recover unsaved edits">
+                <section key={key} aria-label="Recover unsaved edits" className={styles.recovery}>
                   <p>Unsaved edits · {new Date(recovery.record.savedAt).toLocaleString()}</p>
                   {recovery.conflict && (
                     <p>
@@ -1859,42 +1860,44 @@ export function ArrangeEditor({
                       </dl>
                     </details>
                   )}
-                  <button
-                    type="button"
-                    disabled={busy || recovery.conflict || count > 0}
-                    onClick={() => {
-                      rememberEdit()
-                      setSessions((all) => ({ ...all, [key]: recovery.record.value }))
-                      setRecoveries((all) => {
-                        const next = { ...all }
-                        delete next[key]
-                        return next
-                      })
-                    }}
-                  >
-                    Restore edits
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      try {
-                        if (!clearRecovery(window.localStorage, recoveryScope(sessions[key]))) {
-                          setRecoveryNotice('Stored edits could not be discarded.')
-                          return
-                        }
+                  <div className={styles.recoveryActions}>
+                    <button
+                      type="button"
+                      disabled={busy || recovery.conflict || count > 0}
+                      onClick={() => {
+                        rememberEdit()
+                        setSessions((all) => ({ ...all, [key]: recovery.record.value }))
                         setRecoveries((all) => {
                           const next = { ...all }
                           delete next[key]
                           return next
                         })
-                      } catch {
-                        setRecoveryNotice('Stored edits could not be discarded.')
-                      }
-                    }}
-                  >
-                    Discard stored edits
-                  </button>
+                      }}
+                    >
+                      Restore edits
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        try {
+                          if (!clearRecovery(window.localStorage, recoveryScope(sessions[key]))) {
+                            setRecoveryNotice('Stored edits could not be discarded.')
+                            return
+                          }
+                          setRecoveries((all) => {
+                            const next = { ...all }
+                            delete next[key]
+                            return next
+                          })
+                        } catch {
+                          setRecoveryNotice('Stored edits could not be discarded.')
+                        }
+                      }}
+                    >
+                      Discard stored edits
+                    </button>
+                  </div>
                 </section>
               ))}
 
@@ -2078,21 +2081,19 @@ export function ArrangeEditor({
                           )}
                           {field.type === 'upload' && (
                             <>
-                              {imagePreview && (
-                                <button
-                                  aria-label="Replace image from preview"
-                                  className={styles.imagePreviewButton}
-                                  disabled={busy || needsSync}
-                                  onClick={() => setPicker(target)}
-                                  type="button"
-                                >
-                                  <img
-                                    className={styles.imagePreview}
-                                    src={imagePreview}
-                                    alt="Current image"
-                                  />
-                                </button>
-                              )}
+                              <button
+                                aria-label="Replace image from preview"
+                                className={styles.imagePreviewButton}
+                                disabled={busy || needsSync}
+                                onClick={() => setPicker(target)}
+                                type="button"
+                              >
+                                <img
+                                  className={styles.imagePreview}
+                                  src={imagePreview || imagePlaceholder}
+                                  alt={imagePreview ? 'Current image' : 'Choose image'}
+                                />
+                              </button>
                               <button
                                 disabled={busy || needsSync}
                                 onClick={() => setPicker(target)}

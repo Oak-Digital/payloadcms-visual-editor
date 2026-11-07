@@ -1,6 +1,7 @@
 import type { PayloadCMSDocument } from '../../types.js'
 import type { ArrangeSnapshot } from '../../utils/arrange.js'
 
+import { imagePlaceholder } from '../../utils/image-placeholder.js'
 import { documentKey, fieldDocument } from '../../utils/field-target.js'
 import styles from './styles.module.scss'
 
@@ -27,8 +28,6 @@ function textContent(value: unknown): string {
   }
   return ''
 }
-
-const placeholder = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450"><rect width="800" height="450" fill="#222"/><path d="m300 280 70-80 50 60 40-40 60 60M365 160a15 15 0 1 0 0 1" fill="none" stroke="#888" stroke-width="3"/><text x="400" y="335" text-anchor="middle" fill="#aaa" font-family="sans-serif" font-size="18">Choose image</text></svg>')}`
 
 /** Own only unsaved preview nodes; React continues to own persisted sections. */
 export function createDraftBlockPreviews(root: Document, fallback: PayloadCMSDocument) {
@@ -88,7 +87,7 @@ export function createDraftBlockPreviews(root: Document, fallback: PayloadCMSDoc
               element.dataset.payloadPath = fieldPath
               element.dataset.payloadType = field.type
               if (element instanceof HTMLImageElement) {
-                element.src = placeholder
+                element.src = imagePlaceholder
                 element.alt = 'Choose image'
               } else {
                 element.textContent =
