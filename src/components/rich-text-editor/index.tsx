@@ -10,6 +10,30 @@ import styles from './styles.module.scss'
 
 type Snapshot = { revision: string; schemaPath: string; value: DefaultTypedEditorState }
 
+function prepareEditorValue(value: DefaultTypedEditorState): DefaultTypedEditorState {
+  if (value?.root?.type !== 'root' || value.root.children?.length !== 0) return value
+  // Lexical can parse an empty root, but cannot mount it as an editor state.
+  // Seed only the editing surface; opening a field must not stage a content change.
+  return {
+    ...value,
+    root: {
+      ...value.root,
+      children: [
+        {
+          type: 'paragraph',
+          version: 1,
+          children: [],
+          direction: null,
+          format: '',
+          indent: 0,
+          textFormat: 0,
+          textStyle: '',
+        },
+      ],
+    },
+  }
+}
+
 /** Runs inside the host admin providers, so field features and drawers are unchanged. */
 export function RichTextEditorView() {
   const { config } = useConfig()
@@ -43,9 +67,9 @@ export function RichTextEditorView() {
       setSnapshot({
         schemaPath,
         revision: '',
-        value: {
+        value: prepareEditorValue({
           root: { type: 'root', version: 1, format: '', indent: 0, direction: null, children: [] },
-        },
+        }),
       })
       setStatus('')
       return
@@ -63,8 +87,9 @@ export function RichTextEditorView() {
         if (!response.ok) {
           throw new Error(result.error)
         }
-        setSnapshot(result)
-        setValue(result.value)
+        const initialValue = prepareEditorValue(result.value)
+        setSnapshot({ ...result, value: initialValue })
+        setValue(initialValue)
         setStatus('')
         if (query.get('mode') === 'stage') {
           window.parent.postMessage({ type: 'payload-visual-editor:ready' }, window.location.origin)
@@ -95,9 +120,10 @@ export function RichTextEditorView() {
       ) {
         return
       }
+      const initialValue = prepareEditorValue(event.data.value)
       setInitialized(true)
-      setValue(event.data.value)
-      setSnapshot((previous) => (previous ? { ...previous, value: event.data.value } : previous))
+      setValue(initialValue)
+      setSnapshot((previous) => (previous ? { ...previous, value: initialValue } : previous))
       setEditorKey((previous) => previous + 1)
     }
     window.addEventListener('message', receive)
@@ -144,7 +170,7 @@ export function RichTextEditorView() {
       if (!refreshed.ok) {
         throw new Error(next.error)
       }
-      setSnapshot(next)
+      setSnapshot({ ...next, value: prepareEditorValue(next.value) })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to save')
     } finally {

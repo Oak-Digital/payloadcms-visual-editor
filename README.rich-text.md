@@ -15,6 +15,7 @@ The editor resolves instance paths into Payload schema paths, including nested a
 ## Data safety
 
 - Rich text is always Lexical JSON. It never goes through the plain-text patch or annotation pipeline.
+- Empty roots open with a blank paragraph in the editor. Opening or resetting the field does not stage a change; existing content and formatting are preserved.
 - Before loading or saving, the server imports and exports through the host's node classes. Unknown nodes, incompatible node versions and custom properties that would be lost cause an explicit error. Paragraph cursor-format metadata may be recalculated by Lexical; child text formatting is preserved.
 - Reads and writes enforce collection and ancestor/field access. Protected rich-text subfields that would produce an incomplete editable value block saving. Requests require a configured locale with fallback disabled.
 - Updates copy complete sibling data and replace only the selected rich-text value. Native Payload handles localization, draft validation policy and publication validation.
