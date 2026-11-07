@@ -157,6 +157,7 @@ export function ArrangeEditor({
   const [recoveries, setRecoveries] = useState<
     Record<string, { record: RecoveryRecord<Session>; conflict: boolean }>
   >({})
+  const hasRecoveries = Object.keys(recoveries).length > 0
   const unreadRecovery = useRef(new Set<string>())
   const [recoveryNotice, setRecoveryNotice] = useState('')
   const [undoStack, setUndoStack] = useState<Record<string, Session>[]>([])
@@ -392,7 +393,9 @@ export function ArrangeEditor({
               : operation === 'publish'
                 ? 'Publishing…'
                 : 'Saving draft…'
-        : status,
+        : hasRecoveries
+          ? 'Review stored edits before saving.'
+          : status,
       Object.values(sessions).reduce(
         (total, session) =>
           total +
@@ -410,6 +413,7 @@ export function ArrangeEditor({
     status,
     sessions,
     recoveries,
+    hasRecoveries,
     onPendingChange,
     ready,
     refreshing,
@@ -1599,7 +1603,13 @@ export function ArrangeEditor({
   }
 
   async function submit(action: 'publish' | 'save'): Promise<boolean> {
-    if (saving.current || busy || needsSync || historical || Object.keys(recoveries).length) {
+    if (saving.current || busy || needsSync || historical) {
+      return false
+    }
+    if (hasRecoveries) {
+      setTab('content')
+      setPicker(undefined)
+      onReveal?.()
       return false
     }
     if (
@@ -2010,40 +2020,45 @@ export function ArrangeEditor({
               {Object.entries(recoveries).map(([key, recovery]) => (
                 <section key={key} aria-label="Recover unsaved edits" className={styles.recovery}>
                   <p>Unsaved edits · {new Date(recovery.record.savedAt).toLocaleString()}</p>
+                  <p>
+                    {recovery.conflict
+                      ? 'Review and discard stored edits before saving. Your current changes are kept.'
+                      : count > 0
+                        ? 'Undo current changes to restore stored edits, or discard stored edits to keep your current changes.'
+                        : 'Restore or discard stored edits before saving.'}
+                  </p>
                   {recovery.conflict && (
                     <p>
                       This document has newer changes. Your stored edits remain available below for
                       review.
                     </p>
                   )}
-                  {recovery.conflict && (
-                    <details>
-                      <summary>Review stored edits</summary>
-                      <dl>
-                        {Object.entries(recovery.record.value.changes).map(([path, value]) => (
-                          <div key={path}>
-                            <dt>{fieldLabel(path, recovery.record.value)}</dt>
-                            <dd>{recoveryValue(value)}</dd>
-                          </div>
-                        ))}
-                        {Object.entries(recovery.record.value.orders).map(([path, ids]) => (
-                          <div key={path}>
-                            <dt>Section order</dt>
-                            <dd>
-                              {ids
-                                .map(
-                                  (id) =>
-                                    expandedOrders(recovery.record.value)[path]?.find(
-                                      (row) => row.id === id,
-                                    )?.label || 'New section',
-                                )
-                                .join(' → ')}
-                            </dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </details>
-                  )}
+                  <details>
+                    <summary>Review stored edits</summary>
+                    <dl>
+                      {Object.entries(recovery.record.value.changes).map(([path, value]) => (
+                        <div key={path}>
+                          <dt>{fieldLabel(path, recovery.record.value)}</dt>
+                          <dd>{recoveryValue(value)}</dd>
+                        </div>
+                      ))}
+                      {Object.entries(recovery.record.value.orders).map(([path, ids]) => (
+                        <div key={path}>
+                          <dt>Section order</dt>
+                          <dd>
+                            {ids
+                              .map(
+                                (id) =>
+                                  expandedOrders(recovery.record.value)[path]?.find(
+                                    (row) => row.id === id,
+                                  )?.label || 'New section',
+                              )
+                              .join(' → ')}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </details>
                   <div className={styles.recoveryActions}>
                     <button
                       type="button"
@@ -2695,7 +2710,13 @@ export function ArrangeEditor({
                 className={actionsContainer ? styles.actions : undefined}
               >
                 <button
-                  disabled={busy || needsSync || !!historical || tab === 'publish' || !count}
+                  disabled={
+                    busy ||
+                    needsSync ||
+                    !!historical ||
+                    tab === 'publish' ||
+                    (!count && !hasRecoveries)
+                  }
                   onClick={() => void submit('save')}
                   type="button"
                 >

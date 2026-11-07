@@ -1,6 +1,8 @@
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
+import { documentKey } from '../../utils/field-target.js'
+import { recoveryKey } from '../../utils/recovery.js'
 import { ArrangeEditor } from './index.js'
 
 vi.mock('./styles.module.scss', () => ({ default: {} }))
@@ -512,3 +514,134 @@ it('opens one workspace field inline and retains values, native editors and exac
     vi.unstubAllGlobals()
   }
 })
+
+it.each([
+  { conflict: false, restore: false },
+  { conflict: true, restore: false },
+  { conflict: false, restore: true },
+])(
+  'reveals stored edits before saving (conflict: $conflict, restore: $restore)',
+  async ({ conflict, restore }) => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    document.body.innerHTML =
+      '<h1 data-payload-path="title">Original</h1><div id="editor"></div><div id="panel" hidden></div><div id="actions" data-feedback-toolbar></div>'
+    const root = createRoot(document.getElementById('editor')!)
+    const panel = document.getElementById('panel')!
+    const actions = document.getElementById('actions')!
+    const owner = { id: 'recovery-page', collection: 'pages', hasDrafts: true, locale: 'en' }
+    const snapshot = {
+      fields: { title: { type: 'text', value: 'Original' } },
+      orders: {},
+      revision: 'current',
+      recoveryUser: 'editor',
+    }
+    const key = recoveryKey({
+      api: '/api',
+      user: 'editor',
+      kind: 'page',
+      document: documentKey(owner),
+      locale: 'en',
+    })
+    const stored = JSON.stringify({
+      version: 1,
+      savedAt: new Date().toISOString(),
+      revision: conflict ? 'older' : 'current',
+      value: {
+        owner,
+        snapshot,
+        changes: { title: 'Stored title' },
+        orders: {},
+        additions: {},
+        media: {},
+      },
+    })
+    localStorage.setItem(key, stored)
+    const pending = vi.fn()
+    const reveal = vi.fn(() => {
+      panel.hidden = false
+    })
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => Response.json(snapshot))
+    const button = (label: string) =>
+      [...document.querySelectorAll('button')].find((b) => b.textContent === label)!
+    const saves = () =>
+      fetch.mock.calls
+        .map(([, init]) => JSON.parse(String(init?.body)))
+        .filter((request) => request.action === 'save')
+    try {
+      await act(async () =>
+        root.render(
+          createElement(ArrangeEditor, {
+            active: true,
+            adminRoute: '/admin',
+            apiRoute: '/api',
+            documentInfo: owner,
+            panelContainer: panel,
+            actionsContainer: actions,
+            historyContainer: actions,
+            onClose: vi.fn(),
+            onReveal: reveal,
+            onPendingChange: pending,
+          }),
+        ),
+      )
+      expect(pending.mock.lastCall?.[3]).toBe('Review stored edits before saving.')
+      // The workspace home view hides the recovery panel but retains the save footer.
+      panel.hidden = true
+      reveal.mockClear()
+      await act(async () => button('Save draft').click())
+      expect(reveal).toHaveBeenCalledOnce()
+      expect(panel.hidden).toBe(false)
+      expect(panel.textContent).toContain('Review stored edits')
+      expect(panel.textContent).toContain('Stored title')
+      expect(button('Restore edits').disabled).toBe(conflict)
+      expect(saves()).toHaveLength(0)
+      expect(localStorage.getItem(key)).toBe(stored)
+
+      await act(async () => {
+        const title = document.querySelector('h1')!
+        title.textContent = 'Current edit'
+        title.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      })
+      expect(button('Restore edits').disabled).toBe(true)
+      expect(panel.textContent).toContain(
+        conflict
+          ? 'Review and discard stored edits before saving. Your current changes are kept.'
+          : 'Undo current changes to restore stored edits, or discard stored edits to keep your current changes.',
+      )
+      panel.hidden = true
+      reveal.mockClear()
+      await act(async () => button('Save draft').click())
+      expect(reveal).toHaveBeenCalledOnce()
+      expect(saves()).toHaveLength(0)
+      expect(document.querySelector('h1')?.textContent).toBe('Current edit')
+      expect(localStorage.getItem(key)).toBe(stored)
+
+      if (restore) {
+        await act(async () =>
+          actions.querySelector<HTMLButtonElement>('[aria-label="Undo"]')!.click(),
+        )
+        expect(button('Restore edits').disabled).toBe(false)
+        await act(async () => button('Restore edits').click())
+      } else {
+        await act(async () => button('Discard stored edits').click())
+      }
+      const savedTitle = restore ? 'Stored title' : 'Current edit'
+      expect(document.querySelector('h1')?.textContent).toBe(savedTitle)
+      expect(panel.querySelector('[aria-label="Recover unsaved edits"]')).toBeNull()
+      expect(pending.mock.lastCall?.[3]).toBe('')
+      await act(async () => button('Save draft').click())
+      expect(saves()).toHaveLength(1)
+      expect(saves()[0].changes).toEqual([{ path: 'title', value: savedTitle }])
+      expect(pending.mock.lastCall?.[3]).toBe('Draft saved.')
+      expect(localStorage.getItem(key)).toBeNull()
+    } finally {
+      await act(async () => root.unmount())
+      localStorage.removeItem(key)
+      document.body.replaceChildren()
+      vi.restoreAllMocks()
+      vi.unstubAllGlobals()
+    }
+  },
+)
