@@ -152,7 +152,7 @@ describe('arrange editor batch', () => {
     const id = '0123456789abcdef01234567'
     const orders = [{ path: 'layout', ids: [id, 'b'], additions: [{ id, blockType: 'section' }] }]
     const prepared = await (await call({ orders })).json()
-    expect(prepared.fields['layout.2.heading']).toEqual({ type: 'text', value: 'section' })
+    expect(prepared.fields['layout.2.heading']).toMatchObject({ type: 'text', value: 'section' })
     expect(prepared.fields['layout.2.body'].schemaPath).toBe('collection.pages.layout.section.body')
     expect(payload.update).not.toHaveBeenCalled()
     expect(payload.db.updateVersion).not.toHaveBeenCalled()
@@ -252,7 +252,7 @@ describe('arrange editor batch', () => {
   it('lists editable block fields even when their values are not rendered', async () => {
     const { call } = fixture()
     const snapshot = await (await call({ paths: [] })).json()
-    expect(snapshot.fields['layout.1.heading']).toEqual({ type: 'text', value: 'Second' })
+    expect(snapshot.fields['layout.1.heading']).toMatchObject({ type: 'text', value: 'Second' })
   })
 
   it('rejects unknown block types and IDs', async () => {
@@ -839,4 +839,165 @@ it('returns individual validation messages when publication fails and rolls back
   expect(response.status).toBe(400)
   expect(await response.json()).toMatchObject({ fieldErrors })
   expect(killTransaction).toHaveBeenCalled()
+})
+
+function controlsFixture() {
+  const f = fixture()
+  f.block.blocks[0].fields.push(
+    { name: 'order', type: 'radio', label: 'Order', options: ['image-left', 'image-right'] },
+    { name: 'addLink', type: 'checkbox', label: 'Add Link' },
+    {
+      type: 'collapsible',
+      label: 'Link',
+      admin: { condition: (_: unknown, sibling: any) => sibling.addLink === true },
+      fields: [
+        {
+          name: 'link',
+          type: 'group',
+          fields: [
+            { name: 'type', type: 'radio', options: ['reference', 'custom'] },
+            { name: 'label', type: 'text' },
+            {
+              name: 'url',
+              type: 'text',
+              admin: { condition: (_: unknown, sibling: any) => sibling.type === 'custom' },
+            },
+            {
+              name: 'relation',
+              type: 'relationship',
+              relationTo: ['pages'],
+              admin: { condition: (_: unknown, sibling: any) => sibling.type === 'reference' },
+            },
+            { name: 'openNewTab', type: 'checkbox' },
+          ],
+        },
+      ],
+    },
+  )
+  Object.assign(f.doc.layout[0], { order: 'image-left', addLink: false })
+  return f
+}
+
+describe('block controls and conditional fields', () => {
+  it('discovers controls and absent optional groups without exposing protected fields', async () => {
+    const f = controlsFixture()
+    f.block.blocks[0].fields.push({
+      name: 'secret',
+      type: 'checkbox',
+      access: { read: () => false },
+    })
+    const snapshot = await (await f.call()).json()
+    expect(snapshot.fields['layout.0.order']).toMatchObject({
+      type: 'radio',
+      value: 'image-left',
+      hidden: false,
+    })
+    expect(snapshot.fields['layout.0.addLink']).toMatchObject({
+      type: 'checkbox',
+      value: false,
+      label: 'Add Link',
+    })
+    expect(snapshot.fields['layout.0.link.url']).toMatchObject({
+      type: 'text',
+      hidden: true,
+      conditional: true,
+    })
+    expect(snapshot.fields['layout.0.link.relation']).toMatchObject({
+      type: 'reference',
+      hidden: true,
+    })
+    expect(snapshot.fields['layout.0.secret']).toBeUndefined()
+  })
+
+  it('reevaluates ancestor and sibling conditions on pending data without writing', async () => {
+    const f = controlsFixture()
+    const { revision } = await (await f.call()).json()
+    const changes = [
+      { path: 'layout.0.addLink', value: true },
+      { path: 'layout.0.link.type', value: 'custom' },
+    ]
+    const response = await f.call({ action: 'fields', revision, changes, orders: [] })
+    expect(response.status).toBe(200)
+    const { presentation } = await response.json()
+    expect(presentation['layout.0.link.url'].hidden).toBe(false)
+    expect(presentation['layout.0.link.relation'].hidden).toBe(true)
+    changes[1].value = 'reference' as any
+    const reference = await (
+      await f.call({ action: 'fields', revision, changes, orders: [] })
+    ).json()
+    expect(reference.presentation['layout.0.link.url'].hidden).toBe(true)
+    expect(reference.presentation['layout.0.link.relation'].hidden).toBe(false)
+    expect(f.payload.update).not.toHaveBeenCalled()
+    expect(f.payload.db.updateVersion).not.toHaveBeenCalled()
+  })
+
+  it('saves controls and conditional link values together at stable paths before moving blocks', async () => {
+    const f = controlsFixture()
+    const { revision } = await (await f.call()).json()
+    const response = await f.call({
+      action: 'save',
+      revision,
+      changes: [
+        { path: 'layout.0.link.url', value: 'https://example.com' },
+        { path: 'layout.0.link.type', value: 'custom' },
+        { path: 'layout.0.addLink', value: true },
+        { path: 'layout.0.order', value: 'image-right' },
+        { path: 'layout.0.link.openNewTab', value: true },
+      ],
+      orders: [{ path: 'layout', ids: ['b', 'a'] }],
+    })
+    expect(response.status).toBe(200)
+    expect(f.payload.update.mock.calls[0][0].data.layout[1]).toMatchObject({
+      id: 'a',
+      order: 'image-right',
+      addLink: true,
+      link: { type: 'custom', url: 'https://example.com', openNewTab: true },
+    })
+  })
+
+  it.each([
+    ['layout.0.order', 'invalid'],
+    ['layout.0.addLink', 'true'],
+    ['layout.0.link.relation', { relationTo: 'users', value: 'new' }],
+  ])('rejects invalid values for %s', async (path, value) => {
+    const f = controlsFixture()
+    const { revision } = await (await f.call()).json()
+    const response = await f.call({
+      action: 'save',
+      revision,
+      changes: [{ path, value }],
+      orders: [],
+    })
+    expect(response.status).toBe(400)
+    expect(f.payload.update).not.toHaveBeenCalled()
+  })
+
+  it('checks relationship filters and access on the proposed document', async () => {
+    const f = controlsFixture()
+    const group = f.block.blocks[0].fields.at(-1).fields[0]
+    const relation = group.fields.find((field: any) => field.name === 'relation')
+    relation.filterOptions = vi.fn(({ siblingData }) => ({ title: { equals: siblingData.label } }))
+    const { revision } = await (await f.call()).json()
+    f.payload.find.mockResolvedValue({ docs: [] })
+    const response = await f.call({
+      action: 'save',
+      revision,
+      changes: [
+        { path: 'layout.0.link.label', value: 'Allowed title' },
+        { path: 'layout.0.link.relation', value: { relationTo: 'pages', value: 'new' } },
+      ],
+      orders: [],
+    })
+    expect(response.status).toBe(400)
+    expect(relation.filterOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ siblingData: expect.objectContaining({ label: 'Allowed title' }) }),
+    )
+    expect(f.payload.find).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        overrideAccess: false,
+        where: { and: [{ title: { equals: 'Allowed title' } }, { id: { equals: 'new' } }] },
+      }),
+    )
+    expect(f.payload.update).not.toHaveBeenCalled()
+  })
 })

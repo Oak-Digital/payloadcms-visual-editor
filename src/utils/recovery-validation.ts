@@ -13,7 +13,14 @@ const field = (value: unknown): boolean => {
   if (!record(value)) return false
   if (value.type === 'relationship')
     return text(value.collection) && safePath(value.layoutPath) && list(value.choices, row)
-  if (['text', 'textarea', 'upload', 'richText'].includes(value.type)) return true
+  if (
+    ['text', 'textarea', 'upload', 'richText', 'checkbox', 'number', 'email'].includes(value.type)
+  )
+    return true
+  if (['radio', 'select'].includes(value.type))
+    return list(value.options, (o) => record(o) && text(o.label) && text(o.value))
+  if (value.type === 'reference')
+    return list(value.choices, (o) => record(o) && text(o.label) && Object.hasOwn(o, 'value'))
   return (
     value.type === 'array' &&
     Array.isArray(value.value) &&

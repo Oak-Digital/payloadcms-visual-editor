@@ -4,7 +4,9 @@ import { uploadTargets } from './upload-fields.js'
 
 export type SourceMap = Record<
   string,
-  string | { type: 'richText' | 'relationship' } | { type: 'upload'; value: string | number | null }
+  | string
+  | { type: 'richText' | 'relationship' | 'control' }
+  | { type: 'upload'; value: string | number | null }
 >
 
 // =============================================================================
@@ -59,11 +61,13 @@ function addEditableFields({
   path,
   source,
   sourceMap,
+  controls,
 }: {
   fields: Field[]
   path: string
   source: unknown
   sourceMap: SourceMap
+  controls: boolean
 }): void {
   for (const field of fields) {
     if ('name' in field && ['id', 'blockType', 'blockName'].includes(field.name)) continue
@@ -81,6 +85,7 @@ function addEditableFields({
               fields: field.fields,
               path: appendPath(path, `${field.name}.${index}`),
               source: row,
+              controls,
               sourceMap,
             })
           })
@@ -97,6 +102,7 @@ function addEditableFields({
                 fields: block.fields,
                 path: appendPath(path, `${field.name}.${index}`),
                 source: row,
+                controls,
                 sourceMap,
               })
           })
@@ -108,6 +114,7 @@ function addEditableFields({
           fields: field.fields,
           path,
           source,
+          controls,
           sourceMap,
         })
         break
@@ -120,7 +127,8 @@ function addEditableFields({
         addEditableFields({
           fields: field.fields,
           path: nextPath,
-          source: nextSource,
+          source: controls ? (nextSource ?? {}) : nextSource,
+          controls,
           sourceMap,
         })
         break
@@ -133,6 +141,7 @@ function addEditableFields({
               fields: tab.fields,
               path: appendPath(path, tab.name),
               source: getNamedValue(source, tab.name),
+              controls,
               sourceMap,
             })
           } else {
@@ -140,6 +149,7 @@ function addEditableFields({
               fields: tab.fields,
               path,
               source,
+              controls,
               sourceMap,
             })
           }
@@ -147,7 +157,20 @@ function addEditableFields({
         break
       }
 
+      case 'checkbox':
+      case 'radio':
+      case 'select':
+      case 'number':
+      case 'email': {
+        if (controls && !('hasMany' in field && field.hasMany))
+          sourceMap[appendPath(path, field.name)] = { type: 'control' }
+        break
+      }
       case 'relationship': {
+        if (controls && !field.hasMany) {
+          sourceMap[appendPath(path, field.name)] = { type: 'control' }
+          break
+        }
         if (
           typeof field.custom?.visualEditorLayout === 'string' &&
           !field.hasMany &&
@@ -185,13 +208,14 @@ function addEditableFields({
  * @param document - The document object to extract values from
  * @returns Record mapping field paths to their string values
  */
-export function buildSourceMap(fields: Field[], document: unknown): SourceMap {
+export function buildSourceMap(fields: Field[], document: unknown, controls = false): SourceMap {
   const sourceMap: SourceMap = {}
 
   addEditableFields({
     fields,
     path: '',
     source: document,
+    controls,
     sourceMap,
   })
 

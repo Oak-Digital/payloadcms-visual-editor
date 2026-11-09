@@ -95,7 +95,8 @@ export function isSourceMap(value: unknown): value is SourceMap {
       typeof entry === 'string' ||
       (entry &&
         typeof entry === 'object' &&
-        (entry.type === 'richText' ||
+        (entry.type === 'control' ||
+          entry.type === 'richText' ||
           entry.type === 'relationship' ||
           (entry.type === 'upload' &&
             (entry.value === null ||

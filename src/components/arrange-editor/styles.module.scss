@@ -631,3 +631,24 @@
     min-height: 44px;
   }
 }
+
+.options {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.optionControl.optionControl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+
+  input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    accent-color: #ddd;
+  }
+}

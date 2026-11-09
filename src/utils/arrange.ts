@@ -21,7 +21,7 @@ export type ArrangeArrayField = {
   choices: { id: string; label: string }[]
   labels: Record<string, string>
 }
-export type ArrangeField =
+export type ArrangeField = { label?: string; hidden?: boolean; conditional?: boolean } & (
   | { type: 'richText' | 'text' | 'textarea' | 'upload'; value: unknown; schemaPath?: string }
   | {
       type: 'relationship'
@@ -30,7 +30,15 @@ export type ArrangeField =
       layoutPath: string
       choices: { id: string; label: string }[]
     }
+  | { type: 'checkbox' | 'number' | 'email'; value: unknown }
+  | {
+      type: 'radio' | 'select'
+      value: unknown
+      options: { label: string; value: string }[]
+    }
+  | { type: 'reference'; value: unknown; choices: { label: string; value: unknown }[] }
   | ArrangeArrayField
+)
 
 /** Retained rows come from the server, never from client-supplied content. */
 export function arrangeArrayRows(

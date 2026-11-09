@@ -1,3 +1,10 @@
+import {
+  blockControl,
+  fieldPresentation,
+  setBlockField,
+  validateBlockControl,
+} from '../utils/block-fields.js'
+import { checkRelationship } from '../utils/relationship-fields.js'
 import { validationErrors } from '../utils/validation-errors.js'
 import { publishedChanges } from '../utils/publish-review.js'
 import { createHash } from 'node:crypto'
@@ -38,7 +45,7 @@ export const createArrangeHandler =
       const body = await req.json?.()
       if (
         !body ||
-        !['publish', 'read', 'save', 'preview', 'review'].includes(body.action) ||
+        !['publish', 'read', 'save', 'preview', 'review', 'fields'].includes(body.action) ||
         typeof body.collection !== 'string' ||
         !['number', 'string'].includes(typeof body.id) ||
         !Array.isArray(body.paths) ||
@@ -102,7 +109,7 @@ export const createArrangeHandler =
       }
       const revision = createHash('sha256').update(JSON.stringify(latest)).digest('hex')
       await appendDraftBlocks(collection.fields, visible, body.orders, req, collections)
-      const sourceMap = buildSourceMap(collection.fields, visible)
+      const sourceMap = buildSourceMap(collection.fields, visible, true)
       const snapshot: ArrangeSnapshot = {
         fields: {},
         orders: {},
@@ -219,6 +226,8 @@ export const createArrangeHandler =
               })),
             }
           }
+          const control = await blockControl(resolved, visible, req)
+          if (control) snapshot.fields[path] = control
           if (type === 'richText') {
             assertSupportedRichText(resolved.field, resolved.value)
           }
@@ -231,6 +240,8 @@ export const createArrangeHandler =
               value: resolved.value ?? (type === 'upload' ? null : ''),
             }
           }
+          if (snapshot.fields[path])
+            Object.assign(snapshot.fields[path], fieldPresentation(resolved, visible, req, path))
         } catch {
           /* Unsupported or protected fields remain unavailable in this mode. */
         }
@@ -309,7 +320,9 @@ export const createArrangeHandler =
         throw new Error('Invalid pending changes')
       }
       // Lock the version that normal Payload writers retire, including admin autosaves.
-      for (const latestFlag of ['preview', 'review'].includes(body.action) ? [] : [false, true]) {
+      for (const latestFlag of ['preview', 'review', 'fields'].includes(body.action)
+        ? []
+        : [false, true]) {
         await req.payload.db.updateVersion({
           id: latest.id,
           collection: collection.slug,
@@ -319,7 +332,7 @@ export const createArrangeHandler =
       }
       const complete = await req.payload.findByID({
         ...options,
-        overrideAccess: !['preview', 'review'].includes(body.action),
+        overrideAccess: !['preview', 'review', 'fields'].includes(body.action),
       })
       await appendDraftBlocks(collection.fields, complete, body.orders, req, collections)
       const proposed = structuredClone(complete)
@@ -364,10 +377,16 @@ export const createArrangeHandler =
             throw new Error('Select an available saved layout')
         } else if (field.type === 'richText') {
           assertSupportedRichText(resolved.field, change.value)
-        } else if (field.type !== 'upload' && typeof change.value !== 'string') {
+        } else if (['checkbox', 'number', 'email', 'radio', 'select'].includes(field.type)) {
+          validateBlockControl(field, change.value)
+        } else if (
+          field.type !== 'upload' &&
+          field.type !== 'reference' &&
+          typeof change.value !== 'string'
+        ) {
           throw new Error('Text must be a string')
         }
-        setPath(proposed, change.path, change.value)
+        setBlockField(collection.fields, proposed, change.path, change.value)
         roots.add(change.path.split('.')[0])
       }
       // Validate field access and uploads at their original paths before moving rows.
@@ -379,6 +398,14 @@ export const createArrangeHandler =
           proposed,
           ['update'],
         )
+        if (snapshot.fields[change.path].type === 'reference') {
+          await checkRelationship(
+            resolveField(collection.fields, proposed, change.path)!,
+            change.value,
+            req,
+            proposed,
+          )
+        }
         if (snapshot.fields[change.path].type === 'upload') {
           const target = uploadTargets(collection.fields, proposed).get(change.path)
           if (!target) {
@@ -392,6 +419,22 @@ export const createArrangeHandler =
             body.id,
           )
         }
+      }
+      if (body.action === 'fields') {
+        const presentation = Object.fromEntries(
+          Object.keys(snapshot.fields).map((path) => [
+            path,
+            fieldPresentation(
+              resolveField(collection.fields, proposed, path)!,
+              proposed,
+              req,
+              path,
+            ),
+          ]),
+        )
+        await commitTransaction(req)
+        transaction = false
+        return Response.json({ presentation })
       }
       for (const change of body.changes as ArrangeChange[]) {
         const field = snapshot.fields[change.path]

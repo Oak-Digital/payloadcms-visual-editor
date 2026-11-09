@@ -58,3 +58,24 @@ it('validates shared nodes and every operation history entry', () => {
   ])
     expect(validSharedRecovery({ ...shared, ...patch })).toBe(false)
 })
+
+it('recovers scalar and reference controls and rejects malformed option descriptors', () => {
+  const p = page()
+  const fields = {
+    'layout.0.order': { type: 'radio', value: 'left', options: [{ value: 'left', label: 'Left' }] },
+    'layout.0.addLink': { type: 'checkbox', value: false },
+    'layout.0.link.relation': {
+      type: 'reference',
+      value: null,
+      choices: [{ label: 'Page', value: { relationTo: 'pages', value: '1' } }],
+    },
+  }
+  const recovery = {
+    ...p,
+    snapshot: { ...p.snapshot, fields },
+    changes: { 'layout.0.order': 'left', 'layout.0.addLink': true },
+  }
+  expect(validPageRecovery(recovery)).toBe(true)
+  fields['layout.0.order'].options = [null as never]
+  expect(validPageRecovery(recovery)).toBe(false)
+})

@@ -134,6 +134,9 @@ export function ArrangeEditor({
   onHome?: () => void
   panelContainer?: HTMLElement
 }) {
+  const [presentation, setPresentation] = useState<
+    Record<string, Record<string, { hidden?: boolean }>>
+  >({})
   const [previewEpoch, setPreviewEpoch] = useState(0)
   useEffect(() => {
     const rendered = () => setPreviewEpoch((value) => value + 1)
@@ -282,6 +285,7 @@ export function ArrangeEditor({
           ([path, field]) =>
             path.startsWith(`${selectedRow || blockPath}.`) &&
             field.type !== 'array' &&
+            !(presentation[selectedBlock!.key]?.[path]?.hidden ?? field.hidden) &&
             (Boolean(selectedRow) ||
               !Object.entries(selectedSession.snapshot.fields).some(
                 ([arrayPath, array]) => array.type === 'array' && path.startsWith(`${arrayPath}.`),
@@ -475,7 +479,11 @@ export function ArrangeEditor({
     onHome,
   ])
   const session = target && sessions[target.key]
-  const field = target && session?.snapshot.fields[target.path]
+  const selectedField = target && session?.snapshot.fields[target.path]
+  const field =
+    target && (presentation[target.key]?.[target.path]?.hidden ?? selectedField?.hidden)
+      ? undefined
+      : selectedField
   const value =
     target &&
     session &&
@@ -514,6 +522,47 @@ export function ArrangeEditor({
     },
     [apiRoute],
   )
+
+  useEffect(() => {
+    let cancelled = false
+    const timeout = window.setTimeout(async () => {
+      for (const [key, session] of Object.entries(sessions)) {
+        if (!Object.values(session.snapshot.fields).some((field) => field.conditional)) continue
+        if (!Object.keys(session.changes).length && !Object.keys(session.additions).length) {
+          if (!cancelled)
+            setPresentation((previous) => ({ ...previous, [key]: session.snapshot.fields }))
+          continue
+        }
+        try {
+          const result = await request(session.owner, {
+            action: 'fields',
+            revision: session.snapshot.revision,
+            paths: Object.keys(session.snapshot.fields),
+            orderPaths: Object.keys(session.snapshot.orders),
+            changes: Object.entries(session.changes).map(([path, value]) => ({ path, value })),
+            orders: Object.entries(session.orders).map(([path, ids]) => ({
+              path,
+              ids,
+              additions: session.additions[path] ?? [],
+            })),
+          })
+          if (!cancelled)
+            setPresentation((previous) => ({ ...previous, [key]: result.presentation }))
+        } catch (error) {
+          if (!cancelled)
+            setError(error instanceof Error ? error.message : 'Unable to update field visibility')
+        }
+      }
+    }, 150)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [sessions, request])
+
+  useEffect(() => {
+    if (target && presentation[target.key]?.[target.path]?.hidden) setTarget(undefined)
+  }, [presentation, target])
 
   async function openLayout() {
     if (!target || field?.type !== 'relationship' || typeof value !== 'string' || busy) return
@@ -1781,7 +1830,7 @@ export function ArrangeEditor({
     return success
   }
 
-  const selectedContent = field && field.type !== 'array' && target && (
+  const selectedContent = field && session && field.type !== 'array' && target && (
     <section
       aria-label="Selected content"
       className={inlineFields ? styles.inlineField : undefined}
@@ -1792,25 +1841,100 @@ export function ArrangeEditor({
       {!inlineFields && field.type !== 'relationship' && (
         <small className={styles.path}>{session && fieldLabel(target.path, session)}</small>
       )}
-      {(field.type === 'text' || field.type === 'textarea') && (
+      {(field.type === 'text' ||
+        field.type === 'textarea' ||
+        field.type === 'email' ||
+        field.type === 'number') && (
         <label>
-          {humanize(target.path.split('.').at(-1) || 'Text')}
+          {field.label || humanize(target.path.split('.').at(-1) || 'Text')}
           {field.type === 'textarea' ? (
             <AutoSizeTextarea
-              aria-label={humanize(target.path.split('.').at(-1) || 'Text')}
+              aria-label={field.label || humanize(target.path.split('.').at(-1) || 'Text')}
               disabled={busy || needsSync}
               onChange={(event) => stage(target, event.target.value)}
               value={typeof value === 'string' ? value : ''}
             />
           ) : (
             <input
-              aria-label={humanize(target.path.split('.').at(-1) || 'Text')}
-              type="text"
+              aria-label={field.label || humanize(target.path.split('.').at(-1) || 'Text')}
+              type={field.type === 'number' ? 'number' : field.type === 'email' ? 'email' : 'text'}
               disabled={busy || needsSync}
-              onChange={(event) => stage(target, event.target.value)}
-              value={typeof value === 'string' ? value : ''}
+              onChange={(event) =>
+                stage(
+                  target,
+                  field.type === 'number'
+                    ? event.target.value === ''
+                      ? null
+                      : event.target.valueAsNumber
+                    : event.target.value,
+                )
+              }
+              value={typeof value === 'string' || typeof value === 'number' ? value : ''}
             />
           )}
+        </label>
+      )}
+      {field.type === 'checkbox' && (
+        <label className={styles.optionControl}>
+          <input
+            type="checkbox"
+            checked={value === true}
+            disabled={busy || needsSync}
+            onChange={(event) => stage(target, event.target.checked)}
+          />
+          {field.label || humanize(target.path.split('.').at(-1) || 'Enabled')}
+        </label>
+      )}
+      {field.type === 'radio' && (
+        <fieldset className={styles.options} disabled={busy || needsSync}>
+          <legend>{field.label || humanize(target.path.split('.').at(-1) || 'Option')}</legend>
+          {field.options.map((option) => (
+            <label className={styles.optionControl} key={option.value}>
+              <input
+                type="radio"
+                name={`${fieldId}-${target.path}`}
+                checked={value === option.value}
+                onChange={() => stage(target, option.value)}
+              />
+              {option.label}
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {field.type === 'select' && (
+        <label>
+          {field.label || humanize(target.path.split('.').at(-1) || 'Option')}
+          <select
+            value={typeof value === 'string' ? value : ''}
+            disabled={busy || needsSync}
+            onChange={(event) => stage(target, event.target.value || null)}
+          >
+            <option value="">Select an option</option>
+            {field.options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {field.type === 'reference' && (
+        <label>
+          {field.label || humanize(target.path.split('.').at(-1) || 'Content')}
+          <select
+            value={value == null ? '' : JSON.stringify(value)}
+            disabled={busy || needsSync}
+            onChange={(event) =>
+              stage(target, event.target.value ? JSON.parse(event.target.value) : null)
+            }
+          >
+            <option value="">Select content</option>
+            {field.choices.map((choice) => (
+              <option key={JSON.stringify(choice.value)} value={JSON.stringify(choice.value)}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
         </label>
       )}
       {field.type === 'relationship' && (
@@ -2215,6 +2339,7 @@ export function ArrangeEditor({
                       {Object.entries(sessions).flatMap(([key, session]) =>
                         Object.entries(session.snapshot.fields).map(([path, field]) =>
                           field.type === 'array' &&
+                          !(presentation[key]?.[path]?.hidden ?? field.hidden) &&
                           !selectedRow &&
                           ((target?.key === key && target.path === path) ||
                             (!target &&
@@ -2244,25 +2369,40 @@ export function ArrangeEditor({
                         blockFields.length > 0 && (
                           <section aria-label="Block fields" className={styles.fieldList}>
                             {blockFields.map(([path, descriptor], index) => {
-                              const label = humanize(
-                                path
-                                  .slice((selectedRow || blockPath).length + 1)
-                                  .replace(/\.(\d+)\./g, (_, index) => ` ${Number(index) + 1} `)
-                                  .replaceAll('.', ' · '),
-                              )
+                              const relativePath = path.slice((selectedRow || blockPath).length + 1)
+                              const labelParts = relativePath.split('.')
+                              const leaf = labelParts.pop() || 'Content'
+                              const label = [
+                                ...labelParts.map((part) =>
+                                  /^\d+$/.test(part) ? String(Number(part) + 1) : humanize(part),
+                                ),
+                                descriptor.label || humanize(leaf),
+                              ].join(' · ')
                               const pendingValue = Object.hasOwn(selectedSession.changes, path)
                                 ? selectedSession.changes[path]
                                 : descriptor.value
                               const summary =
-                                descriptor.type === 'upload'
+                                descriptor.type === 'checkbox'
                                   ? pendingValue
-                                    ? 'Selected image'
-                                    : 'No image selected'
-                                  : descriptor.type === 'relationship'
-                                    ? descriptor.choices.find(
-                                        (choice) => choice.id === pendingValue,
-                                      )?.label || 'No layout selected'
-                                    : recoveryValue(pendingValue).replace(/\s+/g, ' ')
+                                    ? 'Yes'
+                                    : 'No'
+                                  : descriptor.type === 'radio' || descriptor.type === 'select'
+                                    ? descriptor.options.find(
+                                        (option) => option.value === pendingValue,
+                                      )?.label || 'No option selected'
+                                    : descriptor.type === 'reference'
+                                      ? descriptor.choices.find((choice) =>
+                                          same(choice.value, pendingValue),
+                                        )?.label || 'No content selected'
+                                      : descriptor.type === 'upload'
+                                        ? pendingValue
+                                          ? 'Selected image'
+                                          : 'No image selected'
+                                        : descriptor.type === 'relationship'
+                                          ? descriptor.choices.find(
+                                              (choice) => choice.id === pendingValue,
+                                            )?.label || 'No layout selected'
+                                          : recoveryValue(pendingValue).replace(/\s+/g, ' ')
                               const expanded = Boolean(inlineFields && target?.path === path)
                               const controlId = `${fieldId}-${index}`
                               return (
