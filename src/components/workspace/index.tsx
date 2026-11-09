@@ -1247,15 +1247,27 @@ function WorkspaceShell({
             <h2 id="navigation-title">Unsaved changes</h2>
             <p>Save your draft before switching pages, or discard the pending changes.</p>
             {navigationError && <p role="alert">{navigationError}</p>}
-            <button disabled={busy} onClick={() => void finishNavigation('save')} type="button">
-              {switching ? 'Switching…' : 'Save and switch'}
-            </button>
-            <button disabled={switching} onClick={() => setNavigation(undefined)} type="button">
-              Keep editing
-            </button>
-            <button disabled={busy} onClick={() => void finishNavigation('discard')} type="button">
-              Discard and switch
-            </button>
+            <div className={styles.confirmActions}>
+              <button
+                className={styles.confirmSave}
+                disabled={busy}
+                onClick={() => void finishNavigation('save')}
+                type="button"
+              >
+                {switching ? 'Switching…' : 'Save and switch'}
+              </button>
+              <button disabled={switching} onClick={() => setNavigation(undefined)} type="button">
+                Keep editing
+              </button>
+              <button
+                className={styles.confirmDiscard}
+                disabled={busy}
+                onClick={() => void finishNavigation('discard')}
+                type="button"
+              >
+                Discard and switch
+              </button>
+            </div>
           </section>
         </dialog>
       )}
