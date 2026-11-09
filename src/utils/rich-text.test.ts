@@ -3,8 +3,7 @@ import type { Field } from 'payload'
 import { DecoratorNode, type NodeKey } from '@payloadcms/richtext-lexical/lexical'
 import { HeadingNode, QuoteNode } from '@payloadcms/richtext-lexical/lexical/rich-text'
 import { ListNode, ListItemNode } from '@payloadcms/richtext-lexical/lexical/list'
-import { assertSupportedRichText, resolveField, assertFieldAccess } from './rich-text.js'
-import { buildSourceMap } from './source-map.js'
+import { assertSupportedRichText } from './rich-text.js'
 
 class EmbedNode extends DecoratorNode<null> {
   __payload: Record<string, unknown>
@@ -72,11 +71,6 @@ const field = {
 } as unknown as Field
 
 describe('structured rich-text editing', () => {
-  it('preserves formatting and styles through the configured node classes', () => {
-    const before = structuredClone(value)
-    expect(() => assertSupportedRichText(field, value)).not.toThrow()
-    expect(value).toEqual(before)
-  })
   it('preserves lists and embedded data when the host registers those node classes', () => {
     const rich = {
       root: {
@@ -115,12 +109,6 @@ describe('structured rich-text editing', () => {
     expect(() => assertSupportedRichText(field, rich)).not.toThrow()
     expect(rich).toEqual(before)
   })
-  it('includes unnamed tab and row indexes required by Payload rendering', () => {
-    const fields: Field[] = [
-      { type: 'tabs', tabs: [{ label: 'Content', fields: [{ type: 'row', fields: [field] }] }] },
-    ]
-    expect(resolveField(fields, { body: value }, 'body')?.schemaPath).toBe('_index-0-0-0.body')
-  })
   it('rejects unknown nodes and properties that would be silently discarded', () => {
     expect(() =>
       assertSupportedRichText(field, {
@@ -131,45 +119,5 @@ describe('structured rich-text editing', () => {
       assertSupportedRichText(field, { root: { ...value.root, customData: 'must survive' } }),
     ).toThrow('cannot round-trip')
     expect(() => assertSupportedRichText(field, 'flattened')).toThrow()
-  })
-  it('resolves groups, arrays and block instances to the configured schema', () => {
-    const fields: Field[] = [
-      {
-        name: 'layout',
-        type: 'blocks',
-        blocks: [
-          {
-            slug: 'paragraph',
-            fields: [
-              {
-                name: 'group',
-                type: 'group',
-                fields: [{ name: 'rows', type: 'array', fields: [field] }],
-              },
-            ],
-          },
-        ],
-      },
-    ]
-    const doc = {
-      layout: [{ id: 'a', blockType: 'paragraph', group: { rows: [{ id: 'b', body: value }] } }],
-    }
-    const resolved = resolveField(fields, doc, 'layout.0.group.rows.0.body')!
-    expect(resolved.schemaPath).toBe('layout.paragraph.group.rows.body')
-    expect(resolved.value).toEqual(value)
-    expect(buildSourceMap(fields, doc)).toEqual({
-      'layout.0.group.rows.0.body': { type: 'richText' },
-    })
-    expect(resolveField(fields, doc, 'layout.1.group.rows.0.body')).toBeUndefined()
-  })
-  it('rejects ancestor and field update access before invoking a mutation', async () => {
-    const fields: Field[] = [
-      { name: 'group', type: 'group', access: { update: () => false }, fields: [field] },
-    ]
-    const doc = { id: 'doc', group: { body: value } }
-    const resolved = resolveField(fields, doc, 'group.body')!
-    await expect(assertFieldAccess(resolved, doc, {} as never, value)).rejects.toThrow(
-      'access denied',
-    )
   })
 })

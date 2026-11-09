@@ -6,6 +6,7 @@ vi.mock('payload', () => ({
   commitTransaction: vi.fn(),
   killTransaction: vi.fn(),
 }))
+import { killTransaction } from 'payload'
 import { createRevisionHandler } from './revisionHandler.js'
 
 function fixture() {
@@ -88,19 +89,22 @@ function fixture() {
   }
   return { req, payload, call, heading, collection, version, revision, latest }
 }
-it('previews only authorized historical content without writing versions', async () => {
+it('previews without writes, rejects stale restoration and restores only the selected locale as a draft', async () => {
   const f = fixture()
   const response = await f.call()
   expect(response.status).toBe(200)
   expect(await response.json()).toMatchObject({ document: { title: 'Old' }, revision: f.revision })
   expect(f.payload.findVersionByID).toHaveBeenCalledWith(
-    expect.objectContaining({ overrideAccess: false, locale: 'da', fallbackLocale: false }),
+    expect.objectContaining({
+      overrideAccess: false,
+      locale: 'da',
+      fallbackLocale: false,
+    }),
   )
   expect(f.payload.update).not.toHaveBeenCalled()
   expect(f.payload.db.updateVersion).not.toHaveBeenCalled()
-})
-it('restores selected-locale fields as a new draft, clearing removed properties', async () => {
-  const f = fixture()
+  expect((await f.call({ action: 'restore', revision: 'stale' })).status).toBe(409)
+  expect(f.payload.update).not.toHaveBeenCalled()
   expect((await f.call({ action: 'restore', revision: f.revision })).status).toBe(200)
   expect(f.payload.update).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -120,36 +124,39 @@ it('restores selected-locale fields as a new draft, clearing removed properties'
   )
   expect(f.payload.db.updateVersion).toHaveBeenCalledTimes(2)
 })
-it('rejects stale restoration before any writes', async () => {
-  const f = fixture()
-  expect((await f.call({ action: 'restore', revision: 'stale' })).status).toBe(409)
-  expect(f.payload.update).not.toHaveBeenCalled()
-  expect(f.payload.db.updateVersion).not.toHaveBeenCalled()
-})
-it('rejects revisions from another document and denied version access', async () => {
-  const f = fixture()
-  f.version.parent = 'other'
-  expect((await f.call()).status).not.toBe(200)
-  f.payload.findVersionByID.mockRejectedValue(new Error('Version access denied'))
-  expect((await f.call()).status).not.toBe(200)
-  expect(f.payload.update).not.toHaveBeenCalled()
-})
-it('checks query-scoped update access and changed protected nested fields', async () => {
-  const f = fixture()
-  f.collection.access.update.mockReturnValue({ owner: { equals: 'other' } })
-  f.payload.find.mockResolvedValue({ docs: [] })
-  expect((await f.call()).status).not.toBe(200)
-  expect(f.payload.findVersionByID).not.toHaveBeenCalled()
-  f.collection.access.update.mockReturnValue(true)
-  f.heading.access = { update: () => false }
-  expect((await f.call({ action: 'restore', revision: f.revision })).status).not.toBe(200)
-  expect(f.payload.update).not.toHaveBeenCalled()
-})
-it('rejects anonymous users, disabled collections and invalid locales', async () => {
-  const f = fixture()
-  expect((await f.call({ locale: 'unconfigured' })).status).not.toBe(200)
-  expect((await f.call({ collection: 'other' })).status).toBe(403)
-  f.req.user = null
-  expect((await f.call()).status).toBe(401)
-  expect(f.payload.findByID).not.toHaveBeenCalled()
+
+it('refuses unauthorized history and restoration of protected fields', async () => {
+  for (const reason of [
+    'anonymous',
+    'collection',
+    'locale',
+    'other document',
+    'version access',
+    'query',
+    'field',
+  ]) {
+    vi.mocked(killTransaction).mockClear()
+    const f = fixture()
+    if (reason === 'anonymous') f.req.user = null
+    if (reason === 'other document') f.version.parent = 'other'
+    if (reason === 'version access')
+      f.payload.findVersionByID.mockRejectedValue(new Error('Denied'))
+    if (reason === 'query') {
+      f.collection.access.update.mockReturnValue({ owner: { equals: 'other' } })
+      f.payload.find.mockResolvedValue({ docs: [] })
+    }
+    if (reason === 'field') f.heading.access = { update: () => false }
+    const response = await f.call({
+      action: 'restore',
+      revision: f.revision,
+      ...(reason === 'collection' ? { collection: 'other' } : {}),
+      ...(reason === 'locale' ? { locale: 'unconfigured' } : {}),
+    })
+    expect(response.status, reason).toBe(
+      reason === 'anonymous' ? 401 : reason === 'collection' ? 403 : 400,
+    )
+    expect(f.payload.update).not.toHaveBeenCalled()
+    if (reason === 'field') expect(killTransaction).toHaveBeenCalled()
+    else expect(f.payload.db.updateVersion).not.toHaveBeenCalled()
+  }
 })

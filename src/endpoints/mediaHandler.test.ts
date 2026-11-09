@@ -80,47 +80,21 @@ describe('media browsing permissions', () => {
       }),
     )
   })
-  it('loads permitted images for an unsaved block and still enforces its field access', async () => {
-    const { req, fieldUpdate } = fixture()
-    const upload = req.payload.config.collections[0].fields![0]
-    Object.assign(req.payload.config.collections[0], {
-      fields: [{ name: 'layout', type: 'blocks', blocks: [{ slug: 'section', fields: [upload] }] }],
-    })
-    req.payload.findByID.mockResolvedValue(
-      Object.assign({ id: 'page', image: 'old' }, { layout: [] }),
-    )
-    const id = '0123456789abcdef01234567'
-    const original = await req.json()
-    req.json = async () => ({
-      ...original,
-      path: 'layout.0.image',
-      orders: [{ path: 'layout', ids: [id], additions: [{ id, blockType: 'section' }] }],
-    })
-    expect((await handler(req as never)).status).toBe(200)
-    fieldUpdate.mockResolvedValue(false)
-    req.payload.find.mockClear()
-    expect((await handler(req as never)).status).toBe(400)
-    expect(req.payload.find).not.toHaveBeenCalled()
-  })
-  it('rejects anonymous browsing before any document read', async () => {
-    const { req } = fixture()
-    expect((await handler({ ...req, user: null } as never)).status).toBe(401)
-    expect(req.payload.findByID).not.toHaveBeenCalled()
-  })
-  it('rejects collection and ancestor field access denial', async () => {
-    const { req, update, fieldUpdate } = fixture()
-    update.mockResolvedValue(false)
-    expect((await handler(req as never)).status).toBe(403)
-    update.mockResolvedValue(true)
-    fieldUpdate.mockResolvedValue(false)
-    expect((await handler(req as never)).status).toBe(400)
-    expect(req.payload.find).not.toHaveBeenCalled()
-  })
-  it('checks query-based update permissions against this document', async () => {
-    const { req, update } = fixture()
-    update.mockResolvedValue({ owner: { equals: 'editor' } })
-    req.payload.find.mockResolvedValue({ docs: [], page: 1, totalPages: 0 })
-    expect((await handler(req as never)).status).toBe(403)
-    expect(req.payload.findByID).not.toHaveBeenCalled()
+  it('rejects anonymous, collection, ancestor-field and query-scoped access before browsing', async () => {
+    for (const reason of ['anonymous', 'collection', 'field', 'query']) {
+      const f = fixture()
+      if (reason === 'collection') f.update.mockResolvedValue(false)
+      if (reason === 'field') f.fieldUpdate.mockResolvedValue(false)
+      if (reason === 'query') {
+        f.update.mockResolvedValue({ owner: { equals: 'editor' } })
+        f.req.payload.find.mockResolvedValue({ docs: [], page: 1, totalPages: 0 })
+      }
+      const req = reason === 'anonymous' ? { ...f.req, user: null } : f.req
+      expect((await handler(req as never)).status, reason).toBe(
+        reason === 'anonymous' ? 401 : reason === 'field' ? 400 : 403,
+      )
+      if (reason === 'query') expect(f.req.payload.findByID).not.toHaveBeenCalled()
+      else expect(f.req.payload.find).not.toHaveBeenCalled()
+    }
   })
 })

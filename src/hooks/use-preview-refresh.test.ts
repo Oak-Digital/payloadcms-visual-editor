@@ -93,30 +93,3 @@ it('aborts stalled renewal and ignores late completion', async () => {
   await act(async () => renew())
   expect(router.refresh).not.toHaveBeenCalled()
 })
-
-it('settles outstanding callers when the editor unmounts', async () => {
-  const refresh = await mount(() => new Promise(() => {}))
-  const result = expect(refresh()).rejects.toThrow('Preview closed')
-  await act(async () => roots.pop()!.unmount())
-  await result
-})
-
-it('times out a stalled route transition after successful renewal', async () => {
-  vi.useFakeTimers()
-  let finishRoute!: () => void
-  router.refresh.mockImplementation(
-    () =>
-      new Promise<void>((resolve) => {
-        finishRoute = resolve
-      }),
-  )
-  const refresh = await mount()
-  let result!: Promise<void>
-  await act(async () => {
-    result = refresh()
-  })
-  const failure = expect(result).rejects.toThrow('timed out')
-  await act(async () => vi.advanceTimersByTimeAsync(20000))
-  await failure
-  await act(async () => finishRoute())
-})

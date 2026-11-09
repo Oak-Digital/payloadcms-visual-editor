@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vitest'
 vi.mock('payload', () => ({
   initTransaction: vi.fn(async () => true),
   commitTransaction: vi.fn(),
@@ -83,146 +83,11 @@ function fixture(global = false) {
     } as never)
   return { call, update, cfg, protectedField, payload, getDoc: () => doc }
 }
-describe('shared-content editing', () => {
-  it('requires authentication and explicit opt-in', async () => {
-    const f = fixture()
-    expect((await f.call({}, null)).status).toBe(401)
-    expect((await f.call({ slug: 'users' })).status).toBe(403)
-  })
-  it('supports nested previews without writing and hides protected values', async () => {
-    const f = fixture(),
-      base = await (await f.call()).json()
-    const r = await f.call({
-      action: 'preview',
-      revision: base.revision,
-      operations: [{ type: 'set', path: 'items.0.children.0.label', value: 'Changed' }],
-    })
-    const out = await r.json()
-    expect(r.status).toBe(200)
-    expect(out.document.items[0].children[0].label).toBe('Changed')
-    expect(out.document.items[0].secret).toBeUndefined()
-    expect(f.update).not.toHaveBeenCalled()
-  })
-  it.each([false, true])(
-    'saves collections/globals with access checks and preserves unreadable siblings (%s)',
-    async (global) => {
-      const f = fixture(global),
-        base = await (await f.call()).json()
-      const r = await f.call({
-        action: 'save',
-        revision: base.revision,
-        operations: [{ type: 'set', path: 'items.0.label', value: 'Draft' }],
-      })
-      expect(r.status).toBe(200)
-      expect(f.getDoc().items[0].secret).toBe('keep')
-      expect(f.getDoc()._status).toBe('draft')
-      expect(f.update.mock.calls[0][0]).toMatchObject({
-        overrideAccess: false,
-        draft: true,
-        locale: 'en',
-      })
-    },
-  )
-  it('rejects stale revisions without writing', async () => {
-    const f = fixture()
-    const r = await f.call({ action: 'publish', revision: 'stale', operations: [] })
-    expect(r.status).toBe(409)
-    expect(f.update).not.toHaveBeenCalled()
-  })
-  it('rejects protected, unconfigured and prototype paths', async () => {
-    const f = fixture(),
-      base = await (await f.call()).json()
-    for (const path of ['items.0.secret', '_status', 'items.__proto__.label']) {
-      expect(
-        (
-          await f.call({
-            action: 'save',
-            revision: base.revision,
-            operations: [{ type: 'set', path, value: 'bad' }],
-          })
-        ).status,
-      ).toBe(400)
-    }
-    expect(f.update).not.toHaveBeenCalled()
-  })
-  it('validates locales and scalar types', async () => {
-    const f = fixture(),
-      base = await (await f.call()).json()
-    expect((await f.call({ locale: 'invalid' })).status).toBe(400)
-    expect(
-      (
-        await f.call({
-          action: 'preview',
-          revision: base.revision,
-          operations: [{ type: 'set', path: 'title', value: { bad: true } }],
-        })
-      ).status,
-    ).toBe(400)
-  })
-  it('adds, moves and removes rows by identity', async () => {
-    const f = fixture(),
-      base = await (await f.call()).json()
-    const id = '0123456789abcdef01234567'
-    const r = await f.call({
-      action: 'save',
-      revision: base.revision,
-      operations: [
-        { type: 'add', path: 'items', id },
-        { type: 'set', path: 'items.1.label', value: 'New' },
-        { type: 'move', path: 'items', id, to: 0 },
-        { type: 'remove', path: 'items', id: 'a' },
-      ],
-    })
-    expect(r.status).toBe(200)
-    expect(f.getDoc().items.map((r: any) => r.label)).toEqual(['New'])
-  })
-  it('rejects exceeding schema row limits', async () => {
-    const f = fixture(),
-      base = await (await f.call()).json()
-    expect(
-      (
-        await f.call({
-          action: 'save',
-          revision: base.revision,
-          operations: [1, 2, 3].map((i) => ({
-            type: 'add',
-            path: 'items',
-            id: String(i).padStart(24, '0'),
-          })),
-        })
-      ).status,
-    ).toBe(400)
-    expect(f.update).not.toHaveBeenCalled()
-  })
-})
-
-it('enforces relationship filters before accepting draft changes', async () => {
-  const f = fixture()
-  f.cfg.fields[1].fields.push({
-    name: 'related',
-    type: 'relationship',
-    relationTo: 'pages',
-    filterOptions: { tenant: { equals: 'allowed' } },
-  })
-  f.payload.find = vi.fn(async () => ({ docs: [] }))
-  const base = await (await f.call()).json()
-  const response = await f.call({
-    action: 'save',
-    revision: base.revision,
-    operations: [{ type: 'set', path: 'items.0.related', value: 'outside-tenant' }],
-  })
-  expect(response.status).toBe(400)
-  expect(f.payload.find.mock.calls[0][0].where).toEqual({
-    and: [{ tenant: { equals: 'allowed' } }, { id: { equals: 'outside-tenant' } }],
-  })
-  expect(f.update).not.toHaveBeenCalled()
-})
-
-it.each([false, true])(
-  'reviews shared content against published without writes; global=%s',
-  async (global) => {
+it('previews, saves and reviews shared collections and globals while preserving protected siblings', async () => {
+  for (const global of [false, true]) {
     const f = fixture(global)
-    const published = { title: 'Public menu', items: [], _status: 'published' }
+    const published = structuredClone(f.getDoc())
+    published.items.forEach((row: any) => delete row.secret)
     f.payload.find = vi.fn(async () => ({ docs: [published] }))
     if (global) {
       const read = f.payload.findGlobal.getMockImplementation()
@@ -230,37 +95,125 @@ it.each([false, true])(
         options.draft === false ? published : read(options),
       )
     }
+    const base = await (await f.call()).json()
+    const operations = [{ type: 'set', path: 'items.0.children.0.label', value: 'Draft child' }]
+    const preview = await f.call({ action: 'preview', revision: base.revision, operations })
+    expect(preview.status).toBe(200)
+    const out = await preview.json()
+    expect(out.document.items[0].children[0].label).toBe('Draft child')
+    expect(out.document.items[0].secret).toBeUndefined()
+    expect(f.update).not.toHaveBeenCalled()
+
+    expect((await f.call({ action: 'save', revision: base.revision, operations })).status).toBe(200)
+    expect(f.getDoc().items[0].secret).toBe('keep')
+    expect(f.getDoc()._status).toBe('draft')
+    expect(f.update.mock.calls[0][0]).toMatchObject({
+      overrideAccess: false,
+      draft: true,
+      locale: 'en',
+    })
+    f.update.mockClear()
     const { revision } = await (await f.call()).json()
-    const response = await f.call({
+    const review = await f.call({
       action: 'review',
       revision,
-      operations: [{ type: 'set', path: 'title', value: 'Proposed menu' }],
+      operations: [{ type: 'set', path: 'title', value: 'Pending title' }],
     })
-    expect(response.status).toBe(200)
-    const result = await response.json()
+    expect(review.status).toBe(200)
+    const result = await review.json()
     expect(result).toMatchObject({
       revision,
       published: true,
       changes: expect.arrayContaining([
-        { path: 'title', before: 'Public menu', after: 'Proposed menu' },
+        { path: 'title', before: 'Menu', after: 'Pending title' },
+        { path: 'items.0.children.0.label', before: 'Child', after: 'Draft child' },
       ]),
     })
     expect(JSON.stringify(result)).not.toContain('keep')
+    expect(global ? f.payload.findGlobal : f.payload.find).toHaveBeenCalledWith(
+      expect.objectContaining({ draft: false, overrideAccess: false, locale: 'en' }),
+    )
     expect(f.update).not.toHaveBeenCalled()
-  },
-)
+  }
+})
 
-it('enforces query-constrained update access for shared review', async () => {
+it('rejects unauthorized, stale and malformed shared changes without writing', async () => {
   const f = fixture()
-  f.cfg.access.update = () => ({ owner: { equals: 'other' } })
+  expect((await f.call({}, null)).status).toBe(401)
+  expect((await f.call({ slug: 'users' })).status).toBe(403)
+  expect((await f.call({ locale: 'invalid' })).status).toBe(400)
+  expect((await f.call({ action: 'publish', revision: 'stale', operations: [] })).status).toBe(409)
+  const { revision } = await (await f.call()).json()
+  for (const operation of [
+    { type: 'set', path: 'items.0.secret', value: 'bad' },
+    { type: 'set', path: '_status', value: 'published' },
+    { type: 'set', path: 'items.__proto__.label', value: 'bad' },
+    { type: 'set', path: 'title', value: { bad: true } },
+  ]) {
+    expect(
+      (await f.call({ action: 'save', revision, operations: [operation] })).status,
+      operation.path,
+    ).toBe(400)
+  }
+  f.cfg.fields[1].fields.push({
+    name: 'related',
+    type: 'relationship',
+    relationTo: 'pages',
+    filterOptions: { tenant: { equals: 'allowed' } },
+  })
   f.payload.find = vi.fn(async () => ({ docs: [] }))
-  expect((await f.call({ action: 'review', revision: 'irrelevant' })).status).toBe(400)
+  expect(
+    (
+      await f.call({
+        action: 'save',
+        revision,
+        operations: [{ type: 'set', path: 'items.0.related', value: 'outside-tenant' }],
+      })
+    ).status,
+  ).toBe(400)
+  expect(f.payload.find.mock.calls[0][0].where).toEqual({
+    and: [{ tenant: { equals: 'allowed' } }, { id: { equals: 'outside-tenant' } }],
+  })
+  f.cfg.access.update = () => ({ owner: { equals: 'other' } })
+  expect((await f.call({ action: 'review', revision })).status).toBe(400)
   expect(f.update).not.toHaveBeenCalled()
 })
 
-it('returns individual field errors for failed shared content publication', async () => {
+it('edits shared rows by identity, enforces row limits and returns publication field errors', async () => {
   const f = fixture()
+  const base = await (await f.call()).json()
+  const id = '0123456789abcdef01234567'
+  expect(
+    (
+      await f.call({
+        action: 'save',
+        revision: base.revision,
+        operations: [
+          { type: 'add', path: 'items', id },
+          { type: 'set', path: 'items.1.label', value: 'New' },
+          { type: 'move', path: 'items', id, to: 0 },
+          { type: 'remove', path: 'items', id: 'a' },
+        ],
+      })
+    ).status,
+  ).toBe(200)
+  expect(f.getDoc().items.map((row: any) => row.label)).toEqual(['New'])
+  f.update.mockClear()
   const { revision } = await (await f.call()).json()
+  expect(
+    (
+      await f.call({
+        action: 'save',
+        revision,
+        operations: [1, 2, 3].map((i) => ({
+          type: 'add',
+          path: 'items',
+          id: String(i).padStart(24, '0'),
+        })),
+      })
+    ).status,
+  ).toBe(400)
+  expect(f.update).not.toHaveBeenCalled()
   const fieldErrors = [{ path: 'title', label: 'Title', message: 'This field is required.' }]
   f.update.mockRejectedValueOnce(
     Object.assign(new Error('Long validation summary'), {

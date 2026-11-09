@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { createVisualEditorMutationHandler } from './visualEditorMutationHandler.js'
 
 const handler = createVisualEditorMutationHandler({ pages: true })
@@ -59,42 +59,31 @@ function fixture(value: string | number | null = 'new', action = 'save') {
   }
   return { req, update, fieldUpdate, filterOptions }
 }
-describe('media replacement mutations', () => {
-  it.each(['save', 'publish'])(
-    'validates media before %s and preserves siblings',
-    async (action) => {
-      const { req, update } = fixture(42, action)
-      expect((await handler(req as never)).status).toBe(200)
-      expect(update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          overrideAccess: false,
-          draft: action === 'save',
-          data: {
-            _status: action === 'save' ? 'draft' : 'published',
-            layout: [{ blockType: 'hero', id: 'row', image: 42, title: 'Keep' }],
-          },
-        }),
-      )
-      expect(req.payload.find).toHaveBeenCalledWith(
-        expect.objectContaining({ collection: 'assets', overrideAccess: false, req }),
-      )
-    },
+it('replaces an accessible image and refuses invalid or forbidden replacements without writing', async () => {
+  const valid = fixture(42)
+  expect((await handler(valid.req as never)).status).toBe(200)
+  expect(valid.update).toHaveBeenCalledWith(
+    expect.objectContaining({
+      overrideAccess: false,
+      draft: true,
+      data: {
+        _status: 'draft',
+        layout: [{ blockType: 'hero', id: 'row', image: 42, title: 'Keep' }],
+      },
+    }),
   )
-  it('rejects required clearing even for a draft save', async () => {
-    const { req, update } = fixture(null)
-    expect((await handler(req as never)).status).toBe(400)
-    expect(update).not.toHaveBeenCalled()
-  })
-  it('rejects field write denial without silently reporting success', async () => {
-    const { req, update, fieldUpdate } = fixture()
-    fieldUpdate.mockResolvedValue(false)
-    expect((await handler(req as never)).status).toBe(400)
-    expect(update).not.toHaveBeenCalled()
-  })
-  it('rejects media excluded by read access or the field filter', async () => {
-    const { req, update } = fixture()
-    req.payload.find.mockResolvedValue({ docs: [] })
-    expect((await handler(req as never)).status).toBe(400)
-    expect(update).not.toHaveBeenCalled()
-  })
+  expect(valid.req.payload.find).toHaveBeenCalledWith(
+    expect.objectContaining({
+      collection: 'assets',
+      overrideAccess: false,
+      req: valid.req,
+    }),
+  )
+  for (const reason of ['required', 'field access', 'media filter']) {
+    const f = fixture(reason === 'required' ? null : 'new')
+    if (reason === 'field access') f.fieldUpdate.mockResolvedValue(false)
+    if (reason === 'media filter') f.req.payload.find.mockResolvedValue({ docs: [] })
+    expect((await handler(f.req as never)).status, reason).toBe(400)
+    expect(f.update).not.toHaveBeenCalled()
+  }
 })

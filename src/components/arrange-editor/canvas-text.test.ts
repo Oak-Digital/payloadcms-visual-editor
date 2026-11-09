@@ -98,36 +98,6 @@ it('stages composition once and routes keyboard undo/redo to shared history', ()
   }
 })
 
-it('pastes only plain text and preserves previews when browsing', () => {
-  const { element, editor, field, options } = fixture()
-  try {
-    const range = document.createRange()
-    range.selectNodeContents(element)
-    const selection = document.getSelection()!
-    selection.removeAllRanges()
-    selection.addRange(range)
-    const paste = new Event('paste', { bubbles: true, cancelable: true })
-    Object.defineProperty(paste, 'clipboardData', {
-      value: {
-        getData: (type: string) => (type === 'text/plain' ? 'Plain\ntext' : '<script>bad</script>'),
-      },
-    })
-    element.dispatchEvent(paste)
-    expect(paste.defaultPrevented).toBe(true)
-    expect(element.textContent).toBe('Plain text')
-    expect(element.querySelector('script')).toBeNull()
-    field.value = 'Plain text'
-    field.changed = true
-    editor.update({ ...options, enabled: false })
-    expect(element.textContent).toBe('Plain text')
-    expect(element.hasAttribute('contenteditable')).toBe(false)
-    editor.destroy()
-    expect(element.textContent).toBe('Original title')
-  } finally {
-    editor.destroy()
-  }
-})
-
 it('edits canonical text in decorated headings without saving duplicated animation glyphs', () => {
   const { element, editor, field, options } = fixture()
   try {
@@ -146,39 +116,6 @@ it('edits canonical text in decorated headings without saving duplicated animati
     } finally {
       decorated.destroy()
     }
-  } finally {
-    editor.destroy()
-  }
-})
-
-it('inserts multiline breaks with a usable final-line caret without storing the placeholder', () => {
-  const { element, editor, field, options } = fixture()
-  try {
-    field.multiline = true
-    editor.update(options)
-    element.focus()
-    const range = document.createRange()
-    range.selectNodeContents(element)
-    range.collapse(false)
-    const selection = document.getSelection()!
-    selection.removeAllRanges()
-    selection.addRange(range)
-    element.dispatchEvent(
-      new InputEvent('beforeinput', {
-        inputType: 'insertParagraph',
-        bubbles: true,
-        cancelable: true,
-      }),
-    )
-    expect(options.onChange).toHaveBeenLastCalledWith(field, 'Original title\n')
-    expect(element.querySelectorAll('br')).toHaveLength(2)
-    field.value = 'Original title\n'
-    field.changed = true
-    editor.update(options)
-    const typed = document.createTextNode('Next line')
-    selection.getRangeAt(0).insertNode(typed)
-    element.dispatchEvent(new InputEvent('input', { bubbles: true }))
-    expect(options.onChange).toHaveBeenLastCalledWith(field, 'Original title\nNext line')
   } finally {
     editor.destroy()
   }

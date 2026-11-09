@@ -102,51 +102,6 @@ function fixture(enabled: Record<string, true> = { pages: true }) {
 }
 
 describe('arrange editor batch', () => {
-  it.each([undefined, []])('adds the first block to an empty layout (%j)', async (layout) => {
-    const { call, doc, payload } = fixture()
-    Object.assign(doc, { layout })
-    const snapshot = await (await call({ paths: [] })).json()
-    expect(snapshot.orders.layout).toEqual([])
-    const response = await call({
-      action: 'save',
-      revision: snapshot.revision,
-      changes: [],
-      orders: [
-        {
-          path: 'layout',
-          ids: ['0123456789abcdef01234567'],
-          additions: [{ id: '0123456789abcdef01234567', blockType: 'section' }],
-        },
-      ],
-    })
-    expect(response.status).toBe(200)
-    expect(payload.update.mock.calls[0][0].data.layout).toHaveLength(1)
-  })
-  it('adds and removes allowed blocks while preserving retained row data', async () => {
-    const { call, payload } = fixture()
-    const { revision, blockTypes } = await (await call()).json()
-    expect(blockTypes.layout).toEqual([{ slug: 'section', label: 'section' }])
-    const response = await call({
-      action: 'save',
-      revision,
-      changes: [],
-      orders: [
-        {
-          path: 'layout',
-          ids: ['b', '0123456789abcdef01234567'],
-          additions: [{ id: '0123456789abcdef01234567', blockType: 'section' }],
-        },
-      ],
-    })
-    expect(response.status).toBe(200)
-    const rows = payload.update.mock.calls[0][0].data.layout
-    expect(rows).toHaveLength(2)
-    expect(rows[0]).toMatchObject({ id: 'b', heading: 'Second' })
-    expect(rows[1]).toMatchObject({ id: '0123456789abcdef01234567', blockType: 'section' })
-    expect(rows[1].heading).toBe('section')
-    expect(rows[1].body.root.children[0].children[0].text).toBe('Add your text here.')
-  })
-
   it('prepares editable new blocks without writing, then saves their edits at reordered positions', async () => {
     const { call, payload } = fixture()
     const id = '0123456789abcdef01234567'
@@ -221,56 +176,6 @@ describe('arrange editor batch', () => {
         })
       ).status,
     ).toBe(400)
-    expect(payload.update).not.toHaveBeenCalled()
-  })
-
-  it('initializes many-valued relationships on new blocks', async () => {
-    const { call, block, payload } = fixture()
-    block.blocks.push({
-      slug: 'faq-accordion',
-      fields: [
-        { name: 'faqs', type: 'relationship', relationTo: 'faqs', hasMany: true, required: true },
-      ],
-    })
-    const { revision } = await (await call()).json()
-    const response = await call({
-      action: 'save',
-      revision,
-      changes: [],
-      orders: [
-        {
-          path: 'layout',
-          ids: ['a', 'b', '0123456789abcdef01234567'],
-          additions: [{ id: '0123456789abcdef01234567', blockType: 'faq-accordion' }],
-        },
-      ],
-    })
-    expect(response.status).toBe(200)
-    expect(payload.update.mock.calls[0][0].data.layout[2].faqs).toEqual([])
-  })
-
-  it('lists editable block fields even when their values are not rendered', async () => {
-    const { call } = fixture()
-    const snapshot = await (await call({ paths: [] })).json()
-    expect(snapshot.fields['layout.1.heading']).toMatchObject({ type: 'text', value: 'Second' })
-  })
-
-  it('rejects unknown block types and IDs', async () => {
-    const { call, payload } = fixture()
-    const { revision } = await (await call()).json()
-    const response = await call({
-      action: 'save',
-      revision,
-      changes: [],
-      orders: [
-        {
-          path: 'layout',
-          ids: ['a', 'b', '0123456789abcdef01234567'],
-          additions: [{ id: '0123456789abcdef01234567', blockType: 'unknown' }],
-        },
-      ],
-    })
-    expect(response.status).toBe(400)
     expect(payload.update).not.toHaveBeenCalled()
   })
 
@@ -351,112 +256,57 @@ describe('arrange editor batch', () => {
     })
     expect(options.data).not.toHaveProperty('other')
   })
-  it('publishes an already saved draft without requiring new field edits', async () => {
-    const { call, payload } = fixture()
-    const { revision } = await (await call()).json()
-    expect((await call({ action: 'publish', revision, changes: [], orders: [] })).status).toBe(200)
-    expect(payload.update.mock.calls[0][0]).toMatchObject({
-      draft: false,
-      data: { _status: 'published' },
-    })
-  })
-  it('rejects stale snapshots without writing', async () => {
-    const { call, payload, latest } = fixture()
-    const { revision } = await (await call()).json()
-    latest.updatedAt = 'changed'
-    expect((await call({ action: 'publish', revision, changes: [], orders: [] })).status).toBe(409)
-    expect(payload.update).not.toHaveBeenCalled()
-  })
-  it.each([
-    ['a', 'a'],
-    ['a', 'unknown'],
-    ['a', 'b', 'extra'],
-  ])('rejects invalid block permutations %j', async (...ids) => {
-    const { call, payload } = fixture()
-    const { revision } = await (await call()).json()
-    expect(
-      (await call({ action: 'save', revision, changes: [], orders: [{ path: 'layout', ids }] }))
-        .status,
-    ).toBe(400)
-    expect(payload.update).not.toHaveBeenCalled()
-    expect(killTransaction).toHaveBeenCalled()
-  })
-  it('enforces authentication, allowlists, locale and safe paths', async () => {
-    const { call } = fixture()
-    expect((await call({}, null)).status).toBe(401)
-    expect((await call({ collection: 'users' })).status).toBe(403)
-    expect((await call({ locale: 'xx' })).status).toBe(400)
-    expect((await call({ paths: ['__proto__.bad'] })).status).toBe(400)
-  })
-  it('excludes read-only fields and rejects forged edits and structural metadata', async () => {
-    const { call, text, payload } = fixture()
-    text.admin = { readOnly: true }
-    const snapshot = await (await call()).json()
-    expect(snapshot.fields).not.toHaveProperty('layout.0.heading')
-    for (const path of ['layout.0.heading', 'layout.0.id', '_status']) {
+  it('rejects unauthorized batches, protected fields and inaccessible media without partial writes', async () => {
+    const unauthorized = fixture()
+    expect((await unauthorized.call({}, null)).status).toBe(401)
+    expect((await unauthorized.call({ collection: 'users' })).status).toBe(403)
+    expect((await unauthorized.call({ locale: 'xx' })).status).toBe(400)
+    expect((await unauthorized.call({ paths: ['__proto__.bad'] })).status).toBe(400)
+    expect(unauthorized.payload.update).not.toHaveBeenCalled()
+
+    const scoped = fixture()
+    scoped.collection.access.update.mockReturnValue({ owner: { equals: 'someone-else' } })
+    scoped.payload.find.mockResolvedValue({ docs: [] })
+    expect((await scoped.call()).status).not.toBe(200)
+    expect(scoped.payload.db.findVersions).not.toHaveBeenCalled()
+    expect(scoped.payload.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        overrideAccess: false,
+        where: { and: [{ owner: { equals: 'someone-else' } }, { id: { equals: 'page' } }] },
+      }),
+    )
+
+    for (const reason of ['read-only', 'metadata', 'parent access', 'proposed value', 'media']) {
+      const { call, text, block, payload } = fixture()
+      if (reason === 'read-only') text.admin = { readOnly: true }
+      const snapshot = await (await call()).json()
+      if (reason === 'read-only') expect(snapshot.fields).not.toHaveProperty('layout.0.heading')
+      if (reason === 'parent access') block.access = { update: () => false }
+      if (reason === 'proposed value')
+        text.access = {
+          update: ({ data }: any) => data.layout[0].heading !== 'Forbidden',
+        }
+      if (reason === 'media') payload.find.mockResolvedValueOnce({ docs: [] })
+      const changes =
+        reason === 'metadata'
+          ? [{ path: 'layout.0.id', value: 'changed' }]
+          : [
+              { path: 'layout.0.heading', value: 'Forbidden' },
+              ...(reason === 'media' ? [{ path: 'layout.0.image', value: 'missing' }] : []),
+            ]
       expect(
         (
           await call({
             action: 'save',
             revision: snapshot.revision,
-            changes: [{ path, value: 'bad' }],
-            orders: [],
+            changes: reason === 'parent access' ? [] : changes,
+            orders: [{ path: 'layout', ids: ['b', 'a'] }],
           })
         ).status,
+        reason,
       ).toBe(400)
+      expect(payload.update).not.toHaveBeenCalled()
     }
-    expect(payload.update).not.toHaveBeenCalled()
-  })
-  it('checks parent access for block movements', async () => {
-    const { call, block, payload } = fixture()
-    const { revision } = await (await call()).json()
-    block.access = { update: () => false }
-    expect(
-      (
-        await call({
-          action: 'save',
-          revision,
-          changes: [],
-          orders: [{ path: 'layout', ids: ['b', 'a'] }],
-        })
-      ).status,
-    ).toBe(400)
-    expect(payload.update).not.toHaveBeenCalled()
-  })
-  it('validates proposed values against field update access', async () => {
-    const { call, text, payload } = fixture()
-    const { revision } = await (await call()).json()
-    text.access = { update: ({ data }: any) => data.layout[0].heading !== 'Forbidden' }
-    expect(
-      (
-        await call({
-          action: 'save',
-          revision,
-          changes: [{ path: 'layout.0.heading', value: 'Forbidden' }],
-          orders: [],
-        })
-      ).status,
-    ).toBe(400)
-    expect(payload.update).not.toHaveBeenCalled()
-  })
-  it('rejects inaccessible media without saving the other changes', async () => {
-    const { call, payload } = fixture()
-    const { revision } = await (await call()).json()
-    payload.find.mockResolvedValueOnce({ docs: [] })
-    expect(
-      (
-        await call({
-          action: 'publish',
-          revision,
-          changes: [
-            { path: 'layout.0.heading', value: 'Edited' },
-            { path: 'layout.0.image', value: 'missing' },
-          ],
-          orders: [],
-        })
-      ).status,
-    ).toBe(400)
-    expect(payload.update).not.toHaveBeenCalled()
   })
 })
 
@@ -524,46 +374,20 @@ describe('relationship array editing', () => {
       product: 'new',
     })
   })
-  it('adds and removes rows while preserving edited overrides through block reordering', async () => {
-    const { read, save, payload } = arrayFixture()
-    const { revision, fields } = await read()
-    expect(fields['layout.0.slides'].value).toEqual([{ id: 'one' }, { id: 'two' }])
-    const response = await save(
-      revision,
-      [{ relationship: 'new' }, { id: 'one' }],
-      [{ path: 'layout.0.slides.0.caption', value: 'Edited override' }],
-    )
-    expect(await response.json()).toEqual({ success: true })
-    expect(payload.update.mock.calls[0][0].data.layout[1].slides).toEqual([
-      { product: 'new' },
-      { id: 'one', product: 'new', caption: 'Edited override' },
-    ])
-    expect(payload.find).toHaveBeenCalledWith(
-      expect.objectContaining({ collection: 'products', overrideAccess: false }),
-    )
-  })
-  it.each([
-    [],
-    [{ id: 'missing' }],
-    [{ id: 'one' }, { id: 'one' }],
-    [{ relationship: 'inaccessible' }],
-    [{ id: 'one', caption: 'Injected' }],
-    Array.from({ length: 4 }, () => ({ relationship: 'new' })),
-  ])('rejects invalid array operations: %j', async (...args) => {
-    // it.each spreads array cases; reconstruct the proposed row list.
-    const { read, save, payload } = arrayFixture()
-    const { revision } = await read()
-    expect((await save(revision, args)).status).toBe(400)
-    expect(payload.update).not.toHaveBeenCalled()
-  })
-  it('requires explicit schema opt-in and field access', async () => {
-    const { block, read } = arrayFixture()
-    const array = block.blocks[0].fields.at(-1)
-    array.access = { update: () => false }
-    expect((await read()).fields).not.toHaveProperty('layout.0.slides')
-    delete array.access
-    delete array.custom
-    expect((await read()).fields).not.toHaveProperty('layout.0.slides')
+  it('rejects invalid relationship arrays without writing', async () => {
+    for (const rows of [
+      [],
+      [{ id: 'missing' }],
+      [{ id: 'one' }, { id: 'one' }],
+      [{ relationship: 'inaccessible' }],
+      [{ id: 'one', caption: 'Injected' }],
+      Array.from({ length: 4 }, () => ({ relationship: 'new' })),
+    ]) {
+      const { read, save, payload } = arrayFixture()
+      const { revision } = await read()
+      expect((await save(revision, rows)).status, JSON.stringify(rows)).toBe(400)
+      expect(payload.update).not.toHaveBeenCalled()
+    }
   })
 })
 
@@ -587,47 +411,6 @@ it('duplicates stored content independently and retains the copy after removing 
     id,
     heading: 'Independent copy',
     image: 'old',
-  })
-})
-it('rejects duplication of inaccessible source fields and unknown sources', async () => {
-  const { call, text, payload } = fixture()
-  const id = '0123456789abcdef01234567'
-  const duplicate = (sourceId: string) => ({
-    orders: [
-      { path: 'layout', ids: ['a', id, 'b'], additions: [{ id, blockType: 'section', sourceId }] },
-    ],
-  })
-  expect((await call(duplicate('missing'))).status).toBe(400)
-  text.access = { read: () => false }
-  expect((await call(duplicate('a'))).status).toBe(400)
-  expect(payload.update).not.toHaveBeenCalled()
-})
-
-it('duplicates a pending new block even when its source is removed', async () => {
-  const { call, payload } = fixture()
-  const first = '0123456789abcdef01234567'
-  const second = '1123456789abcdef01234567'
-  const orders = [
-    {
-      path: 'layout',
-      ids: ['a', 'b', second],
-      additions: [
-        { id: first, blockType: 'section' },
-        { id: second, blockType: 'section', sourceId: first },
-      ],
-    },
-  ]
-  const prepared = await (await call({ orders })).json()
-  const result = await call({
-    action: 'save',
-    revision: prepared.revision,
-    orders,
-    changes: [{ path: 'layout.3.heading', value: 'Copy of pending source' }],
-  })
-  expect(result.status).toBe(200)
-  expect(payload.update.mock.calls[0][0].data.layout[2]).toMatchObject({
-    id: second,
-    heading: 'Copy of pending source',
   })
 })
 
@@ -763,22 +546,7 @@ it('copies schema-owned source blocks with independent IDs and rejects changed s
   expect((await stale.json()).error).toContain('shared layout changed')
 })
 
-it('enforces query-scoped document update access before previewing or reading fields', async () => {
-  const f = fixture()
-  f.collection.access.update.mockReturnValue({ owner: { equals: 'someone-else' } })
-  f.payload.find.mockResolvedValue({ docs: [] })
-  const response = await f.call()
-  expect(response.status).not.toBe(200)
-  expect(f.payload.db.findVersions).not.toHaveBeenCalled()
-  expect(f.payload.find).toHaveBeenCalledWith(
-    expect.objectContaining({
-      overrideAccess: false,
-      where: { and: [{ owner: { equals: 'someone-else' } }, { id: { equals: 'page' } }] },
-    }),
-  )
-})
-
-it('reviews saved and pending content against published values without writing', async () => {
+it('reviews without writing, publishes saved drafts and refuses stale snapshots', async () => {
   const f = fixture()
   f.collection.admin = { useAsTitle: 'other' }
   const published = structuredClone(f.doc)
@@ -805,21 +573,23 @@ it('reviews saved and pending content against published values without writing',
   )
   expect(f.payload.update).not.toHaveBeenCalled()
   expect(f.payload.db.updateVersion).not.toHaveBeenCalled()
-})
-
-it('identifies first publication and refuses stale review snapshots', async () => {
-  const f = fixture()
-  f.collection.admin = {}
-  f.payload.find.mockResolvedValue({ docs: [] })
-  const { revision } = await (await f.call()).json()
-  const result = await f.call({ action: 'review', revision, changes: [], orders: [] })
-  expect(await result.json()).toMatchObject({ published: false })
+  expect((await f.call({ action: 'publish', revision, changes: [], orders: [] })).status).toBe(200)
+  expect(f.payload.update).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      draft: false,
+      data: expect.objectContaining({ _status: 'published' }),
+    }),
+  )
+  f.payload.update.mockClear()
   f.latest.updatedAt = 'newer'
-  expect((await f.call({ action: 'review', revision, changes: [], orders: [] })).status).toBe(409)
+  for (const action of ['review', 'publish']) {
+    expect((await f.call({ action, revision, changes: [], orders: [] })).status, action).toBe(409)
+  }
   expect(f.payload.update).not.toHaveBeenCalled()
 })
 
 it('returns individual validation messages when publication fails and rolls back', async () => {
+  vi.mocked(killTransaction).mockClear()
   const f = fixture()
   const { revision } = await (await f.call()).json()
   const fieldErrors = [

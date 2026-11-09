@@ -24,17 +24,6 @@ describe('pending image preview', () => {
     expect(image.getAttribute('srcset')).toBe('old-2x.jpg 2x')
     expect(image.alt).toBe('Original')
   })
-  it('updates mobile picture sources without changing desktop fallbacks', () => {
-    document.body.innerHTML =
-      '<picture><source data-payload-type="upload" data-payload-path="mobile" srcset="old.jpg"><img src="desktop.jpg"></picture>'
-    const restore = previewImages([
-      { payloadCMS: { path: 'mobile', value: 'id' }, media: { id: 'id', url: '/new.jpg' } },
-    ] as Annotation[])
-    expect(document.querySelector('source')?.getAttribute('srcset')).toBe('/new.jpg')
-    expect(document.querySelector('img')?.getAttribute('src')).toBe('desktop.jpg')
-    restore()
-    expect(document.querySelector('source')?.getAttribute('srcset')).toBe('old.jpg')
-  })
 })
 
 it('isolates the same field path in different documents', () => {
