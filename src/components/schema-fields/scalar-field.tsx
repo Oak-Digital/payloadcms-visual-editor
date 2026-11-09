@@ -3,6 +3,7 @@
 import { useId } from 'react'
 
 import { AutoSizeTextarea } from '../auto-size-textarea/index.js'
+import { MultiSelect } from './multi-select.js'
 import styles from './styles.module.scss'
 
 export const scalarFieldTypes = [
@@ -47,7 +48,18 @@ export function ScalarField({
       </label>
     )
   }
-  if (type === 'radio' || hasMany) {
+  if (hasMany) {
+    return (
+      <MultiSelect
+        disabled={disabled}
+        label={label}
+        onChange={onChange}
+        options={options}
+        value={value}
+      />
+    )
+  }
+  if (type === 'radio') {
     return (
       <fieldset className={styles.choices} disabled={disabled}>
         <legend>{label}</legend>
@@ -55,26 +67,10 @@ export function ScalarField({
           <label className={styles.choice} key={option.value}>
             <input
               aria-label={option.label}
-              checked={
-                hasMany
-                  ? Array.isArray(value) && value.includes(option.value)
-                  : value === option.value
-              }
+              checked={value === option.value}
               name={name}
-              onChange={(e) =>
-                onChange(
-                  hasMany
-                    ? options
-                        .filter((o) =>
-                          o.value === option.value
-                            ? e.target.checked
-                            : Array.isArray(value) && value.includes(o.value),
-                        )
-                        .map((o) => o.value)
-                    : option.value,
-                )
-              }
-              type={hasMany ? 'checkbox' : 'radio'}
+              onChange={() => onChange(option.value)}
+              type="radio"
             />
             {option.label}
           </label>
@@ -82,6 +78,7 @@ export function ScalarField({
       </fieldset>
     )
   }
+
   return (
     <label className={styles.control}>
       <span>{label}</span>

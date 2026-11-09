@@ -643,11 +643,15 @@ it('shows compact schema groups and navigates nested items without mixing blocks
     expect(panel.querySelector('[aria-label="Press"]')).toBeTruthy()
     expect(input('Heading').value).toBe('Intro')
     expect(panel.textContent).not.toContain('Has Autoplay')
-    expect(panel.querySelector('input[type="checkbox"]')?.getAttribute('name')).toBeTruthy()
-    const checks = panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
-    await act(async () => checks[1].click())
-    expect(checks[0].checked).toBe(true)
-    expect(checks[1].checked).toBe(true)
+    const select = panel.querySelector<HTMLButtonElement>('[role="combobox"]')!
+    expect(select.textContent).toContain('Forbes')
+    await act(async () => select.click())
+    const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((o) =>
+      o.textContent?.includes('DR'),
+    )!
+    await act(async () => option.click())
+    expect(select.textContent).toContain('Forbes, DR')
+    await act(async () => select.click())
     await click('Back')
     await click('Edit DNA process')
     expect(panel.querySelectorAll('input[type="text"]')).toHaveLength(0)
@@ -683,9 +687,7 @@ it('shows compact schema groups and navigates nested items without mixing blocks
     await click('Back')
     await click('Back')
     await click('Edit DNA introduction')
-    expect(
-      [...panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].map((c) => c.checked),
-    ).toEqual([true, true])
+    expect(panel.querySelector('[role="combobox"]')?.textContent).toContain('Forbes, DR')
     expect(
       fetch.mock.calls.every(([, init]) => JSON.parse(String(init?.body)).action === 'read'),
     ).toBe(true)

@@ -237,3 +237,71 @@ it('reviews earlier saved shared drafts and retries only documents that did not 
     fetcher.mockRestore()
   }
 })
+
+it('closes a multi-select on Escape before navigating out of shared content', async () => {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  const onClose = vi.fn()
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+    Promise.resolve(
+      Response.json({
+        revision: 'one',
+        drafts: true,
+        document: { choices: ['one'] },
+        layout: [{ path: 'choices', label: 'Choices', type: 'select' }],
+        nodes: [
+          {
+            path: 'choices',
+            label: 'Choices',
+            type: 'select',
+            hasMany: true,
+            value: ['one'],
+            options: [{ label: 'One', value: 'one' }],
+          },
+        ],
+      }),
+    ),
+  )
+  try {
+    await act(() =>
+      Promise.resolve(
+        root.render(
+          createElement(SharedContentEditor, {
+            target: { slug: 'settings', global: true, label: 'Settings' },
+            apiRoute: '/api',
+            onClose,
+            onCollapse: vi.fn(),
+            onPreview: vi.fn(),
+            onSaved: vi.fn(),
+            onStateChange: vi.fn(),
+            onOpen: vi.fn(),
+            enabledSources: [],
+          }),
+        ),
+      ),
+    )
+    const trigger = container.querySelector<HTMLButtonElement>('[role="combobox"]')!
+    await act(() => Promise.resolve(trigger.click()))
+    await act(() =>
+      Promise.resolve(
+        document.activeElement!.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        ),
+      ),
+    )
+    expect(document.querySelector('[role="listbox"]')).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(trigger)
+    await act(() =>
+      Promise.resolve(
+        trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+      ),
+    )
+    expect(onClose).toHaveBeenCalledOnce()
+  } finally {
+    await act(() => Promise.resolve(root.unmount()))
+    container.remove()
+    fetcher.mockRestore()
+  }
+})

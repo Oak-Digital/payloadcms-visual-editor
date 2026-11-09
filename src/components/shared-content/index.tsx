@@ -291,6 +291,7 @@ export function SharedContentEditor({
     if (hidden) return
     const handler = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if ((event.target as Element | null)?.closest?.('[data-editor-dropdown-open]')) return
         event.preventDefault()
         event.stopImmediatePropagation()
         back()
