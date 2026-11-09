@@ -1,0 +1,111 @@
+.fields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  container-type: inline-size;
+}
+.field {
+  min-width: 0;
+}
+.section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 14px;
+  border-top: 1px solid #383838;
+}
+.section h3 {
+  margin: 0;
+  font: inherit;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  text-align: left;
+}
+.item > span:first-child {
+  min-width: 0;
+}
+.item strong {
+  display: block;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.item small {
+  display: block;
+  margin-top: 4px;
+}
+.tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tabs button[aria-pressed='true'] {
+  background: #414141;
+  border-color: #888;
+}
+.control {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12px;
+}
+.control > span {
+  color: #bdbdbd;
+}
+.choices {
+  display: grid;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.choices legend {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #bdbdbd;
+}
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.choice input[type='checkbox'],
+.choice input[type='radio'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.section summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+details.section[open] > summary {
+  margin-bottom: 14px;
+}
+details.section > div,
+details.section > section {
+  margin-top: 12px;
+}

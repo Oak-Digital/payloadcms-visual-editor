@@ -771,3 +771,54 @@ describe('block controls and conditional fields', () => {
     expect(f.payload.update).not.toHaveBeenCalled()
   })
 })
+
+it('keeps different block schemas isolated and saves multi-select edits at original paths after reordering', async () => {
+  const f = fixture()
+  f.block.blocks.push({
+    slug: 'intro',
+    fields: [
+      { type: 'collapsible', label: 'Statement', fields: [{ name: 'heading', type: 'text' }] },
+      {
+        type: 'group',
+        name: 'press',
+        fields: [
+          { name: 'publications', type: 'select', hasMany: true, options: ['forbes', 'dr'] },
+        ],
+      },
+    ],
+  })
+  Object.assign(f.doc.layout[1], { blockType: 'intro', press: { publications: ['forbes'] } })
+  const read = await (await f.call()).json()
+  expect(read.fields['layout.1.press.publications']).toMatchObject({
+    hasMany: true,
+    value: ['forbes'],
+  })
+  expect(read.fields['layout.1.body']).toBeUndefined()
+  expect(read.fields['layout.1.image']).toBeUndefined()
+  const orders = [{ path: 'layout', ids: ['b', 'a'] }]
+  const changes = [{ path: 'layout.1.press.publications', value: ['dr', 'forbes'] }]
+  for (const value of [['unknown'], 'dr', ['dr', 'dr']]) {
+    expect(
+      (
+        await f.call({
+          action: 'save',
+          revision: read.revision,
+          orders,
+          changes: [{ ...changes[0], value }],
+        })
+      ).status,
+    ).toBe(400)
+  }
+  expect(f.payload.update).not.toHaveBeenCalled()
+  const saved = await f.call({ action: 'save', revision: read.revision, orders, changes })
+  expect(saved.status).toBe(200)
+  expect(f.payload.update.mock.calls[0][0].data.layout[0]).toMatchObject({
+    id: 'b',
+    blockType: 'intro',
+    press: { publications: ['dr', 'forbes'] },
+  })
+  expect(f.payload.update.mock.calls[0][0].data.layout[1]).toMatchObject({
+    id: 'a',
+    heading: 'First',
+  })
+})

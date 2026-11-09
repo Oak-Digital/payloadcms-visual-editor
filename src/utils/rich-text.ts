@@ -6,6 +6,10 @@ import { isDeepStrictEqual } from 'node:util'
 
 export type RichTextValue = { root: { type: string; children: unknown[]; [key: string]: unknown } }
 
+export const emptyRichText = (): RichTextValue => ({
+  root: { type: 'root', children: [], format: '', indent: 0, version: 1, direction: null },
+})
+
 export function isRichText(value: unknown): value is RichTextValue {
   if (!value || typeof value !== 'object' || !('root' in value)) return false
   const root = value.root

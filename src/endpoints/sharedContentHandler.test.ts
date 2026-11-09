@@ -225,3 +225,48 @@ it('edits shared rows by identity, enforces row limits and returns publication f
   expect(response.status).toBe(400)
   expect(await response.json()).toMatchObject({ fieldErrors })
 })
+
+it('uses schema sections and validated multi-selects in collections and globals', async () => {
+  for (const global of [false, true]) {
+    const f = fixture(global)
+    f.cfg.fields[0] = {
+      type: 'collapsible',
+      label: 'Content',
+      fields: [f.cfg.fields[0], { name: 'private', type: 'text' }],
+    }
+    f.cfg.fields[1].fields.push({
+      name: 'channels',
+      type: 'select',
+      hasMany: true,
+      options: ['web', 'print'],
+    })
+    const read = await (await f.call()).json()
+    expect(read.layout[0]).toMatchObject({
+      type: 'collapsible',
+      label: 'Content',
+      children: [{ path: 'title' }],
+    })
+    expect(JSON.stringify(read.layout)).not.toContain('private')
+    const operation = { type: 'set', path: 'items.0.channels', value: ['web', 'print'] }
+    const preview = await (
+      await f.call({ action: 'preview', revision: read.revision, operations: [operation] })
+    ).json()
+    expect(preview.document.items[0].channels).toEqual(['web', 'print'])
+    expect(f.update).not.toHaveBeenCalled()
+    for (const value of [['unknown'], 'web', ['web', 'web']]) {
+      expect(
+        (
+          await f.call({
+            action: 'save',
+            revision: read.revision,
+            operations: [{ ...operation, value }],
+          })
+        ).status,
+      ).toBe(400)
+    }
+    expect(
+      (await f.call({ action: 'save', revision: read.revision, operations: [operation] })).status,
+    ).toBe(200)
+    expect(f.getDoc().items[0].channels).toEqual(['web', 'print'])
+  }
+})

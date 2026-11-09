@@ -50,10 +50,11 @@ export async function blockControl(
       type: field.type,
       value: value ?? (field.type === 'checkbox' ? false : field.type === 'email' ? '' : null),
     }
-  if ((field.type === 'radio' || field.type === 'select') && !('hasMany' in field && field.hasMany))
+  if (field.type === 'radio' || field.type === 'select')
     return {
       type: field.type,
-      value: value ?? null,
+      hasMany: 'hasMany' in field && field.hasMany === true,
+      value: value ?? ('hasMany' in field && field.hasMany ? [] : null),
       options: field.options.map((option) =>
         typeof option === 'string'
           ? { label: option, value: option }
@@ -113,8 +114,20 @@ export function validateBlockControl(field: ArrangeField, value: unknown) {
     if (value !== null && (typeof value !== 'number' || !Number.isFinite(value)))
       throw new Error('Invalid number')
   } else if (field.type === 'radio' || field.type === 'select') {
-    if (value !== null && !field.options.some((option) => option.value === value))
-      throw new Error('Invalid option')
+    validateSelectValue(field.options, value, field.hasMany)
   } else if (field.type === 'email' && typeof value !== 'string')
     throw new Error('Text must be a string')
+}
+
+export function validateSelectValue(options: { value: string }[], value: unknown, hasMany = false) {
+  if (hasMany) {
+    if (
+      !Array.isArray(value) ||
+      new Set(value).size !== value.length ||
+      value.some((item) => !options.some((option) => option.value === item))
+    )
+      throw new Error('Invalid options')
+  } else if (value !== null && !options.some((option) => option.value === value)) {
+    throw new Error('Invalid option')
+  }
 }

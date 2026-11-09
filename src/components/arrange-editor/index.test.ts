@@ -27,6 +27,26 @@ it('separates rearranging from editing and locates the selected block after movi
     return new Response(
       JSON.stringify({
         revision: 'revision',
+        layout: [
+          {
+            path: 'layout',
+            type: 'blocks',
+            label: 'Layout',
+            children: added
+              ? [
+                  {
+                    path: 'layout.2',
+                    type: 'item',
+                    label: 'Section',
+                    children: [
+                      { path: 'layout.2.heading', type: 'text', label: 'Heading' },
+                      { path: 'layout.2.image', type: 'upload', label: 'Image' },
+                    ],
+                  },
+                ]
+              : [],
+          },
+        ],
         fields: added
           ? {
               'layout.2.heading': { type: 'text', value: 'Section' },
@@ -94,9 +114,7 @@ it('separates rearranging from editing and locates the selected block after movi
     expect(document.querySelector('[data-draft-block] img')?.getAttribute('src')).toContain(
       'data:image/svg+xml',
     )
-    const headingField = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.startsWith('Heading'),
-    )!
+    const headingField = document.querySelector<HTMLElement>('[data-draft-block] h2')!
     await act(async () => headingField.click())
     const input = container.querySelector('input')!
     await act(async () => {
@@ -508,3 +526,173 @@ it.each([
     }
   },
 )
+
+it('shows compact schema groups and navigates nested items without mixing blocks or losing edits', async () => {
+  const { buildFieldLayout } = await import('../../utils/field-layout.js')
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  vi.stubGlobal('matchMedia', () => ({ matches: true }))
+  document.body.innerHTML =
+    '<main data-payload-block-list="layout"><section data-payload-block-id="a"></section><section data-payload-block-id="b"></section></main><div id="editor"></div><div id="panel"></div>'
+  for (const section of document.querySelectorAll('section')) section.scrollIntoView = vi.fn()
+  const root = createRoot(document.getElementById('editor')!)
+  const panel = document.getElementById('panel')!
+  const snapshot = {
+    revision: 'revision',
+    fields: {
+      'layout.0.heading': { type: 'text', value: 'Intro' },
+      'layout.0.publications': {
+        type: 'select',
+        hasMany: true,
+        value: ['forbes'],
+        options: [
+          { label: 'Forbes', value: 'forbes' },
+          { label: 'DR', value: 'dr' },
+        ],
+      },
+      'layout.1.stages.0.heading': { type: 'text', value: 'Design' },
+      'layout.1.stages.0.details.0.label': { type: 'text', value: 'Material' },
+      'layout.1.hasAutoplay': { type: 'checkbox', value: true },
+    },
+    orders: {
+      layout: [
+        { id: 'a', label: 'DNA introduction' },
+        { id: 'b', label: 'DNA process' },
+      ],
+    },
+  }
+  const schema: any = [
+    {
+      name: 'layout',
+      type: 'blocks',
+      blocks: [
+        {
+          slug: 'intro',
+          fields: [
+            {
+              type: 'collapsible',
+              label: 'Statement',
+              fields: [{ name: 'heading', type: 'text' }],
+            },
+            {
+              type: 'collapsible',
+              label: 'Press',
+              fields: [{ name: 'publications', type: 'select' }],
+            },
+          ],
+        },
+        {
+          slug: 'process',
+          fields: [
+            {
+              name: 'stages',
+              type: 'array',
+              fields: [
+                { name: 'heading', type: 'text' },
+                { name: 'details', type: 'array', fields: [{ name: 'label', type: 'text' }] },
+              ],
+            },
+            { name: 'hasAutoplay', type: 'checkbox' },
+          ],
+        },
+      ],
+    },
+  ]
+  const layout = buildFieldLayout(
+    schema,
+    {
+      layout: [
+        { id: 'a', blockType: 'intro' },
+        {
+          id: 'b',
+          blockType: 'process',
+          stages: [
+            { id: 'stage', heading: 'Design', details: [{ id: 'detail', label: 'Material' }] },
+          ],
+        },
+      ],
+    },
+    snapshot.fields,
+  )
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(async () => new Response(JSON.stringify({ ...snapshot, layout })))
+  const click = async (label: string) => {
+    const button = [...panel.querySelectorAll('button')].find(
+      (b) => b.getAttribute('aria-label') === label || b.textContent === label,
+    )!
+    expect(button, label).toBeTruthy()
+    await act(async () => button.click())
+  }
+  const input = (label: string) =>
+    panel.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ArrangeEditor, {
+          active: true,
+          adminRoute: '/admin',
+          apiRoute: '/api',
+          documentInfo: { id: 'page', collection: 'pages', hasDrafts: true },
+          panelContainer: panel,
+          onClose: vi.fn(),
+        }),
+      ),
+    )
+    await click('Edit DNA introduction')
+    expect(panel.querySelector('[aria-label="Statement"]')).toBeTruthy()
+    expect(panel.querySelector('[aria-label="Press"]')).toBeTruthy()
+    expect(input('Heading').value).toBe('Intro')
+    expect(panel.textContent).not.toContain('Has Autoplay')
+    expect(panel.querySelector('input[type="checkbox"]')?.getAttribute('name')).toBeTruthy()
+    const checks = panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
+    await act(async () => checks[1].click())
+    expect(checks[0].checked).toBe(true)
+    expect(checks[1].checked).toBe(true)
+    await click('Back')
+    await click('Edit DNA process')
+    expect(panel.querySelectorAll('input[type="text"]')).toHaveLength(0)
+    await act(async () =>
+      panel.querySelector<HTMLButtonElement>('[data-layout-path="layout.1.stages"]')!.click(),
+    )
+    expect(panel.textContent).toContain('Design')
+    await act(async () =>
+      panel.querySelector<HTMLButtonElement>('[data-layout-path="layout.1.stages.0"]')!.click(),
+    )
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        input('Heading'),
+        'New design',
+      )
+      input('Heading').dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () =>
+      panel
+        .querySelector<HTMLButtonElement>('[data-layout-path="layout.1.stages.0.details"]')!
+        .click(),
+    )
+    await act(async () =>
+      panel
+        .querySelector<HTMLButtonElement>('[data-layout-path="layout.1.stages.0.details.0"]')!
+        .click(),
+    )
+    expect(input('Label').value).toBe('Material')
+    await click('Back')
+    await click('Back')
+    expect(input('Heading').value).toBe('New design')
+    await click('Back')
+    await click('Back')
+    await click('Back')
+    await click('Edit DNA introduction')
+    expect(
+      [...panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].map((c) => c.checked),
+    ).toEqual([true, true])
+    expect(
+      fetch.mock.calls.every(([, init]) => JSON.parse(String(init?.body)).action === 'read'),
+    ).toBe(true)
+  } finally {
+    await act(async () => root.unmount())
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  }
+})

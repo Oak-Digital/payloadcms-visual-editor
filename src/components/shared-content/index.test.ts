@@ -17,6 +17,7 @@ it('retains edits on collapse and failed saves, and freezes fields during persis
     drafts: true,
     status: 'published',
     document: { flag },
+    layout: [{ path: 'flag', label: 'Enabled', type: 'checkbox' }],
     nodes: [{ path: 'flag', label: 'Enabled', type: 'checkbox', value: flag }],
   })
   const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
@@ -93,6 +94,7 @@ it.each([false, true])('recovers shared edits after remount; conflict=%s', async
     drafts: true,
     status: 'published',
     document: { flag },
+    layout: [{ path: 'flag', label: 'Enabled', type: 'checkbox' }],
     nodes: [{ path: 'flag', label: 'Enabled', type: 'checkbox', value: flag }],
   })
   const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {

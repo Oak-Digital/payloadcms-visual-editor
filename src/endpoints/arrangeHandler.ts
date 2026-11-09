@@ -1,3 +1,4 @@
+import { buildFieldLayout } from '../utils/field-layout.js'
 import {
   blockControl,
   fieldPresentation,
@@ -27,7 +28,12 @@ import {
   safePath,
   setPath,
 } from '../utils/arrange.js'
-import { assertFieldAccess, assertSupportedRichText, resolveField } from '../utils/rich-text.js'
+import {
+  assertFieldAccess,
+  assertSupportedRichText,
+  emptyRichText,
+  resolveField,
+} from '../utils/rich-text.js'
 import { appendDraftBlocks } from '../utils/draft-blocks.js'
 import { layoutUsages } from '../utils/layout-references.js'
 import { populatePreview } from '../utils/populate-preview.js'
@@ -229,7 +235,7 @@ export const createArrangeHandler =
           const control = await blockControl(resolved, visible, req)
           if (control) snapshot.fields[path] = control
           if (type === 'richText') {
-            assertSupportedRichText(resolved.field, resolved.value)
+            assertSupportedRichText(resolved.field, resolved.value ?? emptyRichText())
           }
           if (type === 'text' || type === 'textarea' || type === 'upload' || type === 'richText') {
             snapshot.fields[path] = {
@@ -237,7 +243,9 @@ export const createArrangeHandler =
               ...(type === 'richText'
                 ? { schemaPath: `collection.${collection.slug}.${resolved.schemaPath}` }
                 : {}),
-              value: resolved.value ?? (type === 'upload' ? null : ''),
+              value:
+                resolved.value ??
+                (type === 'upload' ? null : type === 'richText' ? emptyRichText() : ''),
             }
           }
           if (snapshot.fields[path])
@@ -276,6 +284,7 @@ export const createArrangeHandler =
         }
       }
       if (body.action === 'read') {
+        snapshot.layout = buildFieldLayout(collection.fields, visible, snapshot.fields)
         const usage = await layoutUsages(req, collections, collection.slug, body.id)
         await commitTransaction(req)
         transaction = false

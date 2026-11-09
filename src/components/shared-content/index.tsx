@@ -18,7 +18,9 @@ import {
 import { EditorRequestError } from '../../utils/editor-error.js'
 import { PublishReview, type PublishReviewItem } from '../publish-review/index.js'
 import { EditorIcon } from '../workspace/icons.js'
-import { AutoSizeTextarea } from '../auto-size-textarea/index.js'
+import { SchemaFields } from '../schema-fields/index.js'
+import { ScalarField } from '../schema-fields/scalar-field.js'
+import { findFieldLayout } from '../../utils/field-layout.js'
 import styles from './styles.module.scss'
 
 type Session = {
@@ -103,10 +105,6 @@ export function SharedContentEditor({
     current?.row && node?.rows
       ? `${current.path}.${node.rows.findIndex((r) => r.id === current.row)}`
       : current?.path
-  const selectedNodes = current?.row
-    ? node?.rows?.find((r) => r.id === current.row)?.children
-    : node?.children
-  const nodes = current ? (selectedNodes ?? []) : (session?.snapshot.nodes ?? [])
   const dirty = Object.values(sessions).filter((s) => s.operations.length)
   useEffect(() => {
     onStateChange(dirty.length > 0 || Object.keys(recoveries).length > 0, busy)
@@ -553,45 +551,16 @@ export function SharedContentEditor({
         )
       }
       return (
-        <label className={styles.field} key={n.path}>
-          <span>{n.label}</span>
-          {n.type === 'checkbox' ? (
-            <input
-              type="checkbox"
-              checked={Boolean(value(n))}
-              onChange={(e) => setValue(n, e.target.checked)}
-            />
-          ) : n.options ? (
-            <select value={String(value(n) ?? '')} onChange={(e) => setValue(n, e.target.value)}>
-              <option value="">Select…</option>
-              {n.options.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          ) : n.type === 'textarea' ? (
-            <AutoSizeTextarea
-              value={String(value(n) ?? '')}
-              onChange={(e) => setValue(n, e.target.value)}
-            />
-          ) : (
-            <input
-              type={n.type === 'number' ? 'number' : n.type === 'email' ? 'email' : 'text'}
-              value={String(value(n) ?? '')}
-              onChange={(e) =>
-                setValue(
-                  n,
-                  n.type === 'number'
-                    ? e.target.value === ''
-                      ? null
-                      : Number(e.target.value)
-                    : e.target.value,
-                )
-              }
-            />
-          )}
-        </label>
+        <ScalarField
+          key={n.path}
+          label={n.label}
+          type={n.type}
+          value={value(n)}
+          options={n.options}
+          hasMany={n.hasMany}
+          disabled={saving}
+          onChange={(value) => setValue(n, value)}
+        />
       )
     })
   return (
@@ -849,7 +818,22 @@ export function SharedContentEditor({
           </>
         ) : (
           <>
-            {fields(nodes)}
+            {session && (
+              <SchemaFields
+                nodes={
+                  focusPath
+                    ? (findFieldLayout(session.snapshot.layout ?? [], focusPath)?.children ?? [])
+                    : (session.snapshot.layout ?? [])
+                }
+                visible={(node) => Boolean(find(session.snapshot.nodes, node.path))}
+                onOpen={(node) => setLayers((l) => [...l, { path: node.path, label: node.label }])}
+                renderCollection={(node) => fields([find(session.snapshot.nodes, node.path)!])}
+                renderField={(node) => {
+                  const field = find(session.snapshot.nodes, node.path)
+                  return field ? fields([field]) : null
+                }}
+              />
+            )}
             {current?.row && node?.rows && (
               <button
                 className={styles.danger}

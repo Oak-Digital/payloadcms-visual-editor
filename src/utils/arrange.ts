@@ -1,3 +1,5 @@
+import type { FieldLayout } from './field-layout.js'
+
 export type LayoutSource = {
   collection: string
   id: string
@@ -33,6 +35,7 @@ export type ArrangeField = { label?: string; hidden?: boolean; conditional?: boo
   | { type: 'checkbox' | 'number' | 'email'; value: unknown }
   | {
       type: 'radio' | 'select'
+      hasMany?: boolean
       value: unknown
       options: { label: string; value: string }[]
     }
@@ -71,6 +74,7 @@ export function arrangeArrayRows(
   })
 }
 export type ArrangeSnapshot = {
+  layout?: FieldLayout[]
   label?: string
   usage?: {
     usages: { collection: string; id: string; label: string; draft: boolean; published: boolean }[]

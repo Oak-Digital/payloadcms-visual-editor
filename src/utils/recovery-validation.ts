@@ -9,6 +9,17 @@ const dictionary = (value: unknown, valid: (item: any) => boolean): boolean =>
 const list = (value: unknown, valid: (item: any) => boolean): boolean =>
   Array.isArray(value) && value.every(valid)
 const row = (value: unknown): boolean => record(value) && text(value.id) && text(value.label)
+const layout = (value: unknown): boolean =>
+  list(
+    value,
+    (node) =>
+      record(node) &&
+      safePath(node.path) &&
+      text(node.label) &&
+      text(node.type) &&
+      (node.children === undefined || layout(node.children)) &&
+      (node.collapsed === undefined || typeof node.collapsed === 'boolean'),
+  )
 const field = (value: unknown): boolean => {
   if (!record(value)) return false
   if (value.type === 'relationship')
@@ -38,6 +49,7 @@ export function validPageRecovery(value: unknown): boolean {
     (owner.locale === undefined || text(owner.locale)) &&
     text(snapshot.revision) &&
     text(snapshot.recoveryUser) &&
+    (snapshot.layout === undefined || layout(snapshot.layout)) &&
     dictionary(snapshot.fields, field) &&
     dictionary(snapshot.orders, (rows) => list(rows, row)) &&
     (snapshot.blockTypes === undefined ||
@@ -97,6 +109,7 @@ export function validSharedRecovery(value: unknown): boolean {
         record(s) &&
         text(s.revision) &&
         text(s.recoveryUser) &&
+        (s.layout === undefined || layout(s.layout)) &&
         nodes(s.nodes) &&
         record(s.document),
     ) &&

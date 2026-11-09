@@ -25,6 +25,7 @@ import {
 import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
 import {
   type ArrayRow,
+  type ArrangeField,
   type ArrangeSnapshot,
   type LayoutSource,
   remapArrangePath,
@@ -37,8 +38,10 @@ import { PublishReview, type PublishReviewItem } from '../publish-review/index.j
 import { RevisionHistory } from '../revision-history/index.js'
 import { RichTextSidebar } from '../rich-text-editor/sidebar.js'
 import { EditorIcon } from '../workspace/icons.js'
-import { AutoSizeTextarea } from '../auto-size-textarea/index.js'
 import { imagePlaceholder } from '../../utils/image-placeholder.js'
+import { SchemaFields } from '../schema-fields/index.js'
+import { ScalarField, scalarFieldTypes } from '../schema-fields/scalar-field.js'
+import { findFieldLayout, fieldLayoutTrail } from '../../utils/field-layout.js'
 import styles from './styles.module.scss'
 import { ArrayEditor } from './array-editor.js'
 import { createDraftBlockPreviews } from './draft-block-preview.js'
@@ -274,30 +277,33 @@ export function ArrangeEditor({
       .sort(([a], [b]) => b.length - a.length)[0]
     const row = order?.[1][Number(path.slice(order[0].length + 1).split('.')[0])]
     setSelectedBlock(order && row ? { key, path: order[0], id: row.id } : undefined)
-    setSelectedRow(undefined)
+    const trail = fieldLayoutTrail(sessions[key].snapshot.layout ?? [], path)
+    setSelectedRow(
+      trail
+        .filter(
+          (node) =>
+            node.type === 'item' && node.path !== `${order?.[0]}.${order?.[1].indexOf(row!)}`,
+        )
+        .at(-1)?.path,
+    )
     setTarget({ key, path })
     setBlockMode('edit')
     setTab('content')
   }
-  const blockFields =
-    selectedSession && blockPath
-      ? Object.entries(selectedSession.snapshot.fields).filter(
-          ([path, field]) =>
-            path.startsWith(`${selectedRow || blockPath}.`) &&
-            field.type !== 'array' &&
-            !(presentation[selectedBlock!.key]?.[path]?.hidden ?? field.hidden) &&
-            (Boolean(selectedRow) ||
-              !Object.entries(selectedSession.snapshot.fields).some(
-                ([arrayPath, array]) => array.type === 'array' && path.startsWith(`${arrayPath}.`),
-              )),
-        )
-      : []
+  const blockLayout =
+    blockPath && selectedSession?.snapshot.layout
+      ? findFieldLayout(selectedSession.snapshot.layout, blockPath)
+      : undefined
+  const layoutViewNode =
+    selectedRow && blockLayout ? findFieldLayout([blockLayout], selectedRow) : blockLayout
+  const layoutNodes = layoutViewNode?.children
   const inlineFields = Boolean(
     panelContainer &&
       selectedBlock &&
-      blockFields.length &&
+      layoutNodes?.length &&
       (!target ||
-        (target.key === selectedBlock.key && blockFields.some(([path]) => path === target.path))),
+        (target.key === selectedBlock.key &&
+          Boolean(blockLayout && findFieldLayout([blockLayout], target.path)))),
   )
   const drawerKey =
     inlineFields && selectedBlock
@@ -315,7 +321,15 @@ export function ArrangeEditor({
     if (button) {
       button.focus({ preventScroll: true })
       button.scrollIntoView({ behavior: 'instant', block: 'nearest' })
-    } else heading.current?.focus({ preventScroll: true })
+    } else {
+      const control =
+        path &&
+        [...(panelContainer ?? document).querySelectorAll<HTMLElement>('[data-field-path]')]
+          .find((element) => element.dataset.fieldPath === path)
+          ?.querySelector<HTMLElement>('input, textarea, select')
+      if (control) control.focus({ preventScroll: true })
+      else heading.current?.focus({ preventScroll: true })
+    }
   }, [viewKey, active, tab, inlineFields, target?.path])
   useEffect(() => {
     if (!active || tab !== 'content' || !hovered) return
@@ -437,8 +451,15 @@ export function ArrangeEditor({
       if (onHome) onHome()
       else setTab('menu')
     } else if (target) closeField()
-    else if (selectedRow) setSelectedRow(undefined)
-    else if (selectedBlock) setSelectedBlock(undefined)
+    else if (selectedRow) {
+      const trail = fieldLayoutTrail(blockLayout ? [blockLayout] : [], selectedRow)
+      setSelectedRow(
+        trail
+          .slice(1, -1)
+          .filter((node) => ['array', 'blocks', 'item'].includes(node.type))
+          .at(-1)?.path,
+      )
+    } else if (selectedBlock) setSelectedBlock(undefined)
     else if (layoutView) {
       setTarget(layoutView.target)
       setSelectedBlock(layoutView.block)
@@ -1194,6 +1215,7 @@ export function ArrangeEditor({
           snapshot: {
             ...session.snapshot,
             fields: { ...session.snapshot.fields, ...prepared.fields },
+            layout: prepared.layout,
           },
         },
       }))
@@ -1354,6 +1376,7 @@ export function ArrangeEditor({
           snapshot: {
             ...session.snapshot,
             fields: { ...session.snapshot.fields, ...prepared.fields },
+            layout: prepared.layout,
           },
         },
       }))
@@ -1841,82 +1864,16 @@ export function ArrangeEditor({
       {!inlineFields && field.type !== 'relationship' && (
         <small className={styles.path}>{session && fieldLabel(target.path, session)}</small>
       )}
-      {(field.type === 'text' ||
-        field.type === 'textarea' ||
-        field.type === 'email' ||
-        field.type === 'number') && (
-        <label>
-          {field.label || humanize(target.path.split('.').at(-1) || 'Text')}
-          {field.type === 'textarea' ? (
-            <AutoSizeTextarea
-              aria-label={field.label || humanize(target.path.split('.').at(-1) || 'Text')}
-              disabled={busy || needsSync}
-              onChange={(event) => stage(target, event.target.value)}
-              value={typeof value === 'string' ? value : ''}
-            />
-          ) : (
-            <input
-              aria-label={field.label || humanize(target.path.split('.').at(-1) || 'Text')}
-              type={field.type === 'number' ? 'number' : field.type === 'email' ? 'email' : 'text'}
-              disabled={busy || needsSync}
-              onChange={(event) =>
-                stage(
-                  target,
-                  field.type === 'number'
-                    ? event.target.value === ''
-                      ? null
-                      : event.target.valueAsNumber
-                    : event.target.value,
-                )
-              }
-              value={typeof value === 'string' || typeof value === 'number' ? value : ''}
-            />
-          )}
-        </label>
-      )}
-      {field.type === 'checkbox' && (
-        <label className={styles.optionControl}>
-          <input
-            type="checkbox"
-            checked={value === true}
-            disabled={busy || needsSync}
-            onChange={(event) => stage(target, event.target.checked)}
-          />
-          {field.label || humanize(target.path.split('.').at(-1) || 'Enabled')}
-        </label>
-      )}
-      {field.type === 'radio' && (
-        <fieldset className={styles.options} disabled={busy || needsSync}>
-          <legend>{field.label || humanize(target.path.split('.').at(-1) || 'Option')}</legend>
-          {field.options.map((option) => (
-            <label className={styles.optionControl} key={option.value}>
-              <input
-                type="radio"
-                name={`${fieldId}-${target.path}`}
-                checked={value === option.value}
-                onChange={() => stage(target, option.value)}
-              />
-              {option.label}
-            </label>
-          ))}
-        </fieldset>
-      )}
-      {field.type === 'select' && (
-        <label>
-          {field.label || humanize(target.path.split('.').at(-1) || 'Option')}
-          <select
-            value={typeof value === 'string' ? value : ''}
-            disabled={busy || needsSync}
-            onChange={(event) => stage(target, event.target.value || null)}
-          >
-            <option value="">Select an option</option>
-            {field.options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+      {scalarFieldTypes.includes(field.type) && (
+        <ScalarField
+          label={field.label || humanize(target.path.split('.').at(-1) || 'Content')}
+          type={field.type}
+          value={value}
+          options={'options' in field ? field.options : undefined}
+          hasMany={'hasMany' in field ? field.hasMany : undefined}
+          disabled={busy || needsSync}
+          onChange={(value) => stage(target, value)}
+        />
       )}
       {field.type === 'reference' && (
         <label>
@@ -2042,6 +1999,71 @@ export function ArrangeEditor({
     </section>
   )
 
+  const renderBlockField = ([path, descriptor]: [string, ArrangeField], index: number) => {
+    const label = descriptor.label || humanize(path.split('.').at(-1) || 'Content')
+    const pendingValue = Object.hasOwn(selectedSession!.changes, path)
+      ? selectedSession!.changes[path]
+      : descriptor.value
+    const summary =
+      descriptor.type === 'checkbox'
+        ? pendingValue
+          ? 'Yes'
+          : 'No'
+        : descriptor.type === 'radio' || descriptor.type === 'select'
+          ? descriptor.options.find((option) => option.value === pendingValue)?.label ||
+            'No option selected'
+          : descriptor.type === 'reference'
+            ? descriptor.choices.find((choice) => same(choice.value, pendingValue))?.label ||
+              'No content selected'
+            : descriptor.type === 'upload'
+              ? pendingValue
+                ? 'Selected image'
+                : 'No image selected'
+              : descriptor.type === 'relationship'
+                ? descriptor.choices.find((choice) => choice.id === pendingValue)?.label ||
+                  'No layout selected'
+                : recoveryValue(pendingValue).replace(/\s+/g, ' ')
+    const expanded = Boolean(inlineFields && target?.path === path)
+    const controlId = `${fieldId}-${index}`
+    return (
+      <div className={styles.fieldItem} key={path}>
+        <button
+          aria-controls={inlineFields ? controlId : undefined}
+          aria-expanded={inlineFields ? expanded : undefined}
+          aria-label={label}
+          className={styles.fieldChoice}
+          data-field-path={path}
+          disabled={busy || needsSync}
+          onBlur={() => setHovered(undefined)}
+          onClick={() => (expanded ? closeField() : setTarget({ key: selectedBlock!.key, path }))}
+          onFocus={() => setHovered({ key: selectedBlock!.key, path })}
+          onMouseEnter={() => setHovered({ key: selectedBlock!.key, path })}
+          onMouseLeave={() => setHovered(undefined)}
+          ref={(element) => {
+            if (element) {
+              fieldButtons.current.set(path, element)
+            } else {
+              fieldButtons.current.delete(path)
+            }
+          }}
+          title={`${humanize(blockLabel || 'Block')} / ${label} · ${summary}`}
+          type="button"
+        >
+          <span className={styles.fieldCopy}>
+            <strong>{label}</strong>
+            <small>{summary}</small>
+          </span>
+          <span aria-hidden="true">{expanded ? '−' : '›'}</span>
+        </button>
+        {inlineFields && (
+          <div hidden={!expanded} id={controlId}>
+            {expanded && selectedContent}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <>
       {historyContainer &&
@@ -2104,7 +2126,10 @@ export function ArrangeEditor({
                   <h2
                     ref={heading}
                     tabIndex={-1}
-                    title={blockLabel ? humanize(blockLabel) : layoutView?.label}
+                    title={
+                      layoutViewNode?.label ||
+                      (blockLabel ? humanize(blockLabel) : layoutView?.label)
+                    }
                   >
                     {picker && panelContainer
                       ? pickerSelection
@@ -2124,11 +2149,13 @@ export function ArrangeEditor({
                                   ? field?.type === 'relationship'
                                     ? 'Saved layout'
                                     : 'Edit content'
-                                  : blockLabel
-                                    ? humanize(blockLabel)
-                                    : blockMode === 'edit'
-                                      ? layoutView?.label || 'Page blocks'
-                                      : 'Rearrange content'}
+                                  : selectedRow && layoutViewNode
+                                    ? layoutViewNode.label
+                                    : blockLabel
+                                      ? humanize(blockLabel)
+                                      : blockMode === 'edit'
+                                        ? layoutView?.label || 'Page blocks'
+                                        : 'Rearrange content'}
                   </h2>
                 </div>
                 <div className={styles.headerActions}>
@@ -2336,122 +2363,138 @@ export function ArrangeEditor({
                         </section>
                       )}
                       {!inlineFields && selectedContent}
-                      {Object.entries(sessions).flatMap(([key, session]) =>
-                        Object.entries(session.snapshot.fields).map(([path, field]) =>
-                          field.type === 'array' &&
-                          !(presentation[key]?.[path]?.hidden ?? field.hidden) &&
-                          !selectedRow &&
-                          ((target?.key === key && target.path === path) ||
-                            (!target &&
-                              selectedBlock?.key === key &&
-                              blockPath &&
-                              path.startsWith(`${blockPath}.`))) ? (
-                            <ArrayEditor
-                              key={`${key}:${path}`}
-                              field={field}
-                              value={(session.changes[path] ?? field.value) as ArrayRow[]}
-                              disabled={busy || needsSync}
-                              onChange={(rows) => stage({ key, path }, rows)}
-                              onSelectRow={(id) => {
-                                const index = field.value.findIndex(
-                                  (row) => 'id' in row && row.id === id,
-                                )
-                                if (index >= 0) setSelectedRow(`${path}.${index}`)
-                              }}
-                            />
-                          ) : null,
-                        ),
-                      )}
                       {(!target || inlineFields) &&
                         selectedBlock &&
                         selectedSession &&
                         blockPath &&
-                        blockFields.length > 0 && (
+                        Boolean(layoutNodes?.length) && (
                           <section aria-label="Block fields" className={styles.fieldList}>
-                            {blockFields.map(([path, descriptor], index) => {
-                              const relativePath = path.slice((selectedRow || blockPath).length + 1)
-                              const labelParts = relativePath.split('.')
-                              const leaf = labelParts.pop() || 'Content'
-                              const label = [
-                                ...labelParts.map((part) =>
-                                  /^\d+$/.test(part) ? String(Number(part) + 1) : humanize(part),
-                                ),
-                                descriptor.label || humanize(leaf),
-                              ].join(' · ')
-                              const pendingValue = Object.hasOwn(selectedSession.changes, path)
-                                ? selectedSession.changes[path]
-                                : descriptor.value
-                              const summary =
-                                descriptor.type === 'checkbox'
-                                  ? pendingValue
-                                    ? 'Yes'
-                                    : 'No'
-                                  : descriptor.type === 'radio' || descriptor.type === 'select'
-                                    ? descriptor.options.find(
-                                        (option) => option.value === pendingValue,
-                                      )?.label || 'No option selected'
-                                    : descriptor.type === 'reference'
-                                      ? descriptor.choices.find((choice) =>
-                                          same(choice.value, pendingValue),
-                                        )?.label || 'No content selected'
-                                      : descriptor.type === 'upload'
-                                        ? pendingValue
-                                          ? 'Selected image'
-                                          : 'No image selected'
-                                        : descriptor.type === 'relationship'
-                                          ? descriptor.choices.find(
-                                              (choice) => choice.id === pendingValue,
-                                            )?.label || 'No layout selected'
-                                          : recoveryValue(pendingValue).replace(/\s+/g, ' ')
-                              const expanded = Boolean(inlineFields && target?.path === path)
-                              const controlId = `${fieldId}-${index}`
-                              return (
-                                <div className={styles.fieldItem} key={path}>
-                                  <button
-                                    aria-controls={inlineFields ? controlId : undefined}
-                                    aria-expanded={inlineFields ? expanded : undefined}
-                                    aria-label={label}
-                                    className={styles.fieldChoice}
-                                    data-field-path={path}
-                                    disabled={busy || needsSync}
-                                    onBlur={() => setHovered(undefined)}
-                                    onClick={() =>
-                                      expanded
-                                        ? closeField()
-                                        : setTarget({ key: selectedBlock.key, path })
-                                    }
-                                    onFocus={() => setHovered({ key: selectedBlock.key, path })}
-                                    onMouseEnter={() =>
-                                      setHovered({ key: selectedBlock.key, path })
-                                    }
-                                    onMouseLeave={() => setHovered(undefined)}
-                                    ref={(element) => {
-                                      if (element) {
-                                        fieldButtons.current.set(path, element)
-                                      } else {
-                                        fieldButtons.current.delete(path)
+                            {layoutNodes && (
+                              <SchemaFields
+                                activePath={target?.path}
+                                nodes={layoutNodes}
+                                visible={(node) => {
+                                  const field = selectedSession.snapshot.fields[node.path]
+                                  return Boolean(
+                                    field &&
+                                      !(
+                                        presentation[selectedBlock.key]?.[node.path]?.hidden ??
+                                        field.hidden
+                                      ),
+                                  )
+                                }}
+                                onOpen={(node) => {
+                                  setTarget(undefined)
+                                  setSelectedRow(node.path)
+                                }}
+                                renderCollection={(node) => {
+                                  const field = selectedSession.snapshot.fields[node.path]
+                                  return field?.type === 'array' ? (
+                                    <ArrayEditor
+                                      field={field}
+                                      value={
+                                        (selectedSession.changes[node.path] ??
+                                          field.value) as ArrayRow[]
                                       }
-                                    }}
-                                    title={`${humanize(blockLabel || 'Block')} / ${label} · ${summary}`}
-                                    type="button"
-                                  >
-                                    <span className={styles.fieldCopy}>
-                                      <strong>{label}</strong>
-                                      <small>{summary}</small>
-                                    </span>
-                                    <span aria-hidden="true">{expanded ? '−' : '›'}</span>
-                                  </button>
-                                  {inlineFields && (
-                                    <div hidden={!expanded} id={controlId}>
-                                      {expanded && selectedContent}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })}
+                                      disabled={busy || needsSync}
+                                      onChange={(rows) =>
+                                        stage({ key: selectedBlock.key, path: node.path }, rows)
+                                      }
+                                      onSelectRow={(id) => {
+                                        const index = field.value.findIndex(
+                                          (row) => 'id' in row && row.id === id,
+                                        )
+                                        if (index >= 0) setSelectedRow(`${node.path}.${index}`)
+                                      }}
+                                    />
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className={styles.fieldChoice}
+                                      data-layout-path={node.path}
+                                      onClick={() => setSelectedRow(node.path)}
+                                    >
+                                      <span className={styles.fieldCopy}>
+                                        <strong>{node.label}</strong>
+                                        <small>{node.children?.length ?? 0} items</small>
+                                      </span>
+                                      <span aria-hidden="true">›</span>
+                                    </button>
+                                  )
+                                }}
+                                renderField={(node) => {
+                                  const descriptor = selectedSession.snapshot.fields[node.path]
+                                  if (!descriptor) return null
+                                  const value = Object.hasOwn(selectedSession.changes, node.path)
+                                    ? selectedSession.changes[node.path]
+                                    : descriptor.value
+                                  if (scalarFieldTypes.includes(descriptor.type))
+                                    return (
+                                      <div
+                                        data-field-path={node.path}
+                                        onFocus={() =>
+                                          setHovered({ key: selectedBlock.key, path: node.path })
+                                        }
+                                        onBlur={() => setHovered(undefined)}
+                                      >
+                                        <ScalarField
+                                          label={node.label}
+                                          type={descriptor.type}
+                                          value={value}
+                                          options={
+                                            'options' in descriptor ? descriptor.options : undefined
+                                          }
+                                          hasMany={
+                                            'hasMany' in descriptor ? descriptor.hasMany : undefined
+                                          }
+                                          disabled={busy || needsSync}
+                                          onChange={(value) =>
+                                            stage(
+                                              { key: selectedBlock.key, path: node.path },
+                                              value,
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                    )
+                                  if (descriptor.type === 'reference')
+                                    return (
+                                      <label>
+                                        {node.label}
+                                        <select
+                                          disabled={busy || needsSync}
+                                          value={value == null ? '' : JSON.stringify(value)}
+                                          onChange={(event) =>
+                                            stage(
+                                              { key: selectedBlock.key, path: node.path },
+                                              event.target.value
+                                                ? JSON.parse(event.target.value)
+                                                : null,
+                                            )
+                                          }
+                                        >
+                                          <option value="">Select content</option>
+                                          {descriptor.choices.map((choice) => (
+                                            <option
+                                              key={JSON.stringify(choice.value)}
+                                              value={JSON.stringify(choice.value)}
+                                            >
+                                              {choice.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+                                    )
+                                  return renderBlockField(
+                                    [node.path, descriptor],
+                                    Object.keys(selectedSession.snapshot.fields).indexOf(node.path),
+                                  )
+                                }}
+                              />
+                            )}
                           </section>
                         )}
-                      {selectedBlock && (!target || inlineFields) && (
+                      {selectedBlock && !selectedRow && (!target || inlineFields) && (
                         <div className={styles.blockActions}>
                           {selectedSession && (
                             <button

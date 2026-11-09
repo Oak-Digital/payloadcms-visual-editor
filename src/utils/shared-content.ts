@@ -1,3 +1,5 @@
+import type { FieldLayout } from './field-layout.js'
+
 export type SharedTarget = { slug: string; global?: boolean; id?: string; label: string }
 export type SharedContentConfig = Record<
   string,
@@ -19,6 +21,7 @@ export type SharedNode = {
   value?: unknown
   children?: SharedNode[]
   rows?: { id: string; label: string; children: SharedNode[] }[]
+  hasMany?: boolean
   options?: { label: string; value: string }[]
   relations?: string[]
   polymorphic?: boolean
@@ -28,6 +31,7 @@ export type SharedNode = {
   blocks?: { value: string; label: string }[]
 }
 export type SharedSnapshot = {
+  layout?: FieldLayout[]
   recoveryUser?: string
   revision: string
   nodes: SharedNode[]

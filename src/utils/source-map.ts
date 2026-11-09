@@ -162,8 +162,7 @@ function addEditableFields({
       case 'select':
       case 'number':
       case 'email': {
-        if (controls && !('hasMany' in field && field.hasMany))
-          sourceMap[appendPath(path, field.name)] = { type: 'control' }
+        if (controls) sourceMap[appendPath(path, field.name)] = { type: 'control' }
         break
       }
       case 'relationship': {
@@ -181,7 +180,7 @@ function addEditableFields({
       }
       case 'richText': {
         const value = getNamedValue(source, field.name)
-        if (isRecord(value) && isRecord(value.root)) {
+        if ((isRecord(value) && isRecord(value.root)) || (controls && value == null)) {
           sourceMap[appendPath(path, field.name)] = { type: 'richText' }
         }
         break

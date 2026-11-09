@@ -1,3 +1,5 @@
+import { buildFieldLayout } from '../utils/field-layout.js'
+import { validateSelectValue } from '../utils/block-fields.js'
 import { relationshipFilter, checkRelationship } from '../utils/relationship-fields.js'
 import { validationErrors } from '../utils/validation-errors.js'
 import { publishedChanges } from '../utils/publish-review.js'
@@ -72,7 +74,13 @@ export async function applySharedOperations(
     if (op.type === 'set') {
       if (!scalarTypes.includes(field.type)) throw new Error('Unsupported field')
       if (field.type === 'relationship') await checkRelationship(resolved, op.value, req, next)
-      else if (
+      else if (field.type === 'select' || field.type === 'radio') {
+        validateSelectValue(
+          field.options.map((o) => ({ value: typeof o === 'string' ? o : o.value })),
+          op.value,
+          'hasMany' in field && field.hasMany === true,
+        )
+      } else if (
         field.type === 'checkbox'
           ? typeof op.value !== 'boolean'
           : field.type === 'number'
@@ -80,12 +88,6 @@ export async function applySharedOperations(
             : typeof op.value !== 'string' && op.value !== null
       )
         throw new Error('Invalid field value')
-      if (
-        (field.type === 'select' || field.type === 'radio') &&
-        op.value !== null &&
-        !field.options.some((o) => (typeof o === 'string' ? o : o.value) === op.value)
-      )
-        throw new Error('Invalid option')
       setPath(next, op.path, op.value)
     } else {
       if (field.type !== 'array' && field.type !== 'blocks') throw new Error('Expected rows')
@@ -213,7 +215,7 @@ async function nodes(
         })
       }
     } else if (f.type === 'select' || f.type === 'radio') {
-      if ('hasMany' in f && f.hasMany) continue
+      node.hasMany = 'hasMany' in f && f.hasMany === true
       node.options = f.options.map((o) =>
         typeof o === 'string'
           ? { label: o, value: o }
@@ -481,6 +483,16 @@ export const createSharedContentHandler =
       const tree = (
         await nodes(selected, proposed, req, entry.rowLabels ?? {}, config.fields)
       ).filter((node) => entry.fields.includes(node.path.split('.')[0]))
+      const descriptors: Record<string, SharedNode> = {}
+      const collect = (list: SharedNode[]) => {
+        for (const node of list) {
+          descriptors[node.path] = node
+          collect(node.children ?? [])
+          for (const row of node.rows ?? []) collect(row.children)
+        }
+      }
+      collect(tree)
+      const layout = buildFieldLayout(selected, proposed, descriptors)
       const previewDocument = await populatePreview(config.fields, proposed, req)
       await commitTransaction(req)
       transaction = false
@@ -488,6 +500,7 @@ export const createSharedContentHandler =
         recoveryUser: `${req.user.collection}:${req.user.id}`,
         revision,
         nodes: tree,
+        layout,
         document: previewDocument,
         drafts,
         status: proposed._status,

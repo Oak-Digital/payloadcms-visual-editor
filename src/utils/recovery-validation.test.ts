@@ -19,6 +19,12 @@ it('validates page recovery before renderer access to nested rows and fields', (
   const p = page()
   for (const patch of [
     { snapshot: { ...p.snapshot, orders: { layout: null } } },
+    {
+      snapshot: {
+        ...p.snapshot,
+        layout: [{ path: 'layout', type: 'blocks', label: 'Blocks', children: [null] }],
+      },
+    },
     { snapshot: { ...p.snapshot, fields: { 'layout.0.heading': null } } },
     { changes: { 'layout.1.unknown': 'Invalid' } },
     { orders: { layout: [null] } },
