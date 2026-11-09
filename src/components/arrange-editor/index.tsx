@@ -1850,24 +1850,19 @@ export function ArrangeEditor({
         </div>
       )}
       {field.type === 'upload' && (
-        <>
-          <button
-            aria-label="Replace image from preview"
-            className={styles.imagePreviewButton}
-            disabled={busy || needsSync}
-            onClick={() => setPicker(target)}
-            type="button"
-          >
-            <img
-              className={styles.imagePreview}
-              src={imagePreview || imagePlaceholder}
-              alt={imagePreview ? 'Current image' : 'Choose image'}
-            />
-          </button>
-          <button disabled={busy || needsSync} onClick={() => setPicker(target)} type="button">
-            Replace image
-          </button>
-        </>
+        <button
+          aria-label="Replace image from preview"
+          className={styles.imagePreviewButton}
+          disabled={busy || needsSync}
+          onClick={() => setPicker(target)}
+          type="button"
+        >
+          <img
+            className={styles.imagePreview}
+            src={imagePreview || imagePlaceholder}
+            alt={imagePreview ? 'Current image' : 'Choose image'}
+          />
+        </button>
       )}
       {field.type === 'richText' && session && (
         <RichTextSidebar
@@ -1881,8 +1876,16 @@ export function ArrangeEditor({
           onChange={(next) => stage(target, next)}
         />
       )}
-      {(inlineFields || field.type === 'text' || field.type === 'textarea') && (
+      {(inlineFields ||
+        field.type === 'text' ||
+        field.type === 'textarea' ||
+        field.type === 'upload') && (
         <div className={styles.fieldActions}>
+          {field.type === 'upload' && (
+            <button disabled={busy || needsSync} onClick={() => setPicker(target)} type="button">
+              Replace image
+            </button>
+          )}
           {(field.type === 'text' || field.type === 'textarea') &&
             Object.hasOwn(session.changes, target.path) && (
               <button
