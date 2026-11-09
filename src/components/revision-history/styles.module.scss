@@ -25,31 +25,7 @@
   time {
     font-weight: 600;
   }
-  summary {
-    cursor: pointer;
-    text-decoration: underline;
-  }
-  p,
-  strong {
+  p {
     overflow-wrap: anywhere;
-  }
-}
-.change {
-  margin-top: 16px;
-  strong,
-  small {
-    display: block;
-    overflow-wrap: anywhere;
-  }
-  pre {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    font: inherit;
-    max-height: 220px;
-    overflow: auto;
-    padding: 8px;
-    border: 1px solid #9995;
-    border-radius: 6px;
-    margin: 4px 0 8px;
   }
 }

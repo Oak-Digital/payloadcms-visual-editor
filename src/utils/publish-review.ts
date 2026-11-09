@@ -1,4 +1,4 @@
-import type { RevisionChange } from './revisions.js'
+type RevisionChange = { after: unknown; before: unknown; path: string }
 
 /** Keep nested block changes readable while preserving order and structural differences. */
 export function publishedChanges(

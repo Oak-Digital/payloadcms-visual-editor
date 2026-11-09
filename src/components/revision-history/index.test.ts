@@ -22,7 +22,10 @@ afterEach(async () => {
 
 it('requires a successful preview and clean pending state before restoring a draft', async () => {
   root = createRoot(container)
-  const docs = [{ id: 'v1', updatedAt: '2026-01-01T00:00:00Z', version: { title: 'Old' } }]
+  const docs = [
+    { id: 'v1', updatedAt: '2026-01-02T00:00:00Z', version: { title: 'Current', _status: 'draft' } },
+    { id: 'v0', updatedAt: '2026-01-01T00:00:00Z', version: { title: 'Old', _status: 'published' } },
+  ]
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ docs })))
   const onPreview = vi.fn(async () => 'current-revision')
   const onReturn = vi.fn()
@@ -40,6 +43,11 @@ it('requires a successful preview and clean pending state before restoring a dra
     root.render(createElement(RevisionHistory, props))
     await Promise.resolve()
   })
+  expect(container.querySelectorAll('time')).toHaveLength(2)
+  expect(container.textContent).toContain('Current draft')
+  expect(container.textContent).toContain('Published')
+  expect(container.textContent).not.toContain('View changes')
+  expect(container.querySelector('pre')).toBeNull()
   await act(async () => {
     ;[...container.querySelectorAll('button')]
       .find((button) => button.textContent === 'Preview revision')

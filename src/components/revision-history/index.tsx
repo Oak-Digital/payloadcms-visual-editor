@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 
 import type { PayloadCMSDocument } from '../../types.js'
 
-import { revisionChanges } from '../../utils/revisions.js'
 import styles from './styles.module.scss'
 
 type Revision = {
@@ -153,8 +152,6 @@ export function RevisionHistory({
           {!loading && revisions.length === 0 && <p>No saved revisions yet.</p>}
           <ol>
             {revisions.slice(0, limit).map((revision, index) => {
-              const previous = revisions[index + 1]
-              const changes = previous ? revisionChanges(previous.version, revision.version) : []
               return (
                 <li key={revision.id} data-version-id={revision.id}>
                   <time dateTime={revision.updatedAt}>
@@ -174,23 +171,6 @@ export function RevisionHistory({
                       Preview revision
                     </button>
                   )}
-                  {previous ? (
-                    <details>
-                      <summary>View changes · {changes.length}</summary>
-                      {changes.length === 0 && <p>No content changes.</p>}
-                      {changes.map((change) => (
-                        <div className={styles.change} key={change.path}>
-                          <strong>{change.path}</strong>
-                          <small>Before</small>
-                          <pre>{displayValue(change.before)}</pre>
-                          <small>After</small>
-                          <pre>{displayValue(change.after)}</pre>
-                        </div>
-                      ))}
-                    </details>
-                  ) : (
-                    <p>First available revision.</p>
-                  )}
                 </li>
               )
             })}
@@ -209,11 +189,4 @@ export function RevisionHistory({
       <p>Saving creates a new revision.</p>
     </section>
   )
-}
-
-function displayValue(value: unknown) {
-  if (value === undefined || value === null) {
-    return 'Empty'
-  }
-  return typeof value === 'string' ? value || 'Empty' : JSON.stringify(value, null, 2)
 }
