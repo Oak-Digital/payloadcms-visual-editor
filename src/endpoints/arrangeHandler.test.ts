@@ -564,8 +564,18 @@ it('reviews without writing, publishes saved drafts and refuses stale snapshots'
     revision,
     published: true,
     changes: expect.arrayContaining([
-      { path: 'layout.0.heading', before: 'Published heading', after: 'First' },
-      { path: 'layout.1.heading', before: 'Second', after: 'Pending heading' },
+      {
+        path: 'layout.0.heading',
+        label: 'Sections › Section 1 › Heading',
+        before: 'Published heading',
+        after: 'First',
+      },
+      {
+        path: 'layout.1.heading',
+        label: 'Sections › Section 2 › Heading',
+        before: 'Second',
+        after: 'Pending heading',
+      },
     ]),
   })
   expect(f.payload.find).toHaveBeenCalledWith(

@@ -1,8 +1,11 @@
 'use client'
 
+import { Fragment } from 'react'
+
 import type { FieldIssue } from '../../utils/editor-error.js'
 import type { PublishReviewData } from '../../utils/publish-review.js'
 
+import { readableLabel } from '../../utils/publish-review.js'
 import { recoveryValue } from '../../utils/recovery.js'
 import styles from './styles.module.scss'
 
@@ -66,7 +69,9 @@ export function PublishReview({
       ) : (
         <>
           <p>
-            Review {items.length} document{items.length === 1 ? '' : 's'} before publishing.
+            {items.length === 1
+              ? 'Review changes before publishing.'
+              : `Review changes across ${items.length} documents.`}
           </p>
           {items.map((item) => (
             <article aria-label={item.label} data-publish-status={item.status} key={item.key}>
@@ -110,25 +115,18 @@ export function PublishReview({
                 </details>
               )}
               {item.usage?.incomplete && <p>Some usage details are unavailable.</p>}
-              <details>
-                <summary>Compare with published · {item.changes.length}</summary>
-                {!item.changes.length && <p>No content differences.</p>}
-                {item.changes.map((change) => (
-                  <div className={styles.change} key={change.path}>
-                    <strong>
-                      {change.path
-                        .replace(/\.(\d+)/g, (_, index) => ` ${Number(index) + 1}`)
-                        .replaceAll('.', ' › ')
-                        .replace(/([a-z])([A-Z])/g, '$1 $2')
-                        .replace(/^./, (letter) => letter.toUpperCase())}
-                    </strong>
+              {!item.changes.length && <p>No content differences.</p>}
+              {item.changes.map((change) => (
+                <div className={styles.change} key={change.path}>
+                  <strong>{change.label || readableLabel(change.path)}</strong>
+                  <ReviewValue value={change.after} empty="Removed" />
+                  <details>
+                    <summary>Compare with published</summary>
                     <small>Published</small>
-                    <pre>{change.before === undefined ? '—' : recoveryValue(change.before)}</pre>
-                    <small>After publishing</small>
-                    <pre>{change.after === undefined ? '—' : recoveryValue(change.after)}</pre>
-                  </div>
-                ))}
-              </details>
+                    <ReviewValue value={change.before} empty="No previous content" />
+                  </details>
+                </div>
+              ))}
               {item.error && (
                 <div className={styles.failure}>
                   <div role="alert">
@@ -165,4 +163,38 @@ export function PublishReview({
       )}
     </section>
   )
+}
+
+function ReviewValue({ value, empty }: { value: any; empty: string }) {
+  if (value === undefined || value === null || value === '') return <p>{empty}</p>
+  if (value?.root?.type === 'root') {
+    return <div className={styles.content}>{renderNode(value.root)}</div>
+  }
+  return <pre>{recoveryValue(value)}</pre>
+}
+
+function renderNode(node: any): React.ReactNode {
+  if (node.type === 'text') {
+    let content: React.ReactNode = node.text
+    if (node.format & 1) content = <b>{content}</b>
+    if (node.format & 2) content = <em>{content}</em>
+    if (node.format & 8) content = <u>{content}</u>
+    if (node.format & 4) content = <s>{content}</s>
+    if (node.format & 16) content = <code>{content}</code>
+    if (node.format & 32) content = <sub>{content}</sub>
+    if (node.format & 64) content = <sup>{content}</sup>
+    return content
+  }
+  if (node.type === 'linebreak') return <br />
+  const children = node.children?.map((child: any, index: number) => (
+    <Fragment key={index}>{renderNode(child)}</Fragment>
+  ))
+  if (node.type === 'root') return children
+  if (node.type === 'paragraph') return <p>{children}</p>
+  if (node.type === 'heading') return <strong>{children}</strong>
+  if (node.type === 'quote') return <blockquote>{children}</blockquote>
+  if (node.type === 'list') return <div>{children}</div>
+  if (node.type === 'listitem') return <div>• {children}</div>
+  if (node.type === 'link' || node.type === 'autolink') return <u>{children}</u>
+  return <p>{children || 'Embedded content updated — view on page.'}</p>
 }

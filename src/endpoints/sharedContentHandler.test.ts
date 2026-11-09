@@ -125,8 +125,13 @@ it('previews, saves and reviews shared collections and globals while preserving 
       revision,
       published: true,
       changes: expect.arrayContaining([
-        { path: 'title', before: 'Menu', after: 'Pending title' },
-        { path: 'items.0.children.0.label', before: 'Child', after: 'Draft child' },
+        { path: 'title', label: 'Title', before: 'Menu', after: 'Pending title' },
+        {
+          path: 'items.0.children.0.label',
+          label: 'Items › Item 1 › Children › Item 1 › Label',
+          before: 'Child',
+          after: 'Draft child',
+        },
       ]),
     })
     expect(JSON.stringify(result)).not.toContain('keep')

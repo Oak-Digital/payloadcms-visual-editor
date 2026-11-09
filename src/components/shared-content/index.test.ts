@@ -213,7 +213,7 @@ it('reviews earlier saved shared drafts and retries only documents that did not 
     await render('second')
     await act(async () => button('Publish all').click())
     expect(attempts).toEqual([])
-    expect(container.textContent).toContain('Review 2 documents')
+    expect(container.textContent).toContain('Review changes across 2 documents.')
     await act(async () => button('Publish shared changes').click())
     expect(container.querySelectorAll('[data-publish-status="published"]')).toHaveLength(1)
     expect(container.querySelectorAll('[data-publish-status="failed"]')).toHaveLength(1)
@@ -227,7 +227,7 @@ it('reviews earlier saved shared drafts and retries only documents that did not 
     await act(async () => button('Publish all').click())
     fail = false
     await act(async () => button('Refresh review').click())
-    expect(container.textContent).toContain('Review 1 document')
+    expect(container.textContent).toContain('Review changes before publishing.')
     await act(async () => button('Publish shared changes').click())
     expect(attempts).toEqual(['first', 'second', 'second'])
     expect(props.onSaved).toHaveBeenCalledTimes(2)

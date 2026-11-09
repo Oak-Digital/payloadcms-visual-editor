@@ -64,3 +64,12 @@
     margin: 4px 0;
   }
 }
+
+.content {
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+  p {
+    margin: 8px 0;
+  }
+}
