@@ -119,6 +119,7 @@ export function ArrangeEditor({
   historyContainer,
   onReveal,
   onHome,
+  onComment,
 }: {
   actionsContainer?: HTMLElement
   contextActionsContainer?: HTMLElement
@@ -138,6 +139,7 @@ export function ArrangeEditor({
   historyContainer?: HTMLElement
   onReveal?: () => void
   onHome?: () => void
+  onComment?: (element: HTMLElement, label: string) => void
   panelContainer?: HTMLElement
 }) {
   const [presentation, setPresentation] = useState<
@@ -1115,7 +1117,7 @@ export function ArrangeEditor({
           path,
           rows: (session.orders[path] ?? rows.map((row) => row.id)).flatMap((id) => {
             const row = rows.find((row) => row.id === id)
-            return row ? [row] : []
+            return row ? [{ ...row, label: humanize(row.label) }] : []
           }),
         })),
       ),
@@ -2117,6 +2119,9 @@ export function ArrangeEditor({
         owner={documentInfo}
         lists={canvasLists}
         onMove={move}
+        selected={selectedBlock}
+        onEdit={selectBlock}
+        onComment={onComment}
       />
       {historyContainer &&
         createPortal(

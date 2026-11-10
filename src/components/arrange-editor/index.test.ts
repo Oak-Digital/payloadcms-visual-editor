@@ -1,6 +1,6 @@
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import { expect, it, vi } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
 import { documentKey } from '../../utils/field-target.js'
 import { recoveryKey } from '../../utils/recovery.js'
 import { ArrangeEditor } from './index.js'
@@ -11,6 +11,7 @@ vi.mock('../media-picker/index.js', () => ({ MediaPicker: () => null }))
 vi.mock('../rich-text-editor/dialog.js', () => ({ RichTextDialog: () => null }))
 vi.mock('../revision-history/index.js', () => ({ RevisionHistory: () => null }))
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+beforeEach(() => vi.stubGlobal('matchMedia', () => ({ matches: false })))
 
 it('separates rearranging from editing and locates the selected block after moving it', async () => {
   document.body.innerHTML =
@@ -142,6 +143,7 @@ it('separates rearranging from editing and locates the selected block after movi
 
 it('keeps textarea drafts and save actions mounted while hidden and rejects unrelated frame messages', async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  beforeEach(() => vi.stubGlobal('matchMedia', () => ({ matches: false })))
   document.body.innerHTML =
     '<main><h1 data-payload-path="title">Original</h1></main><div id="editor"></div><div id="panel"></div><div id="heading"></div><div id="actions"></div><div id="history" data-feedback-toolbar></div>'
   const root = createRoot(document.getElementById('editor')!)
@@ -280,6 +282,7 @@ it('keeps textarea drafts and save actions mounted while hidden and rejects unre
 
 it('reports distinct save/publish states to the footer without duplicating them in the field panel', async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  beforeEach(() => vi.stubGlobal('matchMedia', () => ({ matches: false })))
   document.body.innerHTML =
     '<h1 data-payload-path="title">Original</h1><div id="editor"></div><div id="panel"></div><div id="actions" data-feedback-toolbar></div>'
   const root = createRoot(document.getElementById('editor')!)
@@ -404,6 +407,7 @@ it.each([
   'reveals stored edits before saving (conflict: $conflict, restore: $restore)',
   async ({ conflict, restore }) => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    beforeEach(() => vi.stubGlobal('matchMedia', () => ({ matches: false })))
     document.body.innerHTML =
       '<h1 data-payload-path="title">Original</h1><div id="editor"></div><div id="panel" hidden></div><div id="actions" data-feedback-toolbar></div>'
     const root = createRoot(document.getElementById('editor')!)
@@ -530,6 +534,7 @@ it.each([
 it('shows compact schema groups and navigates nested items without mixing blocks or losing edits', async () => {
   const { buildFieldLayout } = await import('../../utils/field-layout.js')
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  beforeEach(() => vi.stubGlobal('matchMedia', () => ({ matches: false })))
   vi.stubGlobal('matchMedia', () => ({ matches: true }))
   document.body.innerHTML =
     '<main data-payload-block-list="layout"><section data-payload-block-id="a"></section><section data-payload-block-id="b"></section></main><div id="editor"></div><div id="panel"></div>'
@@ -708,6 +713,7 @@ it('routes contextual block actions to their list and hides them in chooser and 
   document.querySelector('section')!.scrollIntoView = vi.fn()
   vi.stubGlobal('matchMedia', () => ({ matches: true }))
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  beforeEach(() => vi.stubGlobal('matchMedia', () => ({ matches: false })))
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(
     Response.json({
       revision: 'revision',

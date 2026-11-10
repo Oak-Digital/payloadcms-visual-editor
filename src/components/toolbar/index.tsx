@@ -2465,6 +2465,41 @@ export function VisualEditorToolbar({
         adminRoute={adminRoute}
         apiRoute={apiRoute}
         documentInfo={documentInfo}
+        onComment={(element, label) => {
+          const rect = element.getBoundingClientRect()
+          const isFixed = isElementFixed(element)
+          const top = Math.max(0, rect.top)
+          setMode('annotate')
+          setHoverInfo(null)
+          setPendingAnnotation({
+            id: Date.now().toString(),
+            accessibility: getAccessibilityInfo(element),
+            boundingBox: {
+              height: rect.height,
+              width: rect.width,
+              x: rect.left,
+              y: isFixed ? rect.top : rect.top + window.scrollY,
+            },
+            clientY: top,
+            comment: '',
+            computedStyles: getForensicComputedStyles(element),
+            computedStylesObj: getDetailedComputedStyles(element),
+            cssClasses: getElementClasses(element),
+            element: label,
+            elementPath: getFullElementPath(element),
+            fullPath: getFullElementPath(element),
+            isFixed,
+            nearbyElements: getNearbyElements(element),
+            nearbyText: getNearbyText(element),
+            payloadCMS: { path: '', value: '' },
+            sourceFile: detectSourceFile(element),
+            state: 'pending',
+            targetElement: element,
+            timestamp: Date.now(),
+            x: ((rect.left + Math.min(24, rect.width / 2)) / window.innerWidth) * 100,
+            y: isFixed ? top : top + window.scrollY,
+          })
+        }}
         onClose={() =>
           workspace
             ? window.parent.postMessage({ type: 'visual-editor:collapse' }, window.location.origin)
