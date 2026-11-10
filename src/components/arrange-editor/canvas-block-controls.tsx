@@ -33,6 +33,7 @@ export function CanvasBlockControls({
 }) {
   const [targets, setTargets] = useState<{ element: HTMLElement; block: Block }[]>([])
   const [dragging, setDragging] = useState<Block>()
+  const [settling, setSettling] = useState<Block>()
   const gesture = useRef<
     { block: Block; x: number; y: number; started: boolean; target?: Block } | undefined
   >(undefined)
@@ -101,6 +102,7 @@ export function CanvasBlockControls({
     if (!active) {
       setTargets([])
       setDragging(undefined)
+      setSettling(undefined)
       gesture.current = undefined
       focusedControl.current = undefined
       setOver(undefined)
@@ -163,6 +165,7 @@ export function CanvasBlockControls({
 
   function move(block: Block, index: number) {
     if (index === block.index || index < 0 || index >= block.count) return
+    setSettling(block)
     onMove(block.key, block.path, block.id, index)
     setExpanded(undefined)
     setAnnouncement(`${block.label} moved to position ${index + 1} of ${block.count}`)
@@ -182,6 +185,12 @@ export function CanvasBlockControls({
     frame = requestAnimationFrame(scroll)
     return () => cancelAnimationFrame(frame)
   }, [dragging])
+
+  useEffect(() => {
+    if (!settling) return
+    const timer = window.setTimeout(() => setSettling(undefined), 260)
+    return () => window.clearTimeout(timer)
+  }, [settling])
 
   function updateDropTarget(x: number, y: number) {
     const current = gesture.current
@@ -207,7 +216,14 @@ export function CanvasBlockControls({
       {targets.map(({ element, block }) =>
         createPortal(
           <div
-            className={`${styles.canvasBlockOverlay} ${over === block.id ? styles.canvasBlockDrop : ''} ${expanded === `${block.key}:${block.path}:${block.id}` || (selected?.key === block.key && selected.path === block.path && selected.id === block.id) ? styles.canvasBlockOpen : ''}`}
+            className={`${styles.canvasBlockOverlay} ${dragging?.key === block.key && dragging.path === block.path && dragging.id === block.id ? styles.canvasBlockDragging : ''} ${settling?.key === block.key && settling.path === block.path && settling.id === block.id ? styles.canvasBlockSettling : ''} ${over === block.id ? styles.canvasBlockDrop : ''} ${expanded === `${block.key}:${block.path}:${block.id}` || (selected?.key === block.key && selected.path === block.path && selected.id === block.id) ? styles.canvasBlockOpen : ''}`}
+            data-drop-edge={
+              over === block.id && dragging
+                ? block.index < dragging.index
+                  ? 'before'
+                  : 'after'
+                : undefined
+            }
             data-feedback-toolbar=""
             data-canvas-rearrange={rearrange ? '' : undefined}
             onPointerDown={(event) => {

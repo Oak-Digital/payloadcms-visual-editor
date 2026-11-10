@@ -689,6 +689,7 @@
 
   :global([data-arrange-block-controls]):hover > &,
   :global([data-arrange-block-controls]):focus-within > &,
+  &.canvasBlockDragging,
   &.canvasBlockDrop,
   &.canvasBlockOpen {
     border-color: #b9a776;
@@ -775,8 +776,62 @@
   white-space: nowrap;
 }
 
+.canvasBlockDragging {
+  border-color: #e6ce91;
+  background: #b9a7760a;
+  cursor: grabbing;
+  box-shadow:
+    0 0 0 1px #e6ce9166,
+    0 24px 64px #0008;
+}
+
+:global([data-arrange-block-controls]):has(> .canvasBlockOverlay) {
+  transition:
+    scale 180ms ease,
+    translate 180ms ease;
+}
+
+:global([data-arrange-block-controls]):has(> .canvasBlockDragging) {
+  scale: 0.985;
+  translate: 0 -6px;
+  z-index: 30;
+}
+
+:global([data-arrange-block-controls]):has(> .canvasBlockSettling) {
+  animation: canvasBlockSettle 260ms ease-out;
+}
+
+@keyframes canvasBlockSettle {
+  from {
+    scale: 0.985;
+    translate: 0 -6px;
+  }
+  to {
+    scale: 1;
+    translate: 0 0;
+  }
+}
+
 .canvasBlockDrop {
   background: #b9a77614;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    height: 3px;
+    border-radius: 3px;
+    background: #e6ce91;
+    box-shadow: 0 0 16px #e6ce9166;
+    pointer-events: none;
+  }
+
+  &[data-drop-edge='before']::after {
+    top: -2px;
+  }
+  &[data-drop-edge='after']::after {
+    bottom: -2px;
+  }
 }
 .canvasAnnouncement {
   position: absolute;
@@ -795,6 +850,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  :global([data-arrange-block-controls]):has(> .canvasBlockOverlay) {
+    transition: none;
+    animation: none;
+    scale: none;
+    translate: none;
+  }
+
   .canvasBlockOverlay,
   .canvasBlockBar {
     transition: none;

@@ -4,7 +4,13 @@ import { expect, it, vi } from 'vitest'
 import { documentKey } from '../../utils/field-target.js'
 import { CanvasBlockControls } from './canvas-block-controls.js'
 
-vi.mock('./styles.module.scss', () => ({ default: {} }))
+vi.mock('./styles.module.scss', () => ({
+  default: {
+    canvasBlockDragging: 'dragging',
+    canvasBlockSettling: 'settling',
+    canvasBlockDrop: 'drop',
+  },
+}))
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 vi.stubGlobal('matchMedia', () => ({ matches: false }))
 
@@ -86,12 +92,19 @@ it('moves mapped blocks with arrows and keyboard, respects boundaries and cleans
   onMove.mockClear()
   await pointer('pointerdown', 10, 100)
   await pointer('pointermove', 20, 200)
+  expect(document.querySelector('[data-payload-block-id="a"] .dragging')).toBeTruthy()
+  expect(
+    document.querySelector('[data-payload-block-id="b"] [data-drop-edge="after"]'),
+  ).toBeTruthy()
   await pointer('pointerup', 20, 200)
+  expect(document.querySelector('.dragging')).toBeNull()
+  expect(document.querySelector('[data-payload-block-id="a"] .settling')).toBeTruthy()
   expect(onMove).toHaveBeenCalledExactlyOnceWith(key, 'layout', 'a', 1)
   onMove.mockClear()
   await pointer('pointerdown', 10, 100)
   await pointer('pointermove', 20, 200)
   await pointer('pointercancel', 20, 200)
+  expect(document.querySelector('.dragging, .drop')).toBeNull()
   await pointer('pointerup', 20, 200)
   expect(onMove).not.toHaveBeenCalled()
   point.mockReturnValue(document.querySelector('[data-payload-block-id="unknown"]'))
