@@ -2120,6 +2120,7 @@ export function ArrangeEditor({
         lists={canvasLists}
         onMove={move}
         selected={selectedBlock}
+        rearrange={blockMode === 'rearrange'}
         onEdit={selectBlock}
         onComment={onComment}
       />

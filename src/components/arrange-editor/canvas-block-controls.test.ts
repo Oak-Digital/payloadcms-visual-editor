@@ -27,11 +27,12 @@ it('moves mapped blocks with arrows and keyboard, respects boundaries and cleans
     },
   ]
   const root = createRoot(document.getElementById('editor')!)
-  const render = async (active: boolean, epoch = 0) =>
+  const render = async (active: boolean, epoch = 0, rearrange = false) =>
     act(async () =>
       root.render(
         createElement(CanvasBlockControls, {
           active,
+          rearrange,
           epoch,
           owner,
           lists,
@@ -98,7 +99,33 @@ it('moves mapped blocks with arrows and keyboard, respects boundaries and cleans
   await pointer('pointermove', 20, 200)
   await pointer('pointerup', 20, 200)
   expect(onMove).not.toHaveBeenCalled()
-  await render(true, 1)
+  await render(true, 1, true)
+  const surface = document.querySelector<HTMLElement>('[data-canvas-rearrange]')!
+  const surfacePointer = async (type: string, x: number, y: number) =>
+    act(async () =>
+      surface.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y,
+          button: 0,
+        }),
+      ),
+    )
+  point.mockReturnValue(document.querySelector('[data-payload-block-id="b"]'))
+  await surfacePointer('pointerdown', 40, 100)
+  await surfacePointer('pointermove', 40, 200)
+  await surfacePointer('pointerup', 40, 200)
+  expect(onMove).toHaveBeenCalledExactlyOnceWith(key, 'layout', 'a', 1)
+  onMove.mockClear()
+  await render(true, 2, false)
+  await surfacePointer('pointerdown', 40, 100)
+  await surfacePointer('pointermove', 40, 200)
+  await surfacePointer('pointerup', 40, 200)
+  expect(onMove).not.toHaveBeenCalled()
+  expect(document.querySelector('[data-canvas-rearrange]')).toBeNull()
+
   expect(document.querySelectorAll('[role="group"]')).toHaveLength(2)
   await render(false)
   expect(document.querySelectorAll('[role="group"], [data-arrange-block-controls]')).toHaveLength(0)

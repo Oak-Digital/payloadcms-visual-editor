@@ -19,8 +19,10 @@ export function CanvasBlockControls({
   onEdit,
   onComment,
   selected,
+  rearrange = false,
 }: {
   active: boolean
+  rearrange?: boolean
   selected?: { key: string; path: string; id: string }
   epoch: number
   owner: PayloadCMSDocument
@@ -207,6 +209,51 @@ export function CanvasBlockControls({
           <div
             className={`${styles.canvasBlockOverlay} ${over === block.id ? styles.canvasBlockDrop : ''} ${expanded === `${block.key}:${block.path}:${block.id}` || (selected?.key === block.key && selected.path === block.path && selected.id === block.id) ? styles.canvasBlockOpen : ''}`}
             data-feedback-toolbar=""
+            data-canvas-rearrange={rearrange ? '' : undefined}
+            onPointerDown={(event) => {
+              if (
+                !rearrange ||
+                event.button !== 0 ||
+                block.count < 2 ||
+                (event.target as Element).closest('[data-canvas-block-bar]')
+              )
+                return
+              event.preventDefault()
+              event.currentTarget
+                .querySelector<HTMLButtonElement>('button')
+                ?.focus({ preventScroll: true })
+              event.currentTarget.setPointerCapture?.(event.pointerId)
+              gesture.current = { block, x: event.clientX, y: event.clientY, started: false }
+            }}
+            onPointerMove={(event) => {
+              const current = gesture.current
+              if (!current) return
+              if (
+                !current.started &&
+                Math.hypot(event.clientX - current.x, event.clientY - current.y) < 5
+              )
+                return
+              current.started = true
+              current.x = event.clientX
+              current.y = event.clientY
+              setDragging(current.block)
+              updateDropTarget(event.clientX, event.clientY)
+            }}
+            onPointerUp={(event) => {
+              const current = gesture.current
+              if (current?.started) {
+                updateDropTarget(event.clientX, event.clientY)
+                if (current.target) move(current.block, current.target.index)
+              }
+              gesture.current = undefined
+              setDragging(undefined)
+              setOver(undefined)
+            }}
+            onPointerCancel={() => {
+              gesture.current = undefined
+              setDragging(undefined)
+              setOver(undefined)
+            }}
             key={block.id}
           >
             <div
@@ -232,35 +279,6 @@ export function CanvasBlockControls({
                   event.currentTarget.focus({ preventScroll: true })
                   event.currentTarget.setPointerCapture?.(event.pointerId)
                   gesture.current = { block, x: event.clientX, y: event.clientY, started: false }
-                }}
-                onPointerMove={(event) => {
-                  const current = gesture.current
-                  if (!current) return
-                  if (
-                    !current.started &&
-                    Math.hypot(event.clientX - current.x, event.clientY - current.y) < 5
-                  )
-                    return
-                  current.started = true
-                  current.x = event.clientX
-                  current.y = event.clientY
-                  setDragging(current.block)
-                  updateDropTarget(event.clientX, event.clientY)
-                }}
-                onPointerUp={(event) => {
-                  const current = gesture.current
-                  if (current?.started) {
-                    updateDropTarget(event.clientX, event.clientY)
-                    if (current.target) move(current.block, current.target.index)
-                  }
-                  gesture.current = undefined
-                  setDragging(undefined)
-                  setOver(undefined)
-                }}
-                onPointerCancel={() => {
-                  gesture.current = undefined
-                  setDragging(undefined)
-                  setOver(undefined)
                 }}
                 aria-label={`Drag ${block.label} to reorder. Use arrow keys to move.`}
                 title="Drag to reorder · ↑ / ↓ to move"
