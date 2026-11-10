@@ -7,7 +7,12 @@ import { expect, it, vi } from 'vitest'
 import { RichTextEditorView } from './index.js'
 
 vi.mock('./styles.module.scss', () => ({ default: {} }))
-vi.mock('@payloadcms/ui', () => ({ useConfig: () => ({ config: { routes: { api: '/api' } } }) }))
+vi.mock('@payloadcms/ui', () => ({
+  useConfig: () => ({ config: { routes: { api: '/api' } } }),
+  useAuth: () => ({ user: { id: 'editor', collection: 'users' } }),
+  DocumentInfoProvider: ({ children }: { children: React.ReactNode }) => children,
+  Form: ({ children }: { children: React.ReactNode }) => children,
+}))
 const lexical = vi.hoisted(() => ({ render: vi.fn() }))
 vi.mock('@payloadcms/richtext-lexical/client', () => ({
   RenderLexical: (props: unknown) => lexical.render(props),

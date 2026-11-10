@@ -3,10 +3,12 @@
 import type { DefaultTypedEditorState } from '@payloadcms/richtext-lexical'
 
 import { RenderLexical } from '@payloadcms/richtext-lexical/client'
-import { useConfig } from '@payloadcms/ui'
+import { DocumentInfoProvider, Form, useAuth, useConfig } from '@payloadcms/ui'
 import { useEffect, useState } from 'react'
 
 import styles from './styles.module.scss'
+
+const embeddedField = { label: false as const }
 
 type Snapshot = { revision: string; schemaPath: string; value: DefaultTypedEditorState }
 
@@ -37,6 +39,7 @@ function prepareEditorValue(value: DefaultTypedEditorState): DefaultTypedEditorS
 /** Runs inside the host admin providers, so field features and drawers are unchanged. */
 export function RichTextEditorView() {
   const { config } = useConfig()
+  const { user } = useAuth()
   const apiRoute = config.routes.api
   const [staging, setStaging] = useState(false)
   const [embedded, setEmbedded] = useState(false)
@@ -140,6 +143,42 @@ export function RichTextEditorView() {
     }
   }, [staging, snapshot?.schemaPath])
 
+  useEffect(() => {
+    if (!embedded) return
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (
+        document.querySelector('.drawer--is-open, dialog[open], [role="dialog"], [role="listbox"]')
+      )
+        return
+      window.parent.postMessage({ type: 'payload-visual-editor:escape' }, window.location.origin)
+    }
+    window.addEventListener('keydown', escape)
+    return () => window.removeEventListener('keydown', escape)
+  }, [embedded])
+
+  useEffect(() => {
+    if (!embedded) return
+    let previous = false
+    const report = () => {
+      const expanded = Boolean(document.querySelector('.drawer--is-open'))
+      if (expanded === previous) return
+      previous = expanded
+      window.parent.postMessage(
+        { type: 'payload-visual-editor:drawer', expanded },
+        window.location.origin,
+      )
+    }
+    const observer = new MutationObserver(report)
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class'],
+    })
+    return () => observer.disconnect()
+  }, [embedded])
+
   async function submit(action: 'publish' | 'save') {
     if (!snapshot || !value || busy) {
       return
@@ -179,25 +218,42 @@ export function RichTextEditorView() {
   }
 
   return (
-    <main className={styles.editor}>
+    <main className={`${styles.editor} ${embedded ? styles.embeddedEditor : ''}`}>
       {!embedded && <h1>Edit rich text</h1>}
       {error && <p role="alert">{error}</p>}
-      <p role="status">{status}</p>
-      {snapshot && value && (!embedded || initialized) && (
-        <RenderLexical
-          initialValue={snapshot.value}
-          key={`${snapshot.schemaPath}:${editorKey}`}
-          path={parameters?.path}
-          schemaPath={snapshot.schemaPath}
-          setValue={(next) => {
-            setValue(next as DefaultTypedEditorState)
-            window.parent.postMessage(
-              { type: 'payload-visual-editor:changed', ...(embedded ? { value: next } : {}) },
-              window.location.origin,
-            )
-          }}
-          value={value}
-        />
+      {status && <p role="status">{status}</p>}
+      {snapshot && value && parameters && user && (!embedded || initialized) && (
+        <DocumentInfoProvider
+          id={parameters.id}
+          collectionSlug={parameters.collection}
+          currentEditor={user}
+          hasPublishedDoc={false}
+          isLocked={false}
+          lastUpdateTime={0}
+          mostRecentVersionIsAutosaved={false}
+          unpublishedVersionCount={0}
+          versionCount={0}
+          disableActions
+          disableLeaveWithoutSaving
+        >
+          <Form isDocumentForm onSubmit={() => {}}>
+            <RenderLexical
+              field={embedded ? embeddedField : undefined}
+              initialValue={snapshot.value}
+              key={`${snapshot.schemaPath}:${editorKey}`}
+              path={parameters?.path}
+              schemaPath={snapshot.schemaPath}
+              setValue={(next) => {
+                setValue(next as DefaultTypedEditorState)
+                window.parent.postMessage(
+                  { type: 'payload-visual-editor:changed', ...(embedded ? { value: next } : {}) },
+                  window.location.origin,
+                )
+              }}
+              value={value}
+            />
+          </Form>
+        </DocumentInfoProvider>
       )}
       <div className={styles.actions} hidden={embedded}>
         <button disabled={!snapshot || busy} onClick={() => void submit('save')} type="button">

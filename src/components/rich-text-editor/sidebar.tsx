@@ -12,6 +12,8 @@ export function RichTextSidebar({
   disabled,
   documentInfo,
   onChange,
+  onEscape,
+  onDrawerChange,
   path,
   schemaPath,
   value,
@@ -19,6 +21,8 @@ export function RichTextSidebar({
   adminRoute: string
   disabled: boolean
   documentInfo: PayloadCMSDocument
+  onEscape?: () => void
+  onDrawerChange?: (expanded: boolean) => void
   onChange: (value: unknown) => void
   path: string
   schemaPath?: string
@@ -27,8 +31,8 @@ export function RichTextSidebar({
   const frame = useRef<HTMLIFrameElement>(null)
   const currentValue = useRef(value)
   const ready = useRef(false)
-  const latest = useRef({ disabled, onChange, value })
-  latest.current = { disabled, onChange, value }
+  const latest = useRef({ disabled, onChange, onEscape, onDrawerChange, value })
+  latest.current = { disabled, onChange, onEscape, onDrawerChange, value }
   useEffect(() => {
     // The sidebar may be portalled into the outer workspace document.
     const host = frame.current?.ownerDocument.defaultView
@@ -38,6 +42,15 @@ export function RichTextSidebar({
     const receive = (event: MessageEvent) => {
       if (event.origin !== host.location.origin || event.source !== frame.current?.contentWindow) {
         return
+      }
+      if (
+        event.data?.type === 'payload-visual-editor:drawer' &&
+        typeof event.data.expanded === 'boolean'
+      ) {
+        latest.current.onDrawerChange?.(event.data.expanded)
+      }
+      if (event.data?.type === 'payload-visual-editor:escape' && !latest.current.disabled) {
+        latest.current.onEscape?.()
       }
       if (event.data?.type === 'payload-visual-editor:ready') {
         ready.current = true

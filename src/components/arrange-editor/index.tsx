@@ -36,6 +36,7 @@ import { imageFieldAt, previewImages } from '../media-picker/preview.js'
 import { EditorRequestError } from '../../utils/editor-error.js'
 import { PublishReview, type PublishReviewItem } from '../publish-review/index.js'
 import { RevisionHistory } from '../revision-history/index.js'
+import { RichTextOverlay } from '../rich-text-editor/overlay.js'
 import { RichTextSidebar } from '../rich-text-editor/sidebar.js'
 import { EditorIcon } from '../workspace/icons.js'
 import { imagePlaceholder } from '../../utils/image-placeholder.js'
@@ -178,7 +179,10 @@ export function ArrangeEditor({
     setRedoStack([])
   }
   const [target, setTarget] = useState<Target>()
+  const [richTextAnchor, setRichTextAnchor] = useState<HTMLElement>()
+  const [cachedRichText, setCachedRichText] = useState<Target & { anchor: HTMLElement }>()
   const [hovered, setHovered] = useState<{ id?: string } & Target>()
+  const returnToCanvas = useRef<HTMLElement | undefined>(undefined)
   const fieldId = useId()
   const fieldButtons = useRef(new Map<string, HTMLButtonElement>())
   const returnToField = useRef<string | undefined>(undefined)
@@ -275,6 +279,7 @@ export function ArrangeEditor({
     setBlockMode('edit')
   }
   function selectField(key: string, path: string) {
+    setRichTextAnchor(undefined)
     selectOwner(key)
     onReveal?.()
     const order = Object.entries(expandedOrders(sessions[key]))
@@ -315,11 +320,20 @@ export function ArrangeEditor({
       ? `${selectedBlock.key}:${selectedBlock.id}:${selectedRow || ''}`
       : viewKey
   function closeField() {
+    returnToCanvas.current = richTextAnchor
+    setRichTextAnchor(undefined)
     if (inlineFields && target) returnToField.current = target.path
     setTarget(undefined)
   }
   useEffect(() => {
-    if (!active || document.activeElement?.hasAttribute('data-arrange-inline')) return
+    if (!active || richTextAnchor || document.activeElement?.hasAttribute('data-arrange-inline'))
+      return
+    if (returnToCanvas.current?.isConnected) {
+      returnToCanvas.current.focus({ preventScroll: true })
+      returnToCanvas.current = undefined
+      returnToField.current = undefined
+      return
+    }
     const path = returnToField.current || (inlineFields ? target?.path : undefined)
     const button = path ? fieldButtons.current.get(path) : undefined
     returnToField.current = undefined
@@ -335,7 +349,7 @@ export function ArrangeEditor({
       if (control) control.focus({ preventScroll: true })
       else heading.current?.focus({ preventScroll: true })
     }
-  }, [viewKey, active, tab, inlineFields, target?.path])
+  }, [viewKey, active, tab, inlineFields, target?.path, richTextAnchor])
   useEffect(() => {
     if (!active || tab !== 'content' || !hovered) return
     const elements = hovered.id
@@ -880,6 +894,10 @@ export function ArrangeEditor({
       setError('')
       setTab('content')
       selectField(key, path)
+      if (sessions[key].snapshot.fields[path].type === 'richText') {
+        setCachedRichText({ key, path, anchor: editable as HTMLElement })
+        setRichTextAnchor(editable as HTMLElement)
+      }
     }
     const keyboard = (event: KeyboardEvent) => {
       if (
@@ -893,6 +911,33 @@ export function ArrangeEditor({
         event.target.click()
       }
     }
+    let warmup: ReturnType<typeof setTimeout> | undefined
+    const warmEditor = (event: Event) => {
+      if (busy || needsSync || tab !== 'content' || blockMode !== 'edit') return
+      const element =
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>('[data-payload-path][data-payload-type="richText"]')
+          : null
+      if (!element) return
+      const key = documentKey(fieldDocument(element, documentInfo))
+      const path = element.dataset.payloadPath!
+      if (sessions[key]?.snapshot.fields[path]?.type !== 'richText') return
+      clearTimeout(warmup)
+      warmup = setTimeout(
+        () => {
+          setCachedRichText((current) =>
+            current?.key === key && current.path === path
+              ? current
+              : { key, path, anchor: element },
+          )
+        },
+        event.type === 'focusin' ? 0 : 120,
+      )
+    }
+    const cancelWarmup = () => clearTimeout(warmup)
+    document.addEventListener('pointerover', warmEditor)
+    document.addEventListener('pointerout', cancelWarmup)
+    document.addEventListener('focusin', warmEditor)
     document.addEventListener('keydown', keyboard, true)
     document.addEventListener('click', select, true)
     return () => {
@@ -902,6 +947,10 @@ export function ArrangeEditor({
           ? element.removeAttribute('tabindex')
           : element.setAttribute('tabindex', tabIndexes[index]),
       )
+      clearTimeout(warmup)
+      document.removeEventListener('pointerover', warmEditor)
+      document.removeEventListener('pointerout', cancelWarmup)
+      document.removeEventListener('focusin', warmEditor)
       document.removeEventListener('keydown', keyboard, true)
       document.removeEventListener('click', select, true)
     }
@@ -1992,7 +2041,7 @@ export function ArrangeEditor({
           />
         </button>
       )}
-      {field.type === 'richText' && session && (
+      {field.type === 'richText' && session && !richTextAnchor && (
         <RichTextSidebar
           key={`${target.key}:${target.path}`}
           adminRoute={adminRoute}
@@ -2031,7 +2080,7 @@ export function ArrangeEditor({
                 Reset
               </button>
             )}
-          {inlineFields && (
+          {inlineFields && !richTextAnchor && (
             <button
               type="button"
               className={styles.doneField}
@@ -2111,8 +2160,39 @@ export function ArrangeEditor({
     )
   }
 
+  const cachedSession = cachedRichText && sessions[cachedRichText.key]
+  const cachedField = cachedRichText && cachedSession?.snapshot.fields[cachedRichText.path]
+  const richTextOpen = Boolean(
+    active &&
+      field?.type === 'richText' &&
+      richTextAnchor &&
+      target?.key === cachedRichText?.key &&
+      target?.path === cachedRichText?.path,
+  )
+
   return (
     <>
+      {cachedRichText && cachedSession && cachedField?.type === 'richText' && (
+        <RichTextOverlay
+          key={`${cachedRichText.key}:${cachedRichText.path}`}
+          anchor={cachedRichText.anchor}
+          open={richTextOpen}
+          label={cachedField.label || fieldLabel(cachedRichText.path, cachedSession)}
+          portalDocument={panelContainer?.ownerDocument}
+          adminRoute={adminRoute}
+          documentInfo={cachedSession.owner}
+          path={cachedRichText.path}
+          schemaPath={cachedField.schemaPath}
+          value={
+            Object.hasOwn(cachedSession.changes, cachedRichText.path)
+              ? cachedSession.changes[cachedRichText.path]
+              : cachedField.value
+          }
+          disabled={busy || needsSync || !richTextOpen}
+          onChange={(next) => stage(cachedRichText, next)}
+          onConfirm={closeField}
+        />
+      )}
       <CanvasBlockControls
         active={active && tab === 'content' && !busy && !needsSync && !historical}
         epoch={previewEpoch}

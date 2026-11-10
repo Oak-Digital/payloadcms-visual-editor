@@ -826,3 +826,131 @@ it('routes contextual block actions to their list and hides them in chooser and 
     document.body.replaceChildren()
   }
 })
+
+it('opens canvas rich text in an anchored overlay and retains structured edits after confirming', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  document.body.innerHTML =
+    '<div data-payload-path="body" data-payload-type="richText">Original</div><div id="editor"></div>'
+  const container = document.getElementById('editor')!
+  const root = createRoot(container)
+  const anchor = document.querySelector<HTMLElement>('[data-payload-path]')!
+  const original = { root: { type: 'root', children: [] } }
+  const edited = {
+    root: {
+      type: 'root',
+      children: [{ type: 'paragraph', children: [{ type: 'text', format: 1, text: 'Edited' }] }],
+    },
+  }
+  HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
+    this.setAttribute('open', '')
+  })
+  HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
+    this.removeAttribute('open')
+  })
+  const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        revision: 'revision',
+        fields: {
+          body: { type: 'richText', value: original, schemaPath: 'collection.pages.body' },
+        },
+        orders: {},
+      }),
+    ),
+  )
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ArrangeEditor, {
+          active: true,
+          adminRoute: '/admin',
+          apiRoute: '/api',
+          documentInfo: { id: 'overlay-test', collection: 'pages', hasDrafts: true },
+          onClose: vi.fn(),
+        }),
+      ),
+    )
+    await act(async () =>
+      [...container.querySelectorAll('button')]
+        .find((button) => button.textContent === 'Edit content›')!
+        .click(),
+    )
+    await act(async () => {
+      anchor.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+    const warmedFrame = document.querySelector<HTMLIFrameElement>('dialog iframe')!
+    expect(warmedFrame).toBeTruthy()
+    expect(document.querySelector('dialog')!.open).toBe(false)
+    await act(async () => anchor.click())
+    const dialog = document.querySelector<HTMLDialogElement>('dialog[aria-label="Edit rich text"]')!
+    expect(dialog.open).toBe(true)
+    expect(container.contains(dialog)).toBe(false)
+    const frame = dialog.querySelector('iframe')!
+    expect(frame).toBe(warmedFrame)
+    const send = async (type: string, value?: unknown) =>
+      act(async () =>
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: { type, value },
+            source: frame.contentWindow,
+            origin: window.location.origin,
+          }),
+        ),
+      )
+    await send('payload-visual-editor:ready')
+    await send('payload-visual-editor:changed', edited)
+    const drawer = async (expanded: boolean) =>
+      act(async () =>
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: { type: 'payload-visual-editor:drawer', expanded },
+            source: frame.contentWindow,
+            origin: window.location.origin,
+          }),
+        ),
+      )
+    await drawer(true)
+    expect(dialog.style.height).toBe('640px')
+    expect(dialog.querySelector('button')!.disabled).toBe(true)
+    await act(async () => dialog.dispatchEvent(new Event('cancel', { cancelable: true })))
+    expect(dialog.open).toBe(true)
+    await drawer(false)
+    expect(dialog.style.height).toBe('340px')
+    await act(async () => dialog.querySelector('button')!.click())
+    expect(document.querySelector('dialog')!.open).toBe(false)
+    expect(document.activeElement).toBe(anchor)
+    await act(async () => anchor.click())
+    const reopened = document.querySelector<HTMLIFrameElement>('dialog iframe')!
+    expect(reopened).toBe(frame)
+    const post = vi.spyOn(reopened.contentWindow!, 'postMessage')
+    await act(async () =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { type: 'payload-visual-editor:ready' },
+          source: reopened.contentWindow,
+          origin: window.location.origin,
+        }),
+      ),
+    )
+    expect(post).toHaveBeenLastCalledWith(
+      { type: 'payload-visual-editor:initial', value: edited },
+      window.location.origin,
+    )
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    await act(async () => window.dispatchEvent(new Event('resize')))
+    expect(document.querySelector('dialog')!.style.width).toBe('366px')
+    await act(async () =>
+      document.querySelector('dialog')!.dispatchEvent(new Event('cancel', { cancelable: true })),
+    )
+    expect(document.querySelector('dialog')!.open).toBe(false)
+    expect(
+      fetch.mock.calls.every(([, init]) => JSON.parse(String(init?.body)).action === 'read'),
+    ).toBe(true)
+  } finally {
+    await act(async () => root.unmount())
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
+    vi.restoreAllMocks()
+    document.body.innerHTML = ''
+  }
+})

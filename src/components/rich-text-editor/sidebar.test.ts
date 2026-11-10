@@ -22,6 +22,7 @@ it('preserves structured values, ignores unrelated frames, and synchronizes undo
   const original = { root: { children: [{ type: 'text', format: 1, text: 'Bold' }] } }
   const edited = { root: { children: [{ type: 'text', format: 1, text: 'Bold edit' }] } }
   const onChange = vi.fn()
+  const onEscape = vi.fn()
   const render = async (value: unknown, disabled = false) => {
     await act(async () =>
       root.render(
@@ -30,6 +31,7 @@ it('preserves structured values, ignores unrelated frames, and synchronizes undo
           disabled,
           documentInfo: { id: 'one', collection: 'pages', hasDrafts: true },
           onChange,
+          onEscape,
           path: 'layout.0.richText',
           value,
         }),
@@ -62,6 +64,10 @@ it('preserves structured values, ignores unrelated frames, and synchronizes undo
     'https://untrusted.example',
   )
   expect(onChange).not.toHaveBeenCalled()
+  await send('payload-visual-editor:escape', undefined, window)
+  expect(onEscape).not.toHaveBeenCalled()
+  await send('payload-visual-editor:escape')
+  expect(onEscape).toHaveBeenCalledTimes(1)
   await send('payload-visual-editor:changed', edited)
   expect(onChange).toHaveBeenCalledWith(edited)
   await render(edited)
@@ -69,6 +75,8 @@ it('preserves structured values, ignores unrelated frames, and synchronizes undo
   await render(original)
   expect(post).toHaveBeenCalledTimes(2)
   await render(original, true)
+  await send('payload-visual-editor:escape')
+  expect(onEscape).toHaveBeenCalledTimes(1)
   await send('payload-visual-editor:changed', edited)
   expect(onChange).toHaveBeenCalledTimes(1)
   expect(container.querySelector('iframe')).toBe(frame)
