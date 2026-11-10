@@ -235,8 +235,9 @@
   background: linear-gradient(115deg, #24212580, #1b1b1b 60%, #20231d66);
 }
 .identity {
-  width: 29px;
-  height: 29px;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
   border: 1px solid #484848;
   border-radius: 50%;
   display: grid;
