@@ -409,14 +409,19 @@ it.each([
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     beforeEach(() => vi.stubGlobal('matchMedia', () => ({ matches: false })))
     document.body.innerHTML =
-      '<h1 data-payload-path="title">Original</h1><div id="editor"></div><div id="panel" hidden></div><div id="actions" data-feedback-toolbar></div>'
+      '<h1 data-payload-path="title">Original</h1><main data-payload-block-list="layout"><section data-payload-block-id="a"></section><section data-payload-block-id="b"></section></main><div id="editor"></div><div id="panel" hidden></div><div id="actions" data-feedback-toolbar></div>'
     const root = createRoot(document.getElementById('editor')!)
     const panel = document.getElementById('panel')!
     const actions = document.getElementById('actions')!
     const owner = { id: 'recovery-page', collection: 'pages', hasDrafts: true, locale: 'en' }
     const snapshot = {
       fields: { title: { type: 'text', value: 'Original' } },
-      orders: {},
+      orders: {
+        layout: [
+          { id: 'a', label: 'First' },
+          { id: 'b', label: 'Second' },
+        ],
+      },
       revision: 'current',
       recoveryUser: 'editor',
     }
@@ -472,6 +477,47 @@ it.each([
         ),
       )
       expect(pending.mock.lastCall?.[3]).toBe('Review stored edits before saving.')
+      await act(async () => button('Rearrange').click())
+      const surface = document.querySelector<HTMLElement>('[data-canvas-rearrange]')!
+      expect(surface).toBeTruthy()
+      const destination = document.querySelector('[data-payload-block-id="b"]')!
+      const hitTest = vi.fn(() => destination)
+      Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: hitTest })
+      for (const [type, y] of [
+        ['pointerdown', 10],
+        ['pointermove', 100],
+        ['pointerup', 100],
+      ] as const) {
+        await act(async () =>
+          surface.dispatchEvent(
+            new MouseEvent(type, {
+              bubbles: true,
+              button: 0,
+              clientX: 10,
+              clientY: y,
+            }),
+          ),
+        )
+      }
+      expect(
+        [...document.querySelectorAll('main > section')].map(
+          (row) => (row as HTMLElement).style.order,
+        ),
+      ).toEqual(['1', '0'])
+      expect(localStorage.getItem(key)).toBe(stored)
+      await act(async () => button('Save draft').click())
+      expect(saves()).toHaveLength(0)
+      await act(async () =>
+        actions.querySelector<HTMLButtonElement>('[aria-label="Undo"]')!.click(),
+      )
+      expect(
+        [...document.querySelectorAll('main > section')].map(
+          (row) => (row as HTMLElement).style.order,
+        ),
+      ).toEqual(['', ''])
+      await act(async () =>
+        [...panel.querySelectorAll('button')].find((item) => item.textContent === 'Edit')!.click(),
+      )
       // The workspace home view hides the recovery panel but retains the save footer.
       panel.hidden = true
       reveal.mockClear()

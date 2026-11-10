@@ -2114,7 +2114,7 @@ export function ArrangeEditor({
   return (
     <>
       <CanvasBlockControls
-        active={active && tab === 'content' && !busy && !needsSync && !historical && !hasRecoveries}
+        active={active && tab === 'content' && !busy && !needsSync && !historical}
         epoch={previewEpoch}
         owner={documentInfo}
         lists={canvasLists}
