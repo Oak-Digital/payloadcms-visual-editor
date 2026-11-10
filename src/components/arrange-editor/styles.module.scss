@@ -325,18 +325,6 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.panel .addBlock {
-  display: block;
-  width: 100%;
-  margin-top: 12px;
-  text-align: left;
-}
-.panel .removeBlock {
-  width: 100%;
-  margin-top: 20px;
-  color: #ffb2a8;
-  text-align: left;
-}
 .changes {
   margin-top: 24px;
   border-top: 1px solid #383838;
@@ -633,18 +621,29 @@
     }
   }
 }
-.panel .blockActions {
-  display: flex;
+.contextActions {
+  flex-shrink: 0;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 18px;
+  padding: 12px 18px;
+  border-top: 1px solid #343434;
   button {
-    width: auto;
-    margin: 0;
-    padding: 8px 10px;
-    font-size: 11px;
-    background: transparent;
+    flex: 1;
+    min-width: 0;
+    background: #191919;
+    border-color: #343434;
+    text-align: left;
   }
+  .removeBlock {
+    flex: 0 1 auto;
+    color: #ffb2a8;
+    background: transparent;
+    border-color: transparent;
+  }
+}
+.blockActions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
 }
 .blocks:has(.blockSelect) li {
   padding: 0;
@@ -668,7 +667,7 @@
   }
 }
 @media (pointer: coarse) {
-  .panel .blockActions button,
+  .contextActions button,
   .panel .fieldActions button {
     min-height: 44px;
   }

@@ -349,6 +349,7 @@ export type VisualEditorToolbarProps = {
   /** Webhook URL to receive annotation events. */
   webhookUrl?: string
   workspace?: {
+    contextActionsContainer?: HTMLElement
     actionsContainer: HTMLElement
     onModeChange: (mode: 'annotate' | 'browse' | 'edit') => void
     onPendingChange: (
@@ -2459,6 +2460,7 @@ export function VisualEditorToolbar({
     >
       <ArrangeEditor
         actionsContainer={workspace?.actionsContainer}
+        contextActionsContainer={workspace?.contextActionsContainer}
         active={isActive && isArrangeMode}
         adminRoute={adminRoute}
         apiRoute={apiRoute}

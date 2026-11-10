@@ -106,6 +106,7 @@ function Portal({ children, container }: { children: ReactNode; container?: HTML
 
 export function ArrangeEditor({
   actionsContainer,
+  contextActionsContainer,
   active,
   adminRoute,
   apiRoute,
@@ -119,6 +120,7 @@ export function ArrangeEditor({
   onHome,
 }: {
   actionsContainer?: HTMLElement
+  contextActionsContainer?: HTMLElement
   active: boolean
   adminRoute: string
   apiRoute: string
@@ -365,6 +367,33 @@ export function ArrangeEditor({
       : undefined
   }, [picker?.key, sessions])
   const [pickerSelection, setPickerSelection] = useState<MediaChoice>()
+  const blockLists = Object.entries(sessions)
+    .filter(([key]) => key === (layoutView?.key ?? documentKey(documentInfo)))
+    .flatMap(([key, session]) =>
+      Object.entries(expandedOrders(session)).map(([path, rows]) => ({
+        key,
+        path,
+        label: findFieldLayout(session.snapshot.layout ?? [], path)?.label || humanize(path),
+        full:
+          (session.orders[path] ?? rows).length >=
+          (session.snapshot.blockLimits?.[path]?.max ?? Infinity),
+      })),
+    )
+  const showBlockActions =
+    tab === 'content' &&
+    !picker &&
+    !adding &&
+    selectedBlock &&
+    !selectedRow &&
+    (!target || inlineFields)
+  const showAddActions =
+    tab === 'content' &&
+    !picker &&
+    !adding &&
+    !selectedBlock &&
+    !target &&
+    blockMode === 'edit' &&
+    blockLists.length > 0
   useEffect(() => {
     if (pickerSelection && panelContainer) heading.current?.focus({ preventScroll: true })
   }, [pickerSelection, panelContainer])
@@ -2502,62 +2531,6 @@ export function ArrangeEditor({
                             )}
                           </section>
                         )}
-                      {selectedBlock && !selectedRow && (!target || inlineFields) && (
-                        <div className={styles.blockActions}>
-                          {selectedSession && (
-                            <button
-                              className={styles.fieldLink}
-                              disabled={
-                                busy ||
-                                needsSync ||
-                                (
-                                  selectedSession.orders[selectedBlock.path] ??
-                                  selectedSession.snapshot.orders[selectedBlock.path]
-                                ).length >=
-                                  (selectedSession.snapshot.blockLimits?.[selectedBlock.path]
-                                    ?.max ?? Infinity)
-                              }
-                              onClick={() => {
-                                const row = expandedOrders(selectedSession)[
-                                  selectedBlock.path
-                                ].find((row) => row.id === selectedBlock.id)
-                                if (row?.blockType)
-                                  void addBlock(
-                                    selectedBlock.key,
-                                    selectedBlock.path,
-                                    row.blockType,
-                                    row.id,
-                                  )
-                              }}
-                              type="button"
-                            >
-                              Duplicate block
-                            </button>
-                          )}
-                          <button
-                            className={styles.removeBlock}
-                            disabled={
-                              busy ||
-                              needsSync ||
-                              (
-                                selectedSession?.orders[selectedBlock.path] ??
-                                selectedSession?.snapshot.orders[selectedBlock.path]?.map(
-                                  (row) => row.id,
-                                ) ??
-                                []
-                              ).length <=
-                                (selectedSession?.snapshot.blockLimits?.[selectedBlock.path]?.min ??
-                                  0)
-                            }
-                            onClick={() =>
-                              removeBlock(selectedBlock.key, selectedBlock.path, selectedBlock.id)
-                            }
-                            type="button"
-                          >
-                            Remove block
-                          </button>
-                        </div>
-                      )}
                       {!selectedBlock &&
                         !target &&
                         !adding &&
@@ -2706,22 +2679,6 @@ export function ArrangeEditor({
                                           </li>
                                         ))}
                                       </ol>
-                                      {blockMode === 'edit' && (
-                                        <button
-                                          className={styles.addBlock}
-                                          disabled={
-                                            busy ||
-                                            needsSync ||
-                                            (session.snapshot.blockLimits?.[path]?.max !==
-                                              undefined &&
-                                              ids.length >= session.snapshot.blockLimits[path].max!)
-                                          }
-                                          onClick={() => setAdding({ key, path })}
-                                          type="button"
-                                        >
-                                          Add block
-                                        </button>
-                                      )}
                                     </div>
                                   )
                                 }),
@@ -2898,6 +2855,83 @@ export function ArrangeEditor({
                 </>
               )}
             </div>
+            {(showBlockActions || showAddActions) && (
+              <Portal container={contextActionsContainer}>
+                <div
+                  className={`${styles.actions} ${styles.contextActions}`}
+                  role="group"
+                  aria-label="Block actions"
+                  data-feedback-toolbar
+                >
+                  {showBlockActions && selectedBlock && (
+                    <div className={styles.blockActions}>
+                      {selectedSession && (
+                        <button
+                          className={styles.fieldLink}
+                          disabled={
+                            busy ||
+                            needsSync ||
+                            (
+                              selectedSession.orders[selectedBlock.path] ??
+                              selectedSession.snapshot.orders[selectedBlock.path]
+                            ).length >=
+                              (selectedSession.snapshot.blockLimits?.[selectedBlock.path]?.max ??
+                                Infinity)
+                          }
+                          onClick={() => {
+                            const row = expandedOrders(selectedSession)[selectedBlock.path].find(
+                              (row) => row.id === selectedBlock.id,
+                            )
+                            if (row?.blockType)
+                              void addBlock(
+                                selectedBlock.key,
+                                selectedBlock.path,
+                                row.blockType,
+                                row.id,
+                              )
+                          }}
+                          type="button"
+                        >
+                          Duplicate block
+                        </button>
+                      )}
+                      <button
+                        className={styles.removeBlock}
+                        disabled={
+                          busy ||
+                          needsSync ||
+                          (
+                            selectedSession?.orders[selectedBlock.path] ??
+                            selectedSession?.snapshot.orders[selectedBlock.path]?.map(
+                              (row) => row.id,
+                            ) ??
+                            []
+                          ).length <=
+                            (selectedSession?.snapshot.blockLimits?.[selectedBlock.path]?.min ?? 0)
+                        }
+                        onClick={() =>
+                          removeBlock(selectedBlock.key, selectedBlock.path, selectedBlock.id)
+                        }
+                        type="button"
+                      >
+                        Remove block
+                      </button>
+                    </div>
+                  )}
+                  {showAddActions &&
+                    blockLists.map(({ key, path, label, full }) => (
+                      <button
+                        disabled={busy || needsSync || full}
+                        key={`${key}:${path}`}
+                        onClick={() => setAdding({ key, path })}
+                        type="button"
+                      >
+                        {blockLists.length === 1 ? 'Add block' : `Add block to ${label}`}
+                      </button>
+                    ))}
+                </div>
+              </Portal>
+            )}
             <Portal container={actionsContainer}>
               <footer
                 aria-label="Save or publish the document draft"

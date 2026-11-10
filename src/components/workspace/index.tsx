@@ -98,6 +98,9 @@ function WorkspaceCanvas({
     try {
       const panelContainer = window.parent.document.getElementById('visual-editor-panel')
       const actionsContainer = window.parent.document.getElementById('visual-editor-actions')
+      const contextActionsContainer = window.parent.document.getElementById(
+        'visual-editor-context-actions',
+      )
       const headerContainer = window.parent.document.getElementById('visual-editor-heading')
       const annotationContainer = window.parent.document.getElementById('visual-editor-annotations')
       const historyContainer = window.parent.document.getElementById(
@@ -110,6 +113,7 @@ function WorkspaceCanvas({
         historyContainer
         ? {
             actionsContainer,
+            contextActionsContainer: contextActionsContainer ?? undefined,
             panelContainer,
             headerContainer,
             annotationContainer,
@@ -1159,6 +1163,12 @@ function WorkspaceShell({
               </a>
             </div>
           )}
+          <div
+            className={styles.editorContextActions}
+            hidden={view !== 'editor'}
+            id="visual-editor-context-actions"
+            key={`context-actions:${src}`}
+          />
           <footer className={styles.footer}>
             <div className={styles.changeLine}>
               <button

@@ -482,6 +482,12 @@
   height: 14px;
   margin-top: 2px;
 }
+.editorContextActions {
+  flex-shrink: 0;
+  &:empty {
+    display: none;
+  }
+}
 .contextActions {
   flex-shrink: 0;
   padding: 12px 18px;

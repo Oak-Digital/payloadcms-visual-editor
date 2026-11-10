@@ -698,3 +698,79 @@ it('shows compact schema groups and navigates nested items without mixing blocks
     vi.unstubAllGlobals()
   }
 })
+
+it('routes contextual block actions to their list and hides them in chooser and rearrange views', async () => {
+  document.body.innerHTML =
+    '<main data-payload-block-list="layout"><section data-payload-block-id="a"></section></main><main data-payload-block-list="secondary"><section data-payload-block-id="b"></section></main><div id="root"></div><div id="panel"></div><div id="context"></div>'
+  const root = createRoot(document.getElementById('root')!)
+  const panel = document.getElementById('panel')!
+  const context = document.getElementById('context')!
+  document.querySelector('section')!.scrollIntoView = vi.fn()
+  vi.stubGlobal('matchMedia', () => ({ matches: true }))
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    Response.json({
+      revision: 'revision',
+      fields: {},
+      layout: [
+        { path: 'layout', type: 'blocks', label: 'Main content', children: [] },
+        { path: 'secondary', type: 'blocks', label: 'Secondary content', children: [] },
+      ],
+      orders: {
+        layout: [{ id: 'a', label: 'First', blockType: 'hero' }],
+        secondary: [{ id: 'b', label: 'Second', blockType: 'text' }],
+      },
+      blockTypes: {
+        layout: [{ slug: 'hero', label: 'Hero' }],
+        secondary: [{ slug: 'text', label: 'Text' }],
+      },
+      blockLimits: { layout: { min: 1, max: 1 } },
+    }),
+  )
+  const click = async (parent: HTMLElement, label: string) => {
+    const button = [...parent.querySelectorAll('button')].find(
+      (button) => button.textContent === label || button.getAttribute('aria-label') === label,
+    )!
+    expect(button).toBeTruthy()
+    expect(button.disabled, panel.textContent || '').toBe(false)
+    await act(async () => button.click())
+  }
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ArrangeEditor, {
+          active: true,
+          adminRoute: '/admin',
+          apiRoute: '/api',
+          documentInfo: { id: 'context-page', collection: 'pages', hasDrafts: true },
+          panelContainer: panel,
+          contextActionsContainer: context,
+          onClose: vi.fn(),
+        }),
+      ),
+    )
+    expect(panel.textContent).not.toContain('Add block to')
+    expect(context.textContent).toContain('Add block to Secondary content')
+    expect((context.querySelector('button') as HTMLButtonElement).disabled).toBe(true)
+    await click(context, 'Add block to Secondary content')
+    expect(context.childElementCount).toBe(0)
+    expect(panel.querySelector('[aria-label="Add Text"]')).toBeTruthy()
+    expect(panel.querySelector('[aria-label="Add Hero"]')).toBeNull()
+    await click(panel, 'Back')
+    await click(panel, 'Rearrange')
+    expect(context.childElementCount).toBe(0)
+    await click(panel, 'Edit')
+    await click(panel, 'Edit First')
+    expect(context.textContent).toContain('Duplicate block')
+    expect(context.textContent).toContain('Remove block')
+    expect([...context.querySelectorAll('button')].every((button) => button.disabled)).toBe(true)
+    expect(panel.textContent).not.toContain('Duplicate block')
+    await click(panel, 'Back')
+    expect(context.textContent).toContain('Add block to Secondary content')
+  } finally {
+    await act(async () => root.unmount())
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    document.body.replaceChildren()
+  }
+})
