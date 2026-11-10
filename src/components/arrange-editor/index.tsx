@@ -44,6 +44,7 @@ import { ScalarField, scalarFieldTypes } from '../schema-fields/scalar-field.js'
 import { findFieldLayout, fieldLayoutTrail } from '../../utils/field-layout.js'
 import styles from './styles.module.scss'
 import { ArrayEditor } from './array-editor.js'
+import { CanvasBlockControls } from './canvas-block-controls.js'
 import { createDraftBlockPreviews } from './draft-block-preview.js'
 import { createCanvasTextEditor } from './canvas-text.js'
 
@@ -1106,6 +1107,21 @@ export function ArrangeEditor({
     setStatus('')
   }
 
+  const canvasLists = useMemo(
+    () =>
+      Object.entries(sessions).flatMap(([key, session]) =>
+        Object.entries(expandedOrders(session)).map(([path, rows]) => ({
+          key,
+          path,
+          rows: (session.orders[path] ?? rows.map((row) => row.id)).flatMap((id) => {
+            const row = rows.find((row) => row.id === id)
+            return row ? [row] : []
+          }),
+        })),
+      ),
+    [sessions],
+  )
+
   function move(key: string, path: string, id: string, destination: number) {
     rememberEdit()
     setStatus('')
@@ -2095,6 +2111,13 @@ export function ArrangeEditor({
 
   return (
     <>
+      <CanvasBlockControls
+        active={active && tab === 'content' && !busy && !needsSync && !historical && !hasRecoveries}
+        epoch={previewEpoch}
+        owner={documentInfo}
+        lists={canvasLists}
+        onMove={move}
+      />
       {historyContainer &&
         createPortal(
           <>

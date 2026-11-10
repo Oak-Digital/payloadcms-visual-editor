@@ -672,3 +672,130 @@
     min-height: 44px;
   }
 }
+
+.canvasBlockOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: border-color 120ms ease;
+
+  .canvasBlockBar {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  :global([data-arrange-block-controls]):hover > &,
+  :global([data-arrange-block-controls]):focus-within > &,
+  &.canvasBlockDrop {
+    border-color: #b9a776;
+
+    .canvasBlockBar {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  // Keep the handle in the tab order even before the block receives focus.
+  .canvasBlockBar:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.canvasBlockBar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  max-width: calc(100% - 16px);
+  padding: 4px;
+  border: 1px solid #ffffff24;
+  border-radius: 10px;
+  background: #20201ff5;
+  color: #f5f4f0;
+  box-shadow: 0 4px 16px #0005;
+  pointer-events: auto;
+  font:
+    500 12px/1.2 system-ui,
+    sans-serif;
+  transition: opacity 120ms ease;
+
+  button {
+    display: grid;
+    place-items: center;
+    flex: 0 0 32px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font:
+      18px/1 system-ui,
+      sans-serif;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: #ffffff18;
+    }
+    &:focus-visible {
+      outline: 2px solid #d2bc84;
+      outline-offset: -2px;
+    }
+    &:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+  }
+
+  button.canvasBlockGrip {
+    cursor: grab;
+  }
+  button.canvasBlockGrip:active {
+    cursor: grabbing;
+  }
+}
+
+.canvasBlockLabel {
+  overflow: hidden;
+  max-width: 180px;
+  padding: 0 8px 0 3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvasBlockDrop {
+  background: #b9a77612;
+}
+.canvasAnnouncement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+@media (hover: none) {
+  .canvasBlockOverlay .canvasBlockBar {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .canvasBlockBar button {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvasBlockOverlay,
+  .canvasBlockBar {
+    transition: none;
+  }
+}
