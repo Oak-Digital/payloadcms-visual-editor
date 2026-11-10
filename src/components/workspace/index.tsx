@@ -780,7 +780,6 @@ function WorkspaceShell({
               <h2 ref={heading} tabIndex={-1}>
                 {titles[view]}
               </h2>
-              <small>Oak · Visual editor</small>
             </div>
             {view === 'home' && (
               <button
