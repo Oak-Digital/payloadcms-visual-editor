@@ -2173,13 +2173,18 @@ export function ArrangeEditor({
               {recoveryNotice && <p role="status">{recoveryNotice}</p>}
               {Object.entries(recoveries).map(([key, recovery]) => (
                 <section key={key} aria-label="Recover unsaved edits" className={styles.recovery}>
-                  <p>Unsaved edits · {new Date(recovery.record.savedAt).toLocaleString()}</p>
+                  <div className={styles.recoveryHeading}>
+                    <strong>Unsaved edits</strong>
+                    <time dateTime={new Date(recovery.record.savedAt).toISOString()}>
+                      {new Date(recovery.record.savedAt).toLocaleString()}
+                    </time>
+                  </div>
                   <p>
                     {recovery.conflict
                       ? 'Review and discard stored edits before saving. Your current changes are kept.'
                       : count > 0
                         ? 'Undo current changes to restore stored edits, or discard stored edits to keep your current changes.'
-                        : 'Restore or discard stored edits before saving.'}
+                        : 'Restore or discard before saving.'}
                   </p>
                   {recovery.conflict && (
                     <p>
@@ -2188,7 +2193,10 @@ export function ArrangeEditor({
                     </p>
                   )}
                   <details>
-                    <summary>Review stored edits</summary>
+                    <summary>
+                      <EditorIcon name="chevron" />
+                      Review stored edits
+                    </summary>
                     <dl>
                       {Object.entries(recovery.record.value.changes).map(([path, value]) => (
                         <div key={path}>

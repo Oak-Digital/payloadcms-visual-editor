@@ -433,7 +433,7 @@
 
 .blockModes {
   display: flex;
-  gap: 3px;
+  gap: 10px;
   margin-bottom: 20px;
   button {
     flex: 1;
@@ -489,13 +489,55 @@
 
 .panel .recovery {
   display: grid;
-  gap: 12px;
-  margin-bottom: 24px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid #383838;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 12px;
+  border: 1px solid #383838;
+  border-radius: 10px;
+  background: #222;
 
   p {
     margin: 0;
+  }
+
+  summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &:focus-visible {
+      outline: 2px solid #27baff;
+      outline-offset: 2px;
+    }
+
+    svg {
+      flex-shrink: 0;
+    }
+  }
+
+  details[open] > summary svg {
+    transform: rotate(90deg);
+  }
+}
+.recoveryHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: 12px;
+
+  strong {
+    font-weight: 500;
+  }
+
+  time {
+    color: #aaa;
   }
 }
 .recoveryActions {
