@@ -927,14 +927,6 @@ function WorkspaceShell({
                     ))}
                   </div>
                 </div>
-                <p className={styles.hint}>
-                  <EditorIcon name="edit" />
-                  {mode === 'browse'
-                    ? 'Browse the page with editing outlines hidden.'
-                    : mode === 'annotate'
-                      ? 'Click an element on the page to leave feedback.'
-                      : 'Click a heading or image on the page to jump straight into its controls.'}
-                </p>
               </section>
             )}
             {view === 'content' && (
