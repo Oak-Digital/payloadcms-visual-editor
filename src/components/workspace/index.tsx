@@ -970,23 +970,6 @@ function WorkspaceShell({
                   </a>
                 ) : (
                   <>
-                    {source?.createLabel && (
-                      <a
-                        className={styles.row}
-                        href={`${adminRoute}/collections/${encodeURIComponent(source.slug)}/create${
-                          current.locale ? `?${new URLSearchParams({ locale: current.locale })}` : ''
-                        }`}
-                        rel="noreferrer"
-                        target="_blank"
-                        title={`${source.createLabel} in Payload (opens in a new tab)`}
-                      >
-                        <EditorIcon name="plus" />
-                        <span className={styles.grow}>
-                          <strong>{source.createLabel}</strong>
-                        </span>
-                        <span aria-hidden="true">↗</span>
-                      </a>
-                    )}
                     <input
                       aria-label="Search content"
                       placeholder="Search content…"
@@ -1157,6 +1140,25 @@ function WorkspaceShell({
               key={`annotations:${src}`}
             />
           </div>
+          {view === 'content' && !source?.global && source?.createLabel && (
+            <div className={styles.contextActions} role="group" aria-label="Content actions">
+              <a
+                className={styles.row}
+                href={`${adminRoute}/collections/${encodeURIComponent(source.slug)}/create${
+                  current.locale ? `?${new URLSearchParams({ locale: current.locale })}` : ''
+                }`}
+                rel="noreferrer"
+                target="_blank"
+                title={`${source.createLabel} in Payload (opens in a new tab)`}
+              >
+                <EditorIcon name="plus" />
+                <span className={styles.grow}>
+                  <strong>{source.createLabel}</strong>
+                </span>
+                <span aria-hidden="true">↗</span>
+              </a>
+            </div>
+          )}
           <footer className={styles.footer}>
             <div className={styles.changeLine}>
               <button
