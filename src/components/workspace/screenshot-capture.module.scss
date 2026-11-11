@@ -1,3 +1,5 @@
+@use '../action-button' as button;
+
 .dialog {
   position: fixed;
   inset: 0;
@@ -9,9 +11,10 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: #fff;
+  color: #eee;
   font:
-    14px/1.5 system-ui,
+    13px/1.5 'Oak Manrope',
+    system-ui,
     sans-serif;
   &::backdrop {
     background: rgb(0 0 0 / 15%);
@@ -22,16 +25,32 @@
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  width: max-content;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 360px;
   max-width: calc(100vw - 32px);
   box-sizing: border-box;
-  padding: 16px;
-  border: 1px solid #555;
-  border-radius: 12px;
-  background: #171717;
+  padding: 20px;
+  border: 1px solid #414144;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #303033, #19191b);
+  box-shadow: 0 18px 42px #0004;
+  header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
   h2 {
-    font-size: 16px;
-    margin: 0 0 12px;
+    font: 600 17px/1.5 'Oak Manrope', system-ui, sans-serif;
+    margin: 0;
+  }
+  p {
+    margin: 0;
+    color: #aaa;
+  }
+  [role='alert'] {
+    color: #e5a698;
   }
   nav {
     display: flex;
@@ -39,23 +58,16 @@
     gap: 8px;
   }
   button {
-    font: inherit;
-    color: inherit;
-    background: #292929;
-    border: 1px solid #666;
-    border-radius: 8px;
-    padding: 10px 14px;
-    cursor: pointer;
+    @include button.action;
   }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
+  nav button {
+    flex: 1;
   }
-  button:focus-visible {
-    outline: 2px solid #3b82f6;
-    outline-offset: 3px;
+  .primary {
+    @include button.action(primary);
   }
 }
+
 .selection {
   position: absolute;
   inset: 0;

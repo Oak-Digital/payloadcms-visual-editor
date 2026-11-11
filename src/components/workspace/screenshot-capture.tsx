@@ -162,11 +162,7 @@ export function ScreenshotCapture({
             : undefined
         }
       >
-        <h2>Screenshot</h2>
-        {areaMode && <p>Drag an area around the blue marker.</p>}
-        {error && <p role="alert">{error}</p>}
-        {capturing && <p role="status">Capturing screenshot…</p>}
-        <nav>
+        <header>
           <button
             type="button"
             disabled={capturing}
@@ -174,9 +170,16 @@ export function ScreenshotCapture({
           >
             Back
           </button>
+          <h2>Screenshot</h2>
+        </header>
+        {areaMode && <p>Drag an area around the blue marker.</p>}
+        {error && <p role="alert">{error}</p>}
+        {capturing && <p role="status">Capturing screenshot…</p>}
+        <nav aria-label="Screenshot capture">
           {areaMode ? (
             <button
               type="button"
+              className={styles.primary}
               disabled={capturing || !includesMarker}
               onClick={() => area && void capture(area)}
             >
