@@ -115,6 +115,8 @@ export function useDotDrag(
           recent ? (last.y - first.y) / elapsed : 0,
           window.innerWidth,
           window.innerHeight,
+          event.clientX - current.startX,
+          event.clientY - current.startY,
         ),
       )
     }

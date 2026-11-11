@@ -51,10 +51,10 @@ it('distinguishes clicks, throws, paused releases and cancelled drags', () => {
     expect(drag.offset).toBeNull()
     act(() => {
       drag.handlers.onPointerDown(event(28, 50))
-      drag.handlers.onPointerMove(event(200, 60))
-      drag.handlers.onPointerUp(event(200, 200))
+      drag.handlers.onPointerMove(event(88, 450))
+      drag.handlers.onPointerUp(event(88, 700))
     })
-    expect(drop).toHaveBeenLastCalledWith('top-left')
+    expect(drop).toHaveBeenLastCalledWith('bottom-right')
     drop.mockClear()
     act(() => {
       drag.handlers.onPointerDown(event(28, 210))

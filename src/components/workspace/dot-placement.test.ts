@@ -43,3 +43,20 @@ describe('early release', () => {
     expect(resolveDotPosition(1300, 80, -0.1, 0.02, 1440, 1000)).toBe('top-right')
   })
 })
+
+describe('deliberate movement without release velocity', () => {
+  it.each([
+    [1328, 52, -60, 0, 'top-left'],
+    [112, 52, 60, 0, 'top-right'],
+    [52, 112, 0, 60, 'bottom-left'],
+    [1388, 888, 0, -60, 'top-right'],
+    [1328, 112, -60, 60, 'bottom-left'],
+  ] as const)('retains direction after slowing or pausing', (x, y, dx, dy, corner) => {
+    expect(resolveDotPosition(x, y, 0, 0, 1440, 1000, dx, dy)).toBe(corner)
+  })
+
+  it('keeps small nudges and a drag returned to its starting point nearby', () => {
+    expect(resolveDotPosition(1368, 52, 0, 0, 1440, 1000, -20, 0)).toBe('top-right')
+    expect(resolveDotPosition(1388, 52, 0, 0, 1440, 1000, 0, 0)).toBe('top-right')
+  })
+})
