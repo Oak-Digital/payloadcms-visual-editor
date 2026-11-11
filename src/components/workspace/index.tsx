@@ -892,7 +892,11 @@ function WorkspaceShell({
                   </div>
                 </div>
                 <div className={styles.tools}>
-                  <nav aria-label="Editor tools" className={styles.segmented}>
+                  <nav
+                    aria-label="Editor tools"
+                    className={`${styles.segmented} ${styles.slidingSegmented}`}
+                    data-mode={mode}
+                  >
                     {(['browse', 'edit', 'annotate'] as const).map((value) => (
                       <button
                         type="button"
@@ -1163,7 +1167,7 @@ function WorkspaceShell({
                 <div className={styles.sectionLabel}>SIDEBAR SIZE</div>
                 <div
                   aria-label="Sidebar size"
-                  className={`${styles.segmented} ${styles.sidebarSize}`}
+                  className={`${styles.segmented} ${styles.slidingSegmented}`}
                   data-size={size}
                   role="group"
                 >
