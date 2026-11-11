@@ -103,6 +103,7 @@ export function useDotDrag(
           velocity.y,
           window.innerWidth,
           window.innerHeight,
+          { x: event.clientX - current.startX, y: event.clientY - current.startY },
         ),
       )
     }

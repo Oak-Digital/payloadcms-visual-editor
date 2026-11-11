@@ -36,9 +36,9 @@ describe('release momentum', () => {
       ),
     ).toEqual({ x: 1.5, y: 0.75 })
   })
-  it('distinguishes slow and fast releases from the same position', () => {
-    expect(resolveDotPosition(1200, 100, -0.2, 0, 1440, 1000)).toBe('top-right')
-    expect(resolveDotPosition(1200, 100, -1.5, 0, 1440, 1000)).toBe('top-left')
+  it('uses momentum for small movements without a committed direction', () => {
+    expect(resolveDotPosition(1200, 100, -0.2, 0, 1440, 1000, { x: 0, y: 0 })).toBe('top-right')
+    expect(resolveDotPosition(1200, 100, -1.5, 0, 1440, 1000, { x: 0, y: 0 })).toBe('top-left')
   })
   it.each([
     [-2, -2, 'top-left'],
@@ -46,7 +46,7 @@ describe('release momentum', () => {
     [-2, 2, 'bottom-left'],
     [2, 2, 'bottom-right'],
   ] as const)('projects the release direction to %s, %s', (vx, vy, corner) => {
-    expect(resolveDotPosition(720, 500, vx, vy, 1440, 1000)).toBe(corner)
+    expect(resolveDotPosition(720, 500, vx, vy, 1440, 1000, { x: 0, y: 0 })).toBe(corner)
   })
 })
 
@@ -81,5 +81,32 @@ describe('throw trajectory', () => {
       expect(p.x + target.x).toBeLessThanOrEqual(viewport.width - 64)
       expect(p.y + target.y).toBeLessThanOrEqual(viewport.height - 64)
     }
+  })
+})
+
+describe('early directional releases', () => {
+  it.each([0, 0.05, 0.2, 1.5])(
+    'keeps a 20%% drag moving toward its corner at release speed %s',
+    (speed) => {
+      expect(resolveDotPosition(1100, 52, -speed, 0, 1440, 1000, { x: -288, y: 0 })).toBe(
+        'top-left',
+      )
+      expect(resolveDotPosition(340, 52, speed, 0, 1440, 1000, { x: 288, y: 0 })).toBe('top-right')
+      expect(resolveDotPosition(52, 252, 0, speed, 1440, 1000, { x: 0, y: 200 })).toBe(
+        'bottom-left',
+      )
+      expect(resolveDotPosition(1388, 748, 0, -speed, 1440, 1000, { x: 0, y: -200 })).toBe(
+        'top-right',
+      )
+      expect(resolveDotPosition(1100, 252, -speed, speed, 1440, 1000, { x: -288, y: 200 })).toBe(
+        'bottom-left',
+      )
+    },
+  )
+  it('preserves intent halfway across despite minor release jitter', () => {
+    expect(resolveDotPosition(720, 56, 0.02, 0.01, 1440, 1000, { x: -668, y: 4 })).toBe('top-left')
+  })
+  it('allows bringing the dot back to cancel the move', () => {
+    expect(resolveDotPosition(1388, 52, 0, 0, 1440, 1000, { x: 0, y: 0 })).toBe('top-right')
   })
 })

@@ -16,11 +16,20 @@ export function resolveDotPosition(
   velocityY: number,
   width: number,
   height: number,
+  displacement: { x: number; y: number },
 ): DotPosition {
-  // Estimate where momentum would carry the dot before choosing its resting corner.
-  const projectedX = x + velocityX * 650
-  const projectedY = y + velocityY * 650
-  return `${projectedY < height / 2 ? 'top' : 'bottom'}-${projectedX < width / 2 ? 'left' : 'right'}`
+  // Once a drag clearly heads toward a side, slowing at release must not undo it.
+  const threshold = Math.max(
+    40,
+    Math.max(Math.abs(displacement.x), Math.abs(displacement.y)) * 0.35,
+  )
+  function side(position: number, speed: number, distance: number, extent: number) {
+    if (Math.abs(distance) >= threshold) return distance > 0
+    return position + speed * 650 >= extent / 2
+  }
+  const right = side(x, velocityX, displacement.x, width)
+  const bottom = side(y, velocityY, displacement.y, height)
+  return `${bottom ? 'bottom' : 'top'}-${right ? 'right' : 'left'}`
 }
 
 export function dotFlight(
