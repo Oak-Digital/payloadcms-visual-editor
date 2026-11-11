@@ -505,6 +505,31 @@ it.each([
         ),
       )
       expect(pending.mock.lastCall?.[3]).toBe('Review stored edits before saving.')
+      const recoveryToggle = () => panel.querySelector<HTMLButtonElement>('[aria-expanded]')!
+      const toggle = recoveryToggle()
+      const controlled = toggle
+        .getAttribute('aria-controls')!
+        .split(' ')
+        .map((id) => document.getElementById(id)!)
+      const details = panel.querySelector('details')!
+      details.open = true
+      toggle.focus()
+      await act(async () => toggle.click())
+      expect(toggle.getAttribute('aria-label')).toBe('Expand stored edits')
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(controlled.every((element) => element.hidden)).toBe(true)
+      expect(document.activeElement).toBe(toggle)
+      expect(localStorage.getItem(key)).toBe(stored)
+      await act(async () => toggle.click())
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(controlled.every((element) => !element.hidden)).toBe(true)
+      expect(document.activeElement).toBe(toggle)
+      expect(details.open).toBe(true)
+      await act(async () => toggle.click())
+      await act(async () => button('Save draft').click())
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(saves()).toHaveLength(0)
+      expect(localStorage.getItem(key)).toBe(stored)
       await act(async () => button('Rearrange').click())
       const surface = document.querySelector<HTMLElement>('[data-canvas-rearrange]')!
       expect(surface).toBeTruthy()

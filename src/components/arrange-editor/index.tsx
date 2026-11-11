@@ -44,6 +44,7 @@ import { SchemaFields } from '../schema-fields/index.js'
 import { ScalarField, scalarFieldTypes } from '../schema-fields/scalar-field.js'
 import { findFieldLayout, fieldLayoutTrail } from '../../utils/field-layout.js'
 import styles from './styles.module.scss'
+import { RecoveryPanel } from './recovery-panel.js'
 import { ArrayEditor } from './array-editor.js'
 import { CanvasBlockControls } from './canvas-block-controls.js'
 import { createDraftBlockPreviews } from './draft-block-preview.js'
@@ -171,6 +172,7 @@ export function ArrangeEditor({
   const [recoveries, setRecoveries] = useState<
     Record<string, { record: RecoveryRecord<Session>; conflict: boolean }>
   >({})
+  const [collapsedRecoveries, setCollapsedRecoveries] = useState<Record<string, string>>({})
   const hasRecoveries = Object.keys(recoveries).length > 0
   const unreadRecovery = useRef(new Set<string>())
   const [recoveryNotice, setRecoveryNotice] = useState('')
@@ -1817,6 +1819,7 @@ export function ArrangeEditor({
       return false
     }
     if (hasRecoveries) {
+      setCollapsedRecoveries({})
       setTab('content')
       setPicker(undefined)
       onReveal?.()
@@ -2356,30 +2359,40 @@ export function ArrangeEditor({
             <div className={styles.content}>
               {recoveryNotice && <p role="status">{recoveryNotice}</p>}
               {Object.entries(recoveries).map(([key, recovery]) => (
-                <section key={key} aria-label="Recover unsaved edits" className={styles.recovery}>
-                  <div className={styles.recoveryHeading}>
-                    <strong>Unsaved edits</strong>
-                    <time dateTime={new Date(recovery.record.savedAt).toISOString()}>
-                      {new Date(recovery.record.savedAt).toLocaleDateString(undefined, {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
-                      {' · '}
-                      {new Date(recovery.record.savedAt).toLocaleTimeString(undefined, {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: false,
-                      })}
-                    </time>
-                    <p>
-                      {recovery.conflict
-                        ? 'Review and discard stored edits before saving. Your current changes are kept.'
-                        : count > 0
-                          ? 'Undo current changes to restore stored edits, or discard stored edits to keep your current changes.'
-                          : 'Restore or discard these edits before saving.'}
-                    </p>
-                  </div>
+                <RecoveryPanel
+                  key={key}
+                  collapsed={collapsedRecoveries[key] === recovery.record.savedAt}
+                  onToggle={() =>
+                    setCollapsedRecoveries((all) => ({
+                      ...all,
+                      [key]: all[key] === recovery.record.savedAt ? '' : recovery.record.savedAt,
+                    }))
+                  }
+                  heading={
+                    <>
+                      <time dateTime={new Date(recovery.record.savedAt).toISOString()}>
+                        {new Date(recovery.record.savedAt).toLocaleDateString(undefined, {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                        {' · '}
+                        {new Date(recovery.record.savedAt).toLocaleTimeString(undefined, {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: false,
+                        })}
+                      </time>
+                      <p>
+                        {recovery.conflict
+                          ? 'Review and discard stored edits before saving. Your current changes are kept.'
+                          : count > 0
+                            ? 'Undo current changes to restore stored edits, or discard stored edits to keep your current changes.'
+                            : 'Restore or discard these edits before saving.'}
+                      </p>
+                    </>
+                  }
+                >
                   {recovery.conflict && (
                     <p>
                       This document has newer changes. Your stored edits remain available below for
@@ -2450,7 +2463,7 @@ export function ArrangeEditor({
                       Discard edits
                     </button>
                   </div>
-                </section>
+                </RecoveryPanel>
               ))}
 
               {picker && panelContainer && (

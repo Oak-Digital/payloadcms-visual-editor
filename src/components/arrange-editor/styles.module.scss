@@ -554,7 +554,75 @@
     color: #b2b1b5;
   }
 }
-.recoveryHeading {
+.recoveryContent:not([hidden]) {
+  display: grid;
+  gap: 18px;
+}
+.recoveryTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.panel .recoveryToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #b2b1b5;
+
+  &:hover {
+    background: #ffffff0a;
+  }
+}
+.panel .recoveryCollapsed {
+  width: 248px;
+  max-width: 100%;
+  gap: 0;
+  padding: 0;
+  border-radius: 24px;
+
+  .recoveryHeading {
+    gap: 0;
+  }
+
+  .recoveryTitle {
+    display: block;
+  }
+
+  .recoveryToggle {
+    width: 100%;
+    height: 46px;
+    gap: 10px;
+    padding: 0 8px 0 16px;
+    border-radius: 24px;
+    color: #eee;
+    font:
+      500 13px/20px 'Oak Manrope',
+      system-ui,
+      sans-serif;
+    text-align: left;
+  }
+}
+.recoveryIndicator {
+  flex: 0 0 6px;
+  height: 6px;
+  background: url('./assets/recovery-indicator.svg') center / 6px 6px no-repeat;
+}
+.recoveryLabel {
+  flex: 1;
+}
+.recoveryExpand {
+  flex: 0 0 32px;
+  height: 32px;
+  background: url('./assets/recovery-expand.svg') center / 16px 16px no-repeat;
+}
+.recoveryHeading:not([hidden]) {
   display: grid;
   gap: 4px;
 
