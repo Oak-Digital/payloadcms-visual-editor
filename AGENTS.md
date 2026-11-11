@@ -38,7 +38,7 @@
 
 ## Visual editor UX
 
-- The Visual Editor is desktop-only. Do not add mobile editor layouts, mobile previews, or device switchers, or spend time optimizing the editor for mobile. Verify editor layouts at desktop sizes; the host storefront's mobile requirements are separate.
+- The Visual Editor interface is desktop-only; do not optimize its controls or layout for use on mobile devices. Preserve Desktop/Mobile preview-width controls and mobile website previews inside the desktop editor. The host storefront must remain responsive.
 - Show block-specific controls only after that block is selected. Use layered views with a clear Back action instead of displaying every control together. Place Back beside the title in a single aligned header row.
 - Animate drawer view changes briefly and respect reduced-motion preferences. Preserve pending edits when navigating between views.
 - Keep editor cards equal in height with consistent gaps and padding. Keep titles on one line, truncate overflow with an ellipsis, and expose the full title on hover.
@@ -51,7 +51,7 @@
 - For plugin code changes, run `pnpm test:unit`, `pnpm typecheck` and `pnpm build` from this package directory in that environment. Tests live beside the source as `src/**/*.test.ts` and use `vitest.unit.config.ts`.
 - Add or update focused regression tests for changed editing, access, revision or persistence behavior. Cover affected failure paths as well as successful saves; avoid tests that merely mirror implementation details.
 - For integration changes, also verify the affected REC runner under `frontend/apps/web/src/lib/visual-editor/` and the relevant host checks. Inspect runners before execution; they may create disposable content and require a running local server and transaction-capable database.
-- For visible changes, exercise authenticated preview at desktop widths, keyboard navigation, pending edits across drawer transitions, undo/redo, save/publish and refresh behavior as relevant. Confirm public pages remain free of editor controls and editing attributes.
+- For visible changes, exercise the editor at desktop window sizes and check both desktop and mobile website preview widths. Verify keyboard navigation, pending edits across drawer transitions, undo/redo, save/publish and refresh behavior as relevant. Confirm public pages remain free of editor controls and editing attributes.
 - For documentation-only changes, check the diff and referenced paths; an application build is unnecessary. Report verification blocked by unavailable services or dependencies.
 
 ## Submodule workflow
