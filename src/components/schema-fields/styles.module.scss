@@ -27,6 +27,17 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
   gap: 12px;
   min-width: 0;
+  align-items: start;
+}
+@container (min-width: 312px) and (max-width: 473px) {
+  .row > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+.fields .section:not([aria-label]) {
+  padding-top: 0;
+  border-top: 0;
+  margin-top: 0;
 }
 .item {
   display: flex;
@@ -69,6 +80,11 @@
 .control > span {
   color: #bdbdbd;
 }
+.fields .control > input,
+.fields .control > select,
+.fields .control > textarea {
+  margin: 0;
+}
 .choices {
   display: grid;
   gap: 8px;
@@ -103,10 +119,10 @@
   font-weight: 600;
 }
 details.section[open] > summary {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
-details.section > div,
-details.section > section {
+details.section > div + div,
+details.section > section + section {
   margin-top: 12px;
 }
 
