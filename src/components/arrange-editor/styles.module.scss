@@ -728,49 +728,58 @@
   }
 }
 
+@font-face {
+  font-family: 'Oak Manrope';
+  src: url('../workspace/assets/manrope-latin-500-normal.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
 .canvasBlockBar {
   position: absolute;
-  top: var(--canvas-bar-top, -40px);
+  top: var(--canvas-bar-top, -62px);
   left: 8px;
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 8px;
+  width: max-content;
   max-width: calc(100% - 16px);
-  padding: 0;
-  border: 1px solid #ffffff24;
-  border-radius: 8px;
-  background: #242423;
-  color: #f1f0ed;
-  box-shadow: 0 4px 16px #0005;
+  box-sizing: border-box;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid #414144;
+  border-radius: 30px;
+  background: linear-gradient(180deg, #303033, #19191b);
+  color: #eee;
+  box-shadow: 0 18px 42px #00000040;
   pointer-events: auto;
   font:
-    500 12px/1.2 system-ui,
+    500 14px/22px 'Oak Manrope',
     sans-serif;
+  text-align: left;
   transition: opacity 120ms ease;
 
   button {
     display: grid;
     place-items: center;
-    flex: 0 0 34px;
-    width: 34px;
+    flex: 0 0 36px;
+    width: 36px;
     height: 36px;
+    box-sizing: border-box;
     padding: 0;
     border: 0;
-    border-radius: 3px;
-    border-left: 1px solid #ffffff24;
+    border-radius: 18px;
     background: transparent;
     color: inherit;
-    font:
-      18px/1 system-ui,
-      sans-serif;
+    font: inherit;
     cursor: pointer;
 
     &:hover:not(:disabled) {
       background: #ffffff18;
     }
     &:focus-visible {
-      outline: 2px solid #d2bc84;
-      outline-offset: -2px;
+      outline: 2px solid #b2b99d;
+      outline-offset: 2px;
     }
     &:disabled {
       opacity: 0.3;
@@ -788,13 +797,44 @@
 }
 
 .canvasBlockLabel {
-  color: #c7c6c2;
   overflow: hidden;
-  max-width: 160px;
-  min-width: 24px;
-  padding: 0 12px;
+  max-width: 240px;
+  min-width: 0;
+  margin-right: 28px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.canvasBlockDivider {
+  flex: 0 0 1px;
+  height: 20px;
+  background: #414144;
+}
+
+.canvasGripIcon,
+.canvasCommentIcon,
+.canvasArrowUpIcon,
+.canvasArrowDownIcon,
+.canvasChevronIcon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  background: center / contain no-repeat;
+}
+.canvasGripIcon {
+  background-image: url('./assets/grip.svg');
+}
+.canvasCommentIcon {
+  background-image: url('./assets/comment.svg');
+}
+.canvasArrowUpIcon {
+  background-image: url('./assets/arrow-up.svg');
+}
+.canvasArrowDownIcon {
+  background-image: url('./assets/arrow-down.svg');
+}
+.canvasChevronIcon {
+  background-image: url('./assets/chevron-down.svg');
 }
 
 .canvasBlockDragging {
@@ -862,14 +902,6 @@
   clip-path: inset(50%);
 }
 
-@media (hover: none) {
-  .canvasBlockBar button {
-    width: 40px;
-    height: 40px;
-    flex-basis: 40px;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   :global([data-arrange-block-controls]):has(> .canvasBlockOverlay) {
     transition: none;
@@ -885,12 +917,19 @@
 }
 
 .canvasBlockBar button.canvasBlockEdit {
-  flex-basis: 48px;
-  width: 48px;
+  flex-basis: 64px;
+  width: 64px;
+  background: #b2b99d;
+  color: #20251b;
   font:
-    600 12px/1.2 system-ui,
+    500 12px/20px 'Oak Manrope',
     sans-serif;
+
+  &:hover:not(:disabled) {
+    background: #c2c9ad;
+  }
 }
+
 .canvasBlockMenu {
   position: absolute;
   top: calc(100% + 5px);
@@ -898,9 +937,9 @@
   display: grid;
   min-width: 170px;
   padding: 5px;
-  border: 1px solid #ffffff24;
-  border-radius: 8px;
-  background: #20201f;
+  border: 1px solid #414144;
+  border-radius: 18px;
+  background: #252527;
   box-shadow: 0 6px 20px #0005;
   > span {
     padding: 8px;
@@ -915,25 +954,8 @@
     border: 0;
     text-align: left;
     font:
-      500 12px/1.2 system-ui,
+      500 12px/20px 'Oak Manrope',
       sans-serif;
-  }
-}
-@media (max-width: 480px), (pointer: coarse) {
-  .canvasBlockBar {
-    left: 4px;
-    max-width: calc(100% - 8px);
-    button {
-      width: 40px;
-      height: 44px;
-      flex-basis: 40px;
-    }
-  }
-  .canvasBlockLabel {
-    padding: 0 6px;
-  }
-  .canvasBlockMenu > button {
-    width: 100%;
   }
 }
 

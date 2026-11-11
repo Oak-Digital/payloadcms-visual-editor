@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom'
 import type { PayloadCMSDocument } from '../../types.js'
 import { documentKey, fieldDocument } from '../../utils/field-target.js'
 import styles from './styles.module.scss'
-import { EditorIcon } from '../workspace/icons.js'
 
 type Block = { key: string; path: string; id: string; label: string; index: number; count: number }
 
@@ -140,13 +139,12 @@ export function CanvasBlockControls({
         header && (position === 'fixed' || position === 'sticky')
           ? Math.max(0, header.getBoundingClientRect().bottom)
           : 0
-      const narrow = window.matchMedia('(max-width: 480px), (pointer: coarse)').matches
       next.forEach(({ element }) => {
         const rect = element.getBoundingClientRect()
-        const preferred = narrow ? 4 : -40
+        const preferred = -62
         const top = Math.min(
           Math.max(preferred, headerBottom + 8 - rect.top),
-          Math.max(4, rect.height - 48),
+          Math.max(4, rect.height - 62),
         )
         element.style.setProperty('--canvas-bar-top', `${top}px`)
       })
@@ -313,17 +311,7 @@ export function CanvasBlockControls({
                   }
                 }}
               >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  {[4, 8, 12].flatMap((y) =>
-                    [5, 11].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.2" />),
-                  )}
-                </svg>
+                <span className={styles.canvasGripIcon} aria-hidden="true" />
               </button>
               <span className={styles.canvasBlockLabel} title={block.label}>
                 {block.label}
@@ -345,9 +333,10 @@ export function CanvasBlockControls({
                   title="Comment"
                   onClick={() => onComment(element, block.label)}
                 >
-                  <EditorIcon name="comment" />
+                  <span className={styles.canvasCommentIcon} aria-hidden="true" />
                 </button>
               )}
+              <span className={styles.canvasBlockDivider} aria-hidden="true" />
               <button
                 type="button"
                 aria-label={`Move ${block.label} up`}
@@ -355,7 +344,7 @@ export function CanvasBlockControls({
                 disabled={block.index === 0}
                 onClick={() => move(block, block.index - 1)}
               >
-                <span aria-hidden="true">↑</span>
+                <span className={styles.canvasArrowUpIcon} aria-hidden="true" />
               </button>
               <button
                 type="button"
@@ -364,7 +353,7 @@ export function CanvasBlockControls({
                 disabled={block.index === block.count - 1}
                 onClick={() => move(block, block.index + 1)}
               >
-                <span aria-hidden="true">↓</span>
+                <span className={styles.canvasArrowDownIcon} aria-hidden="true" />
               </button>
               <button
                 type="button"
@@ -380,7 +369,7 @@ export function CanvasBlockControls({
                   )
                 }
               >
-                <EditorIcon name="down" />
+                <span className={styles.canvasChevronIcon} aria-hidden="true" />
               </button>
               {expanded === `${block.key}:${block.path}:${block.id}` && (
                 <div className={styles.canvasBlockMenu} id={`${menuId}-${block.id}`}>
