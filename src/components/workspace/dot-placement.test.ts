@@ -24,3 +24,22 @@ describe('dot placement', () => {
     expect(resolveDotPosition(-200, 1200, 0, 0, 1000, 800)).toBe('bottom-left')
   })
 })
+
+describe('early release', () => {
+  it.each([
+    [1300, 80, -0.4, 0.03, 'top-left'],
+    [140, 80, 0.4, 0.03, 'top-right'],
+    [80, 140, 0.03, 0.4, 'bottom-left'],
+    [1360, 860, 0.03, -0.4, 'top-right'],
+    [1300, 140, -0.4, 0.4, 'bottom-left'],
+  ] as const)('sends a short throw toward its intended corner', (x, y, vx, vy, corner) => {
+    expect(resolveDotPosition(x, y, vx, vy, 1440, 1000)).toBe(corner)
+    expect(resolveDotPosition((x / 1440) * 3840, (y / 1000) * 2160, vx, vy, 3840, 2160)).toBe(
+      corner,
+    )
+  })
+
+  it('keeps slow releases near their current corner', () => {
+    expect(resolveDotPosition(1300, 80, -0.1, 0.02, 1440, 1000)).toBe('top-right')
+  })
+})

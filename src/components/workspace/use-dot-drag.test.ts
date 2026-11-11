@@ -42,8 +42,9 @@ it('distinguishes clicks, throws, paused releases and cancelled drags', () => {
     expect(drag.consumeClick()).toBe(false)
     act(() => {
       drag.handlers.onPointerDown(event(28, 20))
-      drag.handlers.onPointerMove(event(200, 40))
-      drag.handlers.onPointerUp(event(200, 41))
+      drag.handlers.onPointerMove(event(70, 100))
+      drag.handlers.onPointerMove(event(70, 110))
+      drag.handlers.onPointerUp(event(70, 115))
     })
     expect(drop).toHaveBeenLastCalledWith('bottom-right')
     expect(drag.consumeClick()).toBe(true)

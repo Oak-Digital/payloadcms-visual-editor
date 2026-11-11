@@ -12,9 +12,7 @@ type Drag = {
   top: number
   x: number
   y: number
-  time: number
-  vx: number
-  vy: number
+  samples: { x: number; y: number; time: number }[]
   baseLeft: number
   baseTop: number
   moved: boolean
@@ -78,14 +76,14 @@ export function useDotDrag(
   function move(event: PointerEvent<HTMLButtonElement>) {
     const current = drag.current
     if (!current || current.id !== event.pointerId) return
-    const elapsed = event.timeStamp - current.time
-    if (elapsed > 0) {
-      current.vx = (event.clientX - current.x) / elapsed
-      current.vy = (event.clientY - current.y) / elapsed
+    if (event.clientX !== current.x || event.clientY !== current.y) {
+      current.samples.push({ x: event.clientX, y: event.clientY, time: event.timeStamp })
+      while (current.samples.length > 2 && current.samples[1].time < event.timeStamp - 100) {
+        current.samples.shift()
+      }
     }
     current.x = event.clientX
     current.y = event.clientY
-    current.time = event.timeStamp
     const x = event.clientX - current.startX
     const y = event.clientY - current.startY
     current.moved ||= Math.hypot(x, y) > 6
@@ -101,7 +99,10 @@ export function useDotDrag(
     if (!current || current.id !== event.pointerId) return
     suppressClick.current = current.moved
     if (current.moved && !cancelled) {
-      const recent = event.timeStamp - current.time < 100
+      const last = current.samples[current.samples.length - 1]
+      const first = current.samples[0]
+      const elapsed = last.time - first.time
+      const recent = event.timeStamp - last.time < 120 && elapsed > 0
       setLanding({
         x: current.left + event.clientX - current.startX,
         y: current.top + event.clientY - current.startY,
@@ -110,8 +111,8 @@ export function useDotDrag(
         resolveDotPosition(
           current.left + event.clientX - current.startX + 28,
           current.top + event.clientY - current.startY + 28,
-          recent ? current.vx : 0,
-          recent ? current.vy : 0,
+          recent ? (last.x - first.x) / elapsed : 0,
+          recent ? (last.y - first.y) / elapsed : 0,
           window.innerWidth,
           window.innerHeight,
         ),
@@ -151,9 +152,7 @@ export function useDotDrag(
           top: bounds.top,
           x: event.clientX,
           y: event.clientY,
-          time: event.timeStamp,
-          vx: 0,
-          vy: 0,
+          samples: [{ x: event.clientX, y: event.clientY, time: event.timeStamp }],
           moved: false,
         }
         event.currentTarget.setPointerCapture(event.pointerId)
