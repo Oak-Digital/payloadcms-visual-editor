@@ -110,3 +110,36 @@ describe('early directional releases', () => {
     expect(resolveDotPosition(1388, 52, 0, 0, 1440, 1000, { x: 0, y: 0 })).toBe('top-right')
   })
 })
+
+describe('three-percent swish', () => {
+  it.each([
+    [1000, 800],
+    [1440, 1000],
+    [2560, 1440],
+  ])('uses each viewport axis at %s by %s', (width, height) => {
+    const dx = width * 0.03
+    const dy = height * 0.03
+    expect(resolveDotPosition(width - 52 - dx, 52, 0, 0, width, height, { x: -dx, y: 0 })).toBe(
+      'top-left',
+    )
+    expect(resolveDotPosition(52 + dx, 52, 0, 0, width, height, { x: dx, y: 0 })).toBe('top-right')
+    expect(resolveDotPosition(52, 52 + dy, 0, 0, width, height, { x: 0, y: dy })).toBe(
+      'bottom-left',
+    )
+    expect(
+      resolveDotPosition(width - 52, height - 52 - dy, 0, 0, width, height, { x: 0, y: -dy }),
+    ).toBe('top-right')
+    expect(
+      resolveDotPosition(width - 52 - dx, 52 + dy, 0, 0, width, height, { x: -dx, y: dy }),
+    ).toBe('bottom-left')
+    expect(
+      resolveDotPosition(width - 52 - dx + 1, 52, 0, 0, width, height, { x: -dx + 1, y: 0 }),
+    ).toBe('top-right')
+  })
+})
+
+it('accepts fractional-coordinate rounding at the swish boundary', () => {
+  expect(resolveDotPosition(1388, 82, 0, 0, 1440, 1000, { x: 0, y: 29.999999999 })).toBe(
+    'bottom-right',
+  )
+})

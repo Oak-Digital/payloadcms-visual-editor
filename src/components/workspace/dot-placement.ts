@@ -19,12 +19,9 @@ export function resolveDotPosition(
   displacement: { x: number; y: number },
 ): DotPosition {
   // Once a drag clearly heads toward a side, slowing at release must not undo it.
-  const threshold = Math.max(
-    40,
-    Math.max(Math.abs(displacement.x), Math.abs(displacement.y)) * 0.35,
-  )
   function side(position: number, speed: number, distance: number, extent: number) {
-    if (Math.abs(distance) >= threshold) return distance > 0
+    // Pointer coordinates can differ by a fractional-pixel rounding error.
+    if (Math.abs(distance) + 0.001 >= extent * 0.03) return distance > 0
     return position + speed * 650 >= extent / 2
   }
   const right = side(x, velocityX, displacement.x, width)
