@@ -330,6 +330,16 @@ function WorkspaceShell({
   const [annotationCount, setAnnotationCount] = useState(0)
   const [annotationEditing, setAnnotationEditing] = useState(false)
   const [saveStatus, setSaveStatus] = useState('')
+  const [recentlySaved, setRecentlySaved] = useState(false)
+  useEffect(() => {
+    if (busy || pending || !['Draft saved.', 'All changes published.'].includes(saveStatus)) {
+      setRecentlySaved(false)
+      return
+    }
+    setRecentlySaved(true)
+    const timer = window.setTimeout(() => setRecentlySaved(false), 5000)
+    return () => window.clearTimeout(timer)
+  }, [saveStatus, busy, pending, src])
   const launcher = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
 
@@ -1209,9 +1219,11 @@ function WorkspaceShell({
                 type="button"
               >
                 <span>Status</span>
-                <span className={styles.statusBadge} data-pending={pending}>
-                  {busy ? 'Working' : pending ? 'Unsaved' : 'Saved'}
-                </span>
+                {(busy || pending || recentlySaved) && (
+                  <span className={styles.statusBadge} data-pending={pending}>
+                    {busy ? 'Working' : pending ? 'Unsaved' : 'Saved'}
+                  </span>
+                )}
               </button>
               <div
                 className={styles.historyActions}

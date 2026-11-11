@@ -361,6 +361,43 @@
     line-height: 48px;
     font-weight: 300;
   }
+  strong,
+  > [aria-hidden] {
+    transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  > [aria-hidden] {
+    margin-right: 4px;
+  }
+  &:focus-visible {
+    strong,
+    > [aria-hidden] {
+      transform: translateX(4px);
+    }
+  }
+  @media (hover: hover) {
+    &:hover {
+      strong,
+      > [aria-hidden] {
+        transform: translateX(4px);
+      }
+    }
+  }
+}
+.floating[data-reduce-motion='true'] .pageSelect {
+  strong,
+  > [aria-hidden] {
+    transition: none;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .floating .pageSelect:is(:hover, :focus-visible) {
+    strong,
+    > [aria-hidden] {
+      transition: none;
+      transform: none;
+    }
+  }
 }
 .grow {
   flex: 1;
@@ -481,7 +518,7 @@
   font-size: 9px;
   margin-top: 3px;
 }
-.floating :is(.card, .pageSelect, .row):hover {
+.floating :is(.card, .row):hover {
   background: #222;
   border-color: #525252;
 }
@@ -599,6 +636,21 @@
   background: #b2b99d;
   border-color: #b2b99d;
   color: #20251b;
+}
+.floating .actions button:not(:disabled):hover {
+  background: #48484b;
+  border-color: #626266;
+}
+.floating .actions button:last-child:not(:disabled):hover {
+  background: #c5cdb0;
+  border-color: #c5cdb0;
+}
+.footer .changeStatus:not(:disabled):hover {
+  color: #c5cdb0;
+}
+.footer .historyActions button:not(:disabled):hover {
+  background: #48484b;
+  color: #fff;
 }
 .panel {
   height: 100%;
