@@ -324,6 +324,7 @@ function WorkspaceShell({
   >('home')
   const [dotPosition, setDotPosition] = useState('top-right')
   const [size, setSize] = useState('standard')
+  const [fullHeight, setFullHeight] = useState(false)
   const [reduceMotion, setReduceMotion] = useState(false)
   const [changeCount, setChangeCount] = useState(0)
   const [blockCount, setBlockCount] = useState(0)
@@ -778,6 +779,7 @@ function WorkspaceShell({
         data-dot-position={dotPosition}
         data-open={open}
         data-size={size}
+        data-full-height={fullHeight}
         data-reduce-motion={reduceMotion}
       >
         <button
@@ -1155,6 +1157,14 @@ function WorkspaceShell({
                     </button>
                   ))}
                 </div>
+                <label className={styles.toggle}>
+                  Full-screen height
+                  <input
+                    type="checkbox"
+                    checked={fullHeight}
+                    onChange={(event) => setFullHeight(event.target.checked)}
+                  />
+                </label>
                 <label className={styles.toggle}>
                   Reduce motion
                   <input

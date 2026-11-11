@@ -160,6 +160,9 @@
     top: auto;
     bottom: 24px;
   }
+  &[data-open='true'][data-full-height='true'] {
+    height: calc(100dvh - 48px);
+  }
   &[data-size='large'] {
     --editor-width: 440px;
   }
