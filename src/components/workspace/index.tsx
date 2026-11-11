@@ -12,7 +12,7 @@ import { PreviewRefreshContext, usePreviewRefresh } from '../../hooks/use-previe
 import { EditorIcon, OakMark } from './icons.js'
 import { VisualEditorToolbar } from '../toolbar/index.js'
 import styles from './styles.module.scss'
-import type { DotPosition } from './dot-placement.js'
+import { useDotPosition } from './use-dot-position.js'
 import { useDotDrag } from './use-dot-drag.js'
 import { useStatusCollapse } from './use-status-collapse.js'
 
@@ -332,7 +332,7 @@ function WorkspaceShell({
   const [view, setView] = useState<
     'home' | 'content' | 'shared' | 'editor' | 'annotations' | 'settings'
   >('home')
-  const [dotPosition, setDotPosition] = useState<DotPosition>('top-right')
+  const [dotPosition, setDotPosition] = useDotPosition()
   const [size, setSize] = useState('standard')
   const [fullHeight, setFullHeight] = useState(false)
   const [reduceMotion, setReduceMotion] = useState(false)
@@ -815,6 +815,7 @@ function WorkspaceShell({
       >
         <button
           aria-label="Open visual editor"
+          title="Open visual editor · Drag to a corner"
           aria-expanded={open}
           aria-controls="visual-editor-shell"
           className={styles.launcher}

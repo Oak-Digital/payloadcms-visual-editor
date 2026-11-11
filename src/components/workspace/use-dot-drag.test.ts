@@ -115,3 +115,52 @@ it('glides from the release point, cancels motion on re-grab, and honors reduced
     act(() => root.unmount())
   }
 })
+
+it('keeps the grabbed point stable through idle motion and clamps dragging to the viewport', () => {
+  const element = document.createElement('aside')
+  let idle = true
+  element.getBoundingClientRect = () => ({ left: 24, top: idle ? 20 : 24 }) as DOMRect
+  element.getAnimations = () =>
+    [
+      {
+        cancel: () => {
+          idle = false
+        },
+      },
+    ] as Animation[]
+  const container = { current: element }
+  const button = document.createElement('button')
+  button.setPointerCapture = vi.fn()
+  button.hasPointerCapture = () => false
+  let drag!: ReturnType<typeof useDotDrag>
+  function Test() {
+    drag = useDotDrag(vi.fn(), container, true)
+    return null
+  }
+  const root = createRoot(document.createElement('div'))
+  const event = (x: number, y: number) =>
+    ({
+      button: 0,
+      isPrimary: true,
+      pointerId: 1,
+      clientX: x,
+      clientY: y,
+      timeStamp: 0,
+      currentTarget: button,
+    }) as PointerEvent<HTMLButtonElement>
+  act(() => root.render(createElement(Test)))
+  try {
+    act(() => drag.handlers.onPointerDown(event(52, 48)))
+    expect(drag.offset).toEqual({ x: 0, y: -4 })
+    act(() => drag.handlers.onPointerMove(event(152, 148)))
+    expect(drag.offset).toEqual({ x: 100, y: 96 })
+    act(() => drag.handlers.onPointerMove(event(-200, -200)))
+    expect(drag.offset).toEqual({ x: 8 - 24, y: 8 - 24 })
+    act(() => drag.handlers.onPointerMove(event(10000, 10000)))
+    expect(drag.offset).toEqual({ x: innerWidth - 64 - 24, y: innerHeight - 64 - 24 })
+    act(() => drag.handlers.onPointerCancel(event(10000, 10000)))
+    expect(drag.offset).toBeNull()
+  } finally {
+    act(() => root.unmount())
+  }
+})

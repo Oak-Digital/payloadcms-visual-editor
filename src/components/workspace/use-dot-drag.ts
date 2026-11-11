@@ -14,6 +14,7 @@ type Drag = {
   baseLeft: number
   baseTop: number
   moved: boolean
+  point: { x: number; y: number }
 }
 
 export function useDotDrag(
@@ -62,6 +63,19 @@ export function useDotDrag(
     }
   }, [landing, container, reduceMotion, systemReduceMotion, open])
 
+  function position(current: Drag, event: PointerEvent<HTMLButtonElement>) {
+    return {
+      x: Math.max(
+        8,
+        Math.min(window.innerWidth - 64, current.left + event.clientX - current.startX),
+      ),
+      y: Math.max(
+        8,
+        Math.min(window.innerHeight - 64, current.top + event.clientY - current.startY),
+      ),
+    }
+  }
+
   function move(event: PointerEvent<HTMLButtonElement>) {
     const current = drag.current
     if (!current || current.id !== event.pointerId) return
@@ -73,39 +87,45 @@ export function useDotDrag(
     const x = event.clientX - current.startX
     const y = event.clientY - current.startY
     current.moved ||= Math.hypot(x, y) > 6
-    if (current.moved)
+    if (current.moved) {
+      const point = position(current, event)
+      current.point = point
       setOffset({
-        x: current.left - current.baseLeft + x,
-        y: current.top - current.baseTop + y,
+        x: point.x - current.baseLeft,
+        y: point.y - current.baseTop,
       })
+    }
   }
 
   function finish(event: PointerEvent<HTMLButtonElement>, cancelled = false) {
     const current = drag.current
     if (!current || current.id !== event.pointerId) return
     suppressClick.current = current.moved
-    if (current.moved && !cancelled) {
-      const velocity = releaseVelocity(current.samples, {
-        x: event.clientX,
-        y: event.clientY,
-        time: event.timeStamp,
-      })
+    if (current.moved) {
+      const point = cancelled ? current.point : position(current, event)
+      const velocity = cancelled
+        ? { x: 0, y: 0 }
+        : releaseVelocity(current.samples, {
+            x: event.clientX,
+            y: event.clientY,
+            time: event.timeStamp,
+          })
       setLanding({
-        x: current.left + event.clientX - current.startX,
-        y: current.top + event.clientY - current.startY,
+        ...point,
         velocity,
       })
-      onDrop(
-        resolveDotPosition(
-          current.left + event.clientX - current.startX + 28,
-          current.top + event.clientY - current.startY + 28,
-          velocity.x,
-          velocity.y,
-          window.innerWidth,
-          window.innerHeight,
-          { x: event.clientX - current.startX, y: event.clientY - current.startY },
-        ),
-      )
+      if (!cancelled)
+        onDrop(
+          resolveDotPosition(
+            point.x + 28,
+            point.y + 28,
+            velocity.x,
+            velocity.y,
+            window.innerWidth,
+            window.innerHeight,
+            { x: event.clientX - current.startX, y: event.clientY - current.startY },
+          ),
+        )
     }
     drag.current = null
     setOffset(null)
@@ -124,11 +144,14 @@ export function useDotDrag(
     },
     handlers: {
       onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
-        if (event.button !== 0 || !event.isPrimary) return
-        const bounds = (container?.current ?? event.currentTarget).getBoundingClientRect()
+        if (event.button !== 0 || !event.isPrimary || open || drag.current) return
+        const element = container?.current ?? event.currentTarget
+        const bounds = element.getBoundingClientRect()
         animation.current?.cancel()
+        // Remove idle motion before measuring the fixed corner, preserving the visible grab point.
+        for (const motion of element.getAnimations?.() ?? []) motion.cancel()
         setLanding(null)
-        const base = (container?.current ?? event.currentTarget).getBoundingClientRect()
+        const base = element.getBoundingClientRect()
         setOffset({ x: bounds.left - base.left, y: bounds.top - base.top })
         suppressClick.current = false
         drag.current = {
@@ -141,6 +164,7 @@ export function useDotDrag(
           top: bounds.top,
           samples: [{ x: event.clientX, y: event.clientY, time: event.timeStamp }],
           moved: false,
+          point: { x: bounds.left, y: bounds.top },
         }
         event.currentTarget.setPointerCapture(event.pointerId)
       },
