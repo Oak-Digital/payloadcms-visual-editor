@@ -1,3 +1,4 @@
+@use '../action-button' as button;
 @use '../compact-row' as row;
 
 .editor {
@@ -182,13 +183,6 @@
   background: none;
   padding: 5px;
 }
-.editor .primary {
-  background: #b2b99d;
-  color: #20251b;
-}
-.editor .danger {
-  color: #e5afa1;
-}
 .editor :focus-visible {
   outline: 2px solid #bbb;
   outline-offset: 3px;
@@ -207,4 +201,17 @@
   .body {
     animation: none;
   }
+}
+
+.editor .body > button:not([class]),
+.editor .body > section > button,
+.editor .inline > button,
+.editor button.danger {
+  @include button.action;
+}
+.editor .inline > button.primary {
+  @include button.action(primary);
+}
+.editor button.danger {
+  @include button.action(danger);
 }

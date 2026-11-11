@@ -1,3 +1,4 @@
+@use '../action-button' as button;
 @use '../compact-row' as row;
 
 @font-face {
@@ -643,27 +644,11 @@
   font: inherit;
 }
 .floating .actions button {
+  @include button.action;
   flex: 1;
-  min-height: 42px;
-  padding: 10px 12px;
-  font-size: 12px;
-  border: 1px solid transparent;
-  border-radius: 21px;
-  background: #343436;
-  color: #eee;
 }
 .floating .actions button:last-child {
-  background: #b2b99d;
-  border-color: #b2b99d;
-  color: #20251b;
-}
-.floating .actions button:not(:disabled):hover {
-  background: #48484b;
-  border-color: #626266;
-}
-.floating .actions button:last-child:not(:disabled):hover {
-  background: #c5cdb0;
-  border-color: #c5cdb0;
+  @include button.action(primary);
 }
 .footer .changeStatus:not(:disabled):hover {
   color: #c5cdb0;
@@ -946,22 +931,17 @@
   gap: 10px;
 
   button {
-    min-height: 44px;
+    @include button.action;
     margin: 0;
   }
 
   .confirmSave {
-    background: #eee;
-    border-color: #eee;
-    color: #171717;
-    font-weight: 600;
+    @include button.action(primary);
   }
 
   .confirmDiscard {
+    @include button.action(danger);
     grid-column: 1 / -1;
-    background: transparent;
-    border-color: transparent;
-    color: #e5a698;
   }
 }
 @keyframes breathe {

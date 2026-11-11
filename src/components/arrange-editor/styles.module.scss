@@ -1,3 +1,4 @@
+@use '../action-button' as button;
 .panel {
   position: fixed;
   z-index: 100001;
@@ -231,26 +232,10 @@
     14px/1.5 system-ui,
     sans-serif;
   button {
-    border: 1px solid #555;
-    border-radius: 8px;
-    padding: 8px 12px;
-    color: #f4f4f4;
-    background: #303030;
-    font: inherit;
-    cursor: pointer;
-  }
-  button:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-  button:focus-visible {
-    outline: 2px solid #27baff;
-    outline-offset: 2px;
+    @include button.action;
   }
   .primary {
-    background: #b2b99d;
-    border-color: #b2b99d;
-    color: #20251b;
+    @include button.action(primary);
   }
 }
 
@@ -644,23 +629,10 @@
   gap: 10px;
 
   button {
-    min-height: 42px;
-    padding: 10px 12px;
-    border: 0;
-    border-radius: 21px;
-    background: #343436;
-    font:
-      500 13px/20px 'Oak Manrope',
-      system-ui,
-      sans-serif;
+    @include button.action;
 
     &:first-child {
-      background: #b2b99d;
-      color: #20251b;
-    }
-
-    &:hover:not(:disabled) {
-      filter: brightness(1.08);
+      @include button.action(primary);
     }
   }
 }
@@ -723,33 +695,14 @@
   gap: 8px;
   margin-top: 12px;
   button {
+    @include button.action;
     width: auto;
-    min-height: 36px;
     margin: 0;
-    padding: 7px 12px;
-    border-radius: 8px;
-    font-size: 12px;
-    line-height: 20px;
     white-space: nowrap;
   }
-  .resetField {
-    color: #bbb;
-    border-color: #3b3b3b;
-    background: transparent;
-    &:not(:disabled):hover {
-      color: #fff;
-      background: #2c2c2c;
-    }
-  }
   .doneField {
+    @include button.action(primary);
     margin-left: auto;
-    color: #20251b;
-    border-color: #b2b99d;
-    background: #b2b99d;
-    &:not(:disabled):hover {
-      border-color: #fff;
-      background: #fff;
-    }
   }
 }
 .contextActions {
@@ -1135,4 +1088,8 @@
   &:active {
     cursor: grabbing;
   }
+}
+
+.panel .reviewAction {
+  @include button.action;
 }

@@ -2115,7 +2115,6 @@ export function ArrangeEditor({
           {(field.type === 'text' || field.type === 'textarea') &&
             Object.hasOwn(session.changes, target.path) && (
               <button
-                className={styles.resetField}
                 disabled={busy || needsSync}
                 onClick={(event) => {
                   event.currentTarget
@@ -2994,7 +2993,11 @@ export function ArrangeEditor({
                         }}
                       />
                       {!busy && (
-                        <button type="button" onClick={() => void preparePublish()}>
+                        <button
+                          className={styles.reviewAction}
+                          type="button"
+                          onClick={() => void preparePublish()}
+                        >
                           Refresh review
                         </button>
                       )}

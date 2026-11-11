@@ -1,0 +1,43 @@
+@mixin action($variant: secondary) {
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #343436;
+  color: #eee;
+  font:
+    500 13px/20px 'Oak Manrope',
+    system-ui,
+    sans-serif;
+  cursor: pointer;
+
+  &:not(:disabled):hover {
+    background: #48484b;
+    border-color: #626266;
+  }
+  &:not(:disabled):active {
+    transform: scale(0.98);
+  }
+  &:focus-visible {
+    outline: 2px solid #b2b99d;
+    outline-offset: 3px;
+  }
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  @if $variant == primary {
+    background: #b2b99d;
+    border-color: #b2b99d;
+    color: #20251b;
+
+    &:not(:disabled):hover {
+      background: #c5cdb0;
+      border-color: #c5cdb0;
+    }
+  }
+  @if $variant == danger {
+    color: #e5afa1;
+  }
+}

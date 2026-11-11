@@ -1,3 +1,4 @@
+@use '../action-button' as button;
 .editor {
   width: 100%;
   max-width: 960px;
@@ -131,34 +132,12 @@
     }
   }
   button.confirm {
+    @include button.action(primary);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     gap: 6px;
-    min-height: 34px;
-    padding: 7px 12px;
-    border: 1px solid #eee;
-    border-radius: 7px;
-    background: #f3f1ec;
-    color: #191919;
-    font:
-      500 12px/1.4 -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      sans-serif;
-    cursor: pointer;
-    &:hover {
-      background: #fff;
-    }
-    &:focus-visible {
-      outline: 2px solid #9dc8ee;
-      outline-offset: 3px;
-    }
-    &:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
   }
   .sidebar {
     flex: 1;

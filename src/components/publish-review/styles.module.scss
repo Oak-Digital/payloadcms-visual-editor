@@ -1,3 +1,5 @@
+@use '../action-button' as button;
+
 .review {
   article {
     border: 1px solid #5555;
@@ -72,4 +74,8 @@
   p {
     margin: 8px 0;
   }
+}
+
+.review.review button {
+  @include button.action;
 }

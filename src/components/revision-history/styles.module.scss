@@ -1,3 +1,5 @@
+@use '../action-button' as button;
+
 .history {
   ol {
     display: grid;
@@ -47,4 +49,8 @@
     color: #b2b1b5;
     font-size: 11px;
   }
+}
+
+.history button:not(.revision) {
+  @include button.action;
 }

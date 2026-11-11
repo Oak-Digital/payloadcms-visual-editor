@@ -1,3 +1,4 @@
+@use '../action-button' as button;
 .dialog {
   margin: auto;
   width: min(760px, calc(100vw - 32px));
@@ -168,4 +169,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+}
+
+.dialog.dialog header > button,
+.dialog.dialog footer > button,
+.dialog.dialog nav > button,
+.dialog.dialog section > button {
+  @include button.action;
+}
+.dialog.dialog .preview + footer > button:last-child {
+  @include button.action(primary);
 }
