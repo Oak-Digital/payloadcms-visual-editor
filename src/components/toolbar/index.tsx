@@ -11,6 +11,8 @@ import type {
 } from '../../types.js'
 import type { AnnotationPopupCSSHandle } from '../annotation-popup-css/index.js'
 
+import { annotationLabel } from '../../utils/annotation-label.js'
+import annotationStyles from '../workspace/styles.module.scss'
 import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
 import {
   closestCrossingShadow,
@@ -2665,7 +2667,7 @@ export function VisualEditorToolbar({
               <AnnotationEditor
                 key={pendingAnnotation.id}
                 comment={pendingAnnotation.comment}
-                element={pendingAnnotation.element}
+                element={annotationLabel(pendingAnnotation.element)}
                 editing={pendingAnnotation.state === 'edit'}
                 onCancel={
                   pendingAnnotation.state === 'edit' ? cancelEditAnnotation : cancelAnnotation
@@ -2674,8 +2676,10 @@ export function VisualEditorToolbar({
               />
             ) : (
               <>
-                <p>Select an element on the preview to leave feedback.</p>
-                <nav aria-label="Annotation actions">
+                <p className={annotationStyles.annotationHint}>
+                  Click anywhere on the page to leave a note.
+                </p>
+                <nav aria-label="Annotation actions" className={annotationStyles.annotationTools}>
                   <button
                     type="button"
                     disabled={!hasAnnotations}
@@ -2683,29 +2687,52 @@ export function VisualEditorToolbar({
                   >
                     {showMarkers ? 'Hide markers' : 'Show markers'}
                   </button>
-                  <button
-                    type="button"
-                    disabled={!hasAnnotations}
-                    onClick={() => void copyOutput()}
-                  >
-                    {copied ? 'Copied' : 'Copy feedback'}
-                  </button>
-                  <button type="button" disabled={!hasAnnotations} onClick={clearAll}>
-                    Clear all
-                  </button>
-                  <button type="button" onClick={() => setShowSettings(!showSettings)}>
-                    Annotation settings
-                  </button>
+                  <details className={annotationStyles.annotationOptions}>
+                    <summary>More options</summary>
+                    <div>
+                      <button
+                        type="button"
+                        disabled={!hasAnnotations}
+                        onClick={() => void copyOutput()}
+                      >
+                        {copied ? 'Copied' : 'Copy feedback'}
+                      </button>
+                      <button type="button" onClick={() => setShowSettings(!showSettings)}>
+                        Annotation settings
+                      </button>
+                      <button type="button" disabled={!hasAnnotations} onClick={clearAll}>
+                        Clear all notes
+                      </button>
+                    </div>
+                  </details>
                 </nav>
                 {visibleAnnotations
                   .filter((item) => !item.payloadCMS.path)
                   .map((annotation) => (
-                    <article key={annotation.id}>
-                      <header>{annotation.element}</header>
-                      <p>{annotation.comment}</p>
+                    <article key={annotation.id} className={annotationStyles.annotationCard}>
+                      <header className={annotationStyles.annotationCardHeader}>
+                        <span className={annotationStyles.annotationTarget}>
+                          <span className={annotationStyles.annotationNumber}>
+                            {visibleAnnotations.findIndex((item) => item.id === annotation.id) + 1}
+                          </span>
+                          {annotationLabel(annotation.element)}
+                        </span>
+                        {annotation.ticket && (
+                          <span className={annotationStyles.annotationStatus}>Submitted</span>
+                        )}
+                      </header>
+                      <p className={annotationStyles.annotationComment}>{annotation.comment}</p>
                       {annotation.ticket ? (
-                        <a href={annotation.ticket.url} target="_blank" rel="noreferrer">
-                          {annotation.ticket.identifier} · Open ticket
+                        <a
+                          className={annotationStyles.annotationTicket}
+                          href={annotation.ticket.url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <span>{annotation.ticket.identifier}</span>
+                          <span>
+                            Open ticket <span aria-hidden="true">↗</span>
+                          </span>
                         </a>
                       ) : annotation.ticketRequest ? (
                         <div aria-live="polite">
@@ -2727,16 +2754,18 @@ export function VisualEditorToolbar({
                         </div>
                       ) : null}
 
-                      <nav>
+                      <nav className={annotationStyles.annotationCardActions}>
+                        {!annotation.ticketRequest && (
+                          <button type="button" onClick={() => startEditAnnotation(annotation)}>
+                            Edit note
+                          </button>
+                        )}
                         <button
                           type="button"
-                          disabled={Boolean(annotation.ticketRequest)}
-                          onClick={() => startEditAnnotation(annotation)}
+                          title="Remove this note from the editor only"
+                          onClick={() => deleteAnnotation(annotation.id)}
                         >
-                          Edit note
-                        </button>
-                        <button type="button" onClick={() => deleteAnnotation(annotation.id)}>
-                          Delete note
+                          Remove note
                         </button>
                       </nav>
                     </article>
@@ -3372,7 +3401,7 @@ export function VisualEditorToolbar({
                           : 'var(--agentation-color-accent)'
                       }
                       computedStyles={pendingAnnotation.computedStylesObj}
-                      element={pendingAnnotation.element}
+                      element={annotationLabel(pendingAnnotation.element)}
                       isExiting={pendingExiting}
                       lightMode={!isDarkMode}
                       onCancel={cancelAnnotation}
@@ -3480,7 +3509,7 @@ export function VisualEditorToolbar({
                     : 'var(--agentation-color-accent)'
                 }
                 computedStyles={parseComputedStylesString(pendingAnnotation.computedStyles)}
-                element={pendingAnnotation.element}
+                element={annotationLabel(pendingAnnotation.element)}
                 initialValue={pendingAnnotation.comment}
                 isExiting={editExiting}
                 lightMode={!isDarkMode}

@@ -640,21 +640,6 @@
 .annotations {
   font-size: 12px;
 }
-.annotations article {
-  padding: 15px;
-  border: 1px solid #343434;
-  border-radius: 16px;
-  background: #191919;
-  margin-bottom: 10px;
-}
-.annotations article p {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.annotations article header {
-  color: #aaa;
-  font-size: 10px;
-}
 .annotations button {
   font-size: 11px;
 }
@@ -663,6 +648,122 @@
   flex-wrap: wrap;
   gap: 8px;
   margin: 12px 0;
+}
+.annotations .annotationHint {
+  color: #aaa;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+.annotations .annotationTools {
+  align-items: flex-start;
+  justify-content: space-between;
+  margin: 0 0 20px;
+}
+.annotationOptions {
+  position: relative;
+  summary {
+    cursor: pointer;
+    color: #aaa;
+    padding: 10px 4px;
+    font-size: 11px;
+    border-radius: 6px;
+  }
+  summary:focus-visible {
+    outline: 2px solid #b6b6b6;
+    outline-offset: 3px;
+  }
+  > div {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    z-index: 2;
+    min-width: 170px;
+    display: grid;
+    gap: 4px;
+    padding: 6px;
+    background: #252525;
+    border: 1px solid #414141;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px #0006;
+  }
+  button {
+    text-align: left;
+  }
+}
+.annotations .annotationCard {
+  padding: 16px;
+  border: 1px solid #343434;
+  border-radius: 14px;
+  background: #1e1e1e;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.annotationCardHeader,
+.annotationTarget {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.annotationCardHeader {
+  justify-content: space-between;
+  color: #c2c2c2;
+  font-size: 11px;
+}
+.annotationNumber {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #283f50;
+  color: #c0e3ff;
+  font-size: 11px;
+}
+.annotationStatus {
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: #27342c;
+  color: #b4cfbc;
+  font-size: 10px;
+}
+.annotations .annotationComment {
+  color: #f0f0f0;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 16px 0;
+}
+.annotations .annotationTicket {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #414141;
+  border-radius: 8px;
+  padding: 10px;
+  color: #dedede;
+  font-size: 11px;
+  background: #262626;
+  &:hover {
+    background: #303030;
+    text-decoration: none;
+  }
+}
+.annotations .annotationCardActions {
+  justify-content: flex-end;
+  margin: 10px 0 -4px;
+  button {
+    background: transparent;
+    border-color: transparent;
+    padding: 6px 0 6px 10px;
+    color: #aaa;
+    &:hover {
+      color: #eee;
+      border-color: transparent;
+    }
+  }
 }
 .annotations :global([data-agentation-settings-panel]) {
   position: static;

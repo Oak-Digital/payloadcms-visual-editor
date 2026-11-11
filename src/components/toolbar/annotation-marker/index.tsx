@@ -1,3 +1,4 @@
+import { annotationLabel } from '../../../utils/annotation-label.js'
 import type { Annotation } from '../../../types.js'
 
 import { IconEdit, IconPlus, IconXmark } from '../../icons/index.js'
@@ -118,7 +119,7 @@ export function AnnotationMarker({
       {isHovered && !isEditingAny && (
         <div className={`${styles.markerTooltip} ${styles.enter}`} style={tooltipStyle}>
           <span className={styles.markerQuote}>
-            {annotation.element}
+            {annotationLabel(annotation.element)}
             {annotation.selectedText &&
               ` "${annotation.selectedText.slice(0, 30)}${annotation.selectedText.length > 30 ? '...' : ''}"`}
           </span>
