@@ -584,7 +584,7 @@ it.each([
         expect(button('Restore edits').disabled).toBe(false)
         await act(async () => button('Restore edits').click())
       } else {
-        await act(async () => button('Discard stored edits').click())
+        await act(async () => button('Discard edits').click())
       }
       const savedTitle = restore ? 'Stored title' : 'Current edit'
       expect(document.querySelector('h1')?.textContent).toBe(savedTitle)

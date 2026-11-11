@@ -2360,16 +2360,26 @@ export function ArrangeEditor({
                   <div className={styles.recoveryHeading}>
                     <strong>Unsaved edits</strong>
                     <time dateTime={new Date(recovery.record.savedAt).toISOString()}>
-                      {new Date(recovery.record.savedAt).toLocaleString()}
+                      {new Date(recovery.record.savedAt).toLocaleDateString(undefined, {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                      {' · '}
+                      {new Date(recovery.record.savedAt).toLocaleTimeString(undefined, {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false,
+                      })}
                     </time>
+                    <p>
+                      {recovery.conflict
+                        ? 'Review and discard stored edits before saving. Your current changes are kept.'
+                        : count > 0
+                          ? 'Undo current changes to restore stored edits, or discard stored edits to keep your current changes.'
+                          : 'Restore or discard these edits before saving.'}
+                    </p>
                   </div>
-                  <p>
-                    {recovery.conflict
-                      ? 'Review and discard stored edits before saving. Your current changes are kept.'
-                      : count > 0
-                        ? 'Undo current changes to restore stored edits, or discard stored edits to keep your current changes.'
-                        : 'Restore or discard before saving.'}
-                  </p>
                   {recovery.conflict && (
                     <p>
                       This document has newer changes. Your stored edits remain available below for
@@ -2377,10 +2387,7 @@ export function ArrangeEditor({
                     </p>
                   )}
                   <details>
-                    <summary>
-                      <EditorIcon name="chevron" />
-                      Review stored edits
-                    </summary>
+                    <summary>Review stored edits</summary>
                     <dl>
                       {Object.entries(recovery.record.value.changes).map(([path, value]) => (
                         <div key={path}>
@@ -2440,7 +2447,7 @@ export function ArrangeEditor({
                         }
                       }}
                     >
-                      Discard stored edits
+                      Discard edits
                     </button>
                   </div>
                 </section>
