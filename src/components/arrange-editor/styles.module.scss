@@ -705,29 +705,31 @@
     margin-left: auto;
   }
 }
-.contextActions {
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  padding: 12px 18px;
-  border-top: 1px solid #343434;
-  button {
-    flex: 1;
-    min-width: 0;
-    background: #191919;
-    border-color: #343434;
-    text-align: left;
-  }
-  .removeBlock {
-    flex: 0 1 auto;
-    color: #ffb2a8;
-    background: transparent;
-    border-color: transparent;
+.blockActions {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+.panel .blockActions .addBlock {
+  margin: 0;
+}
+.panel .addBlock.removeBlock {
+  color: #ffb2a8;
+  &:not(:disabled):hover {
+    border-color: #ffb2a8;
   }
 }
-.blockActions {
-  display: flex;
-  gap: 8px;
-  width: 100%;
+.blockActionIcon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgb(178 185 157 / 12%);
+}
+.removeBlock .blockActionIcon {
+  background: rgb(255 178 168 / 12%);
 }
 .panel .addBlock {
   width: 100%;
@@ -798,7 +800,6 @@
   }
 }
 @media (pointer: coarse) {
-  .contextActions button,
   .panel .fieldActions button {
     min-height: 44px;
   }

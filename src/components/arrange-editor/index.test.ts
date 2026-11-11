@@ -851,7 +851,6 @@ it('routes contextual block actions to their list and hides them in chooser and 
           apiRoute: '/api',
           documentInfo: { id: 'context-page', collection: 'pages', hasDrafts: true },
           panelContainer: panel,
-          contextActionsContainer: context,
           onClose: vi.fn(),
         }),
       ),
@@ -876,10 +875,11 @@ it('routes contextual block actions to their list and hides them in chooser and 
     expect(context.childElementCount).toBe(0)
     await click(panel, 'Edit')
     await click(panel, 'Edit First')
-    expect(context.textContent).toContain('Duplicate block')
-    expect(context.textContent).toContain('Remove block')
-    expect([...context.querySelectorAll('button')].every((button) => button.disabled)).toBe(true)
-    expect(panel.textContent).not.toContain('Duplicate block')
+    const actions = panel.querySelector('[aria-label="Block actions"]')!
+    expect(actions.textContent).toContain('Duplicate block')
+    expect(actions.textContent).toContain('Remove block')
+    expect([...actions.querySelectorAll('button')].every((button) => button.disabled)).toBe(true)
+    expect(context.childElementCount).toBe(0)
     await click(panel, 'Back')
     expect(
       panel.querySelector('[aria-label="secondary block order"]')?.parentElement?.textContent,

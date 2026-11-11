@@ -5,6 +5,7 @@ const paths = {
   chevron: 'm9 5 7 7-7 7',
   close: 'm6 6 12 12M18 6 6 18',
   minus: 'M5 12h14',
+  duplicate: 'M9 9h12v12H9zM15 9V3H3v12h6',
   layers: 'm12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5',
   edit: 'm15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-5-5L4 14v6Z',
   comment: 'M20 15a3 3 0 0 1-3 3H8l-5 3V6a3 3 0 0 1 3-3h11a3 3 0 0 1 3 3v9Z',

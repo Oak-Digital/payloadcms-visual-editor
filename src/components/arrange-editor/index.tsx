@@ -109,7 +109,6 @@ function Portal({ children, container }: { children: ReactNode; container?: HTML
 
 export function ArrangeEditor({
   actionsContainer,
-  contextActionsContainer,
   active,
   adminRoute,
   apiRoute,
@@ -124,7 +123,6 @@ export function ArrangeEditor({
   onComment,
 }: {
   actionsContainer?: HTMLElement
-  contextActionsContainer?: HTMLElement
   active: boolean
   adminRoute: string
   apiRoute: string
@@ -2882,6 +2880,81 @@ export function ArrangeEditor({
                               )}
                           </section>
                         )}
+                      {showBlockActions && (
+                        <div
+                          className={styles.blockActions}
+                          role="group"
+                          aria-label="Block actions"
+                          data-feedback-toolbar
+                        >
+                          {showBlockActions && selectedBlock && (
+                            <>
+                              {selectedSession && (
+                                <button
+                                  className={styles.addBlock}
+                                  disabled={
+                                    busy ||
+                                    needsSync ||
+                                    (
+                                      selectedSession.orders[selectedBlock.path] ??
+                                      selectedSession.snapshot.orders[selectedBlock.path]
+                                    ).length >=
+                                      (selectedSession.snapshot.blockLimits?.[selectedBlock.path]
+                                        ?.max ?? Infinity)
+                                  }
+                                  onClick={() => {
+                                    const row = expandedOrders(selectedSession)[
+                                      selectedBlock.path
+                                    ].find((row) => row.id === selectedBlock.id)
+                                    if (row?.blockType)
+                                      void addBlock(
+                                        selectedBlock.key,
+                                        selectedBlock.path,
+                                        row.blockType,
+                                        row.id,
+                                      )
+                                  }}
+                                  type="button"
+                                >
+                                  <span className={styles.blockActionIcon}>
+                                    <EditorIcon name="duplicate" />
+                                  </span>
+                                  <span>Duplicate block</span>
+                                </button>
+                              )}
+                              <button
+                                className={`${styles.addBlock} ${styles.removeBlock}`}
+                                disabled={
+                                  busy ||
+                                  needsSync ||
+                                  (
+                                    selectedSession?.orders[selectedBlock.path] ??
+                                    selectedSession?.snapshot.orders[selectedBlock.path]?.map(
+                                      (row) => row.id,
+                                    ) ??
+                                    []
+                                  ).length <=
+                                    (selectedSession?.snapshot.blockLimits?.[selectedBlock.path]
+                                      ?.min ?? 0)
+                                }
+                                onClick={() =>
+                                  removeBlock(
+                                    selectedBlock.key,
+                                    selectedBlock.path,
+                                    selectedBlock.id,
+                                  )
+                                }
+                                type="button"
+                              >
+                                <span className={styles.blockActionIcon}>
+                                  <EditorIcon name="minus" />
+                                </span>
+                                <span>Remove block</span>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                   <details
@@ -3056,72 +3129,6 @@ export function ArrangeEditor({
                 </>
               )}
             </div>
-            {showBlockActions && (
-              <Portal container={contextActionsContainer}>
-                <div
-                  className={`${styles.actions} ${styles.contextActions}`}
-                  role="group"
-                  aria-label="Block actions"
-                  data-feedback-toolbar
-                >
-                  {showBlockActions && selectedBlock && (
-                    <div className={styles.blockActions}>
-                      {selectedSession && (
-                        <button
-                          className={styles.fieldLink}
-                          disabled={
-                            busy ||
-                            needsSync ||
-                            (
-                              selectedSession.orders[selectedBlock.path] ??
-                              selectedSession.snapshot.orders[selectedBlock.path]
-                            ).length >=
-                              (selectedSession.snapshot.blockLimits?.[selectedBlock.path]?.max ??
-                                Infinity)
-                          }
-                          onClick={() => {
-                            const row = expandedOrders(selectedSession)[selectedBlock.path].find(
-                              (row) => row.id === selectedBlock.id,
-                            )
-                            if (row?.blockType)
-                              void addBlock(
-                                selectedBlock.key,
-                                selectedBlock.path,
-                                row.blockType,
-                                row.id,
-                              )
-                          }}
-                          type="button"
-                        >
-                          Duplicate block
-                        </button>
-                      )}
-                      <button
-                        className={styles.removeBlock}
-                        disabled={
-                          busy ||
-                          needsSync ||
-                          (
-                            selectedSession?.orders[selectedBlock.path] ??
-                            selectedSession?.snapshot.orders[selectedBlock.path]?.map(
-                              (row) => row.id,
-                            ) ??
-                            []
-                          ).length <=
-                            (selectedSession?.snapshot.blockLimits?.[selectedBlock.path]?.min ?? 0)
-                        }
-                        onClick={() =>
-                          removeBlock(selectedBlock.key, selectedBlock.path, selectedBlock.id)
-                        }
-                        type="button"
-                      >
-                        Remove block
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </Portal>
-            )}
             <Portal container={actionsContainer}>
               <footer
                 aria-label="Save or publish the document draft"
