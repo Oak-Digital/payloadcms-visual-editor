@@ -2278,6 +2278,7 @@ export function ArrangeEditor({
             aria-label="Edit content"
             className={styles.panel}
             data-feedback-toolbar
+            data-publish-review={tab === 'publish'}
             data-inline-fields={tab === 'content' && inlineFields}
             data-size={sidebarSize}
           >
@@ -3071,6 +3072,7 @@ export function ArrangeEditor({
                           type="button"
                           onClick={() => void preparePublish()}
                         >
+                          <span className={styles.refreshIcon} aria-hidden="true" />
                           Refresh review
                         </button>
                       )}
@@ -3134,6 +3136,11 @@ export function ArrangeEditor({
                 aria-label="Save or publish the document draft"
                 className={actionsContainer ? styles.actions : undefined}
               >
+                {tab === 'publish' && (
+                  <p className={styles.reviewScope}>
+                    {documentInfo.locale?.toUpperCase() || 'Selected locale'} + shared fields
+                  </p>
+                )}
                 <button
                   disabled={
                     busy ||

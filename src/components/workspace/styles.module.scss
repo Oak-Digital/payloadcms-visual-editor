@@ -1108,3 +1108,55 @@
   background: #303032;
   border-color: transparent;
 }
+
+// Publish review uses a single surface; other editor views retain their cards.
+.shell:has(.panel:not([hidden]) [data-publish-review='true']) {
+  gap: 0;
+  .editorHeading {
+    border-bottom: 1px solid #414144;
+    margin: 0 16px;
+  }
+  .panel {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .panel > aside > div {
+    padding: 24px 16px 0;
+  }
+  .footer {
+    margin: 0 16px;
+    padding: 18px 0 8px;
+    border: 0;
+    border-top: 1px solid #414144;
+    border-radius: 0;
+    background: transparent;
+  }
+  .changeStatus > span:first-child,
+  .historyActions {
+    display: none;
+  }
+  .changeStatus > span[role='status'] {
+    background: transparent;
+    padding: 0;
+    color: #b2b99d;
+    font-size: 12px;
+    border-radius: 0;
+  }
+  .changeStatus > span[data-error='true'] {
+    color: #ffb2a8;
+  }
+  .changeStatus > span[data-pending='true'] {
+    color: #e3c88d;
+  }
+  .changeLine {
+    margin-bottom: 4px;
+  }
+  .actions > footer {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .actions button:last-child {
+    flex: 1.56;
+  }
+}

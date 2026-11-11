@@ -19,6 +19,20 @@ export type PublishReviewItem = {
   status: 'failed' | 'published' | 'ready'
 } & PublishReviewData
 
+function groupChanges(changes: PublishReviewData['changes']) {
+  const groups = new Map<string, { label: string; changes: PublishReviewData['changes'] }>()
+  for (const change of changes) {
+    const parts = (change.label || readableLabel(change.path)).split(' › ')
+    const section = change.path.match(/^(layout\.\d+)(?:\.|$)/)
+    const key = section?.[1] || change.path
+    const label = section ? (parts[0] === 'Sections' ? parts[1] : parts[0]) : parts.join(' › ')
+    const group = groups.get(key) || { label: label || 'Section', changes: [] }
+    group.changes.push(change)
+    groups.set(key, group)
+  }
+  return [...groups.entries()]
+}
+
 function groupIssues(issues: FieldIssue[]) {
   const paths = issues.map((issue) =>
     issue.label.includes(' > ')
@@ -68,97 +82,121 @@ export function PublishReview({
         <p>{failed ? 'Review unavailable. Refresh to retry.' : 'No changes to publish.'}</p>
       ) : (
         <>
-          <p>
-            {items.length === 1
-              ? 'Review changes before publishing.'
-              : `Review changes across ${items.length} documents.`}
-          </p>
-          {items.map((item) => (
-            <article aria-label={item.label} data-publish-status={item.status} key={item.key}>
-              <h3 title={item.label}>{item.label}</h3>
-              <p>
-                {item.collection
-                  .replaceAll('-', ' ')
-                  .replace(/^./, (letter) => letter.toUpperCase())}{' '}
-                · {item.locale?.toUpperCase() || 'Default locale'}
-              </p>
-              <p>
-                {item.status === 'published'
-                  ? 'Published'
-                  : item.status === 'failed'
-                    ? 'Not published'
-                    : item.published
-                      ? 'Updates published content'
-                      : 'First publication'}
-                {item.status === 'ready'
-                  ? ` · ${item.pending ? 'Includes unsaved edits' : 'Saved draft'}`
-                  : ''}
-              </p>
-              {item.collection !== 'pages' && (
-                <p>Shared content · applies wherever this document is used.</p>
-              )}
-              {!!item.usage?.usages.length && (
-                <details>
-                  <summary>
-                    Used on {item.usage.usages.length}
-                    {item.usage.hasMore ? '+' : ''}{' '}
-                    {item.usage.usages.length === 1 && !item.usage.hasMore ? 'page' : 'pages'}
-                  </summary>
-                  <ul>
-                    {item.usage.usages.map((usage) => (
-                      <li key={usage.id}>
-                        {usage.label}
-                        {usage.published ? ' · Published' : ' · Draft'}
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-              {item.usage?.incomplete && <p>Some usage details are unavailable.</p>}
-              {!item.changes.length && <p>No content differences.</p>}
-              {item.changes.map((change) => (
-                <div className={styles.change} key={change.path}>
-                  <strong>{change.label || readableLabel(change.path)}</strong>
-                  <ReviewValue value={change.after} empty="Removed" />
+          {items.length > 1 && <p>Review changes across {items.length} documents.</p>}
+          {items.map((item) => {
+            const groups = groupChanges(item.changes)
+            return (
+              <article aria-label={item.label} data-publish-status={item.status} key={item.key}>
+                <h3 className={styles.documentTitle} title={item.label}>
+                  {item.label}
+                </h3>
+                <div className={styles.metadata}>
+                  <p>
+                    {readableLabel(item.collection)} ·{' '}
+                    {item.locale?.toUpperCase() || 'Default locale'}
+                  </p>
+                  <span className={styles.publicationStatus}>
+                    {item.status === 'failed'
+                      ? 'Not published'
+                      : item.published || item.status === 'published'
+                        ? 'Published'
+                        : 'First publication'}
+                  </span>
+                </div>
+                {item.pending && <p>Includes unsaved edits</p>}
+                {item.collection !== 'pages' && (
+                  <p>Shared content · applies wherever this document is used.</p>
+                )}
+                {!!item.usage?.usages.length && (
                   <details>
-                    <summary>Compare with published</summary>
-                    <small>Published</small>
-                    <ReviewValue value={change.before} empty="No previous content" />
+                    <summary>
+                      Used on {item.usage.usages.length}
+                      {item.usage.hasMore ? '+' : ''}{' '}
+                      {item.usage.usages.length === 1 && !item.usage.hasMore ? 'page' : 'pages'}
+                    </summary>
+                    <ul>
+                      {item.usage.usages.map((usage) => (
+                        <li key={usage.id}>
+                          {usage.label}
+                          {usage.published ? ' · Published' : ' · Draft'}
+                        </li>
+                      ))}
+                    </ul>
                   </details>
-                </div>
-              ))}
-              {item.error && (
-                <div className={styles.failure}>
-                  <div role="alert">
-                    {item.fieldErrors?.length ? (
-                      <>
-                        <p>Fix these fields before publishing:</p>
-                        {groupIssues(item.fieldErrors).map(([group, issues]) => (
-                          <div className={styles.issueGroup} key={group}>
-                            {group && <strong>{group}</strong>}
-                            <ul>
-                              {issues.map((issue) => (
-                                <li key={`${issue.path}:${issue.message}`}>
-                                  <span>{issue.field}:</span> {issue.message}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
-                      </>
-                    ) : (
-                      <p>{item.error}</p>
-                    )}
+                )}
+                {item.usage?.incomplete && <p>Some usage details are unavailable.</p>}
+                {!item.changes.length && <p>No content differences.</p>}
+                {!!item.changes.length && (
+                  <p className={styles.sectionCount}>
+                    {groups.length} {groups.length === 1 ? 'change' : 'changes'} to review
+                  </p>
+                )}
+                {groups.map(([key, group], index) => (
+                  <details className={styles.changeGroup} key={key}>
+                    <summary aria-label={`${group.label}: Compare with published`}>
+                      <span className={styles.number} aria-hidden="true">
+                        {String(index + 1).padStart(2, '0')}
+                      </span>
+                      <span className={styles.changeHeading}>
+                        <strong title={group.label}>{group.label}</strong>
+                        <small>
+                          {group.changes
+                            .map((change) =>
+                              (change.label || readableLabel(change.path)).split(' › ').at(-1),
+                            )
+                            .join(', ')}
+                        </small>
+                      </span>
+                      <span className={styles.chevron} aria-hidden="true" />
+                    </summary>
+                    <div className={styles.comparison}>
+                      <span className={styles.comparisonLabel}>Compare with published</span>
+                      {group.changes.map((change) => (
+                        <div className={styles.change} key={change.path}>
+                          <strong>
+                            {(change.label || readableLabel(change.path)).split(' › ').at(-1)}
+                          </strong>
+                          <small>Published</small>
+                          <ReviewValue value={change.before} empty="No previous content" />
+                          <small>Draft</small>
+                          <ReviewValue value={change.after} empty="Removed" />
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+                {item.error && (
+                  <div className={styles.failure}>
+                    <div role="alert">
+                      {item.fieldErrors?.length ? (
+                        <>
+                          <p>Fix these fields before publishing:</p>
+                          {groupIssues(item.fieldErrors).map(([group, issues]) => (
+                            <div className={styles.issueGroup} key={group}>
+                              {group && <strong>{group}</strong>}
+                              <ul>
+                                {issues.map((issue) => (
+                                  <li key={`${issue.path}:${issue.message}`}>
+                                    <span>{issue.field}:</span> {issue.message}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                        </>
+                      ) : (
+                        <p>{item.error}</p>
+                      )}
+                    </div>
+                    <p>Your edits are kept.</p>
+                    <button onClick={() => onEdit(item)} type="button">
+                      Edit content
+                    </button>
                   </div>
-                  <p>Your edits are kept.</p>
-                  <button onClick={() => onEdit(item)} type="button">
-                    Edit content
-                  </button>
-                </div>
-              )}
-            </article>
-          ))}
-          <p>Publishes the selected locale and shared fields.</p>
+                )}
+              </article>
+            )
+          })}
         </>
       )}
     </section>

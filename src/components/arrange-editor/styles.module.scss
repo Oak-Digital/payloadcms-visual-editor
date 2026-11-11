@@ -1092,5 +1092,37 @@
 }
 
 .panel .reviewAction {
-  @include button.action;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 53px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #aaa9ad;
+  font-size: 13px;
+  text-align: left;
+  &:hover {
+    color: #eee;
+  }
+}
+.refreshIcon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  background: url('../publish-review/assets/refresh.svg') center / 24px 24px no-repeat;
+}
+.panel[data-publish-review='true'] .content {
+  padding-bottom: 0;
+}
+.reviewScope {
+  flex-basis: 100%;
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #aaa9ad;
+}
+.actions:has(.reviewScope) {
+  flex-wrap: wrap;
 }
