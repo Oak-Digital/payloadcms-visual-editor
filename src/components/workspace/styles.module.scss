@@ -1141,6 +1141,9 @@
     border-bottom: 1px solid #414144;
     margin: 0 16px;
   }
+  .editorHeading > header {
+    padding-inline: 0;
+  }
   .panel {
     border: 0;
     border-radius: 0;
