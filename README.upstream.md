@@ -1,5 +1,7 @@
 # Payload Visual Editor
 
+> Historical upstream README, preserved for attribution. Installation commands, features and development scripts below describe the upstream project. For the current Oak fork, start with [README.md](README.md).
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Edit CMS content directly on your live pages. Annotate everything else.

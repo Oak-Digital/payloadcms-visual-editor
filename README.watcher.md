@@ -1,5 +1,7 @@
 # Watcher benchmark
 
+[Back to README](README.md) · [Current watcher workflow](CONTRIBUTING.md#watcher-behavior)
+
 Measured on 2026-11-11 in the frontend Nix environment (Node 24.13.0), using an isolated package copy with the same source snapshot, configuration and linked dependencies for both runs. The baseline watcher and package scripts came from `be2614bcf1a0e697ed51658b9d179e63d6f31e70`. Existing development processes were left running, so these are local samples, not controlled performance guarantees.
 
 Each run started with existing build output. The optimized run first completed the new full build to record its fingerprint, matching Turbo's build-before-dev flow. Startup measures watcher launch to readiness, not a cold build or Next startup. Three stylesheet and three TSX edits appended a harmless comment to the HelpTooltip component and its stylesheet, restoring each file between samples. A 5 ms output-mtime poll measured file availability; build completion was measured separately from process logs. Both watchers retained the 150 ms debounce. Declaration checking runs separately in the optimized watcher.

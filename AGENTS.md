@@ -3,7 +3,7 @@
 ## Scope and references
 
 - This package is `@oak-digital/payload-visual-editor`, Oak's development fork of the upstream Payload visual editor. Keep it reusable across Payload hosts; REC-specific schemas, routes, publication policies and storefront rendering belong in the host application.
-- Read [README.md](README.md) for the current integration and editing flows. Consult [README.rich-text.md](README.rich-text.md) and [README.images.md](README.images.md) when changing those features; verify older examples against the current code.
+- Start with [README.md](README.md), then use [README.integration.md](README.integration.md) for host integration, [README.editing.md](README.editing.md) for editing flows and [CONTRIBUTING.md](CONTRIBUTING.md) for development and verification. Consult [README.rich-text.md](README.rich-text.md) and [README.images.md](README.images.md) when changing those features; verify older examples against the current code.
 - Use the [Payload CMS skill](.agents/skills/payload/SKILL.md) and its [reference docs](.agents/skills/payload/reference/) for Payload API, schema, access-control and plugin changes.
 - Preserve upstream attribution in `README.upstream.md`. Update the relevant integration documentation when changing public exports, configuration, DOM attributes or preview events.
 

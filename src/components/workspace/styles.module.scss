@@ -971,6 +971,7 @@
 .annotations :global([data-agentation-settings-panel]) {
   position: static;
   width: 100%;
+  max-width: none;
   transform: none;
   margin-top: 20px;
 }

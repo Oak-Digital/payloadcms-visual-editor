@@ -1,16 +1,22 @@
 # Image selection and replacement
 
-In an authenticated draft preview, activate the toolbar and click a marked image (or focus it and press Enter/Space). Search filenames, browse pages, select a thumbnail and choose **Use image**. This previews a pending replacement. **Save** stores a draft; **Publish** publishes through Payload validation and hooks. Clearing the pending annotation restores the original preview. Existing media files are never overwritten.
+[Back to README](README.md) · [Editor guide](README.editing.md) · [Host integration](README.integration.md)
+
+In the workspace's **Edit content** mode, select a marked image on the canvas or its field in the sidebar. Search filenames, browse pages, select a thumbnail and choose **Use image**. The replacement remains pending alongside text, rich-text and block edits, with shared undo/redo and recovery. **Save draft** persists it; **Publish all** opens review before publication. Existing media files are never overwritten.
+
+The standalone toolbar's older inline mode keeps replacements as local edit annotations. There, **Save** stores a draft and **Publish** publishes through Payload validation/hooks; clearing the edit restores the original preview. Feedback comments never become CMS mutations. This legacy text/image path does not have the workspace arrange flow's revision/transaction checks.
+
+## Native upload
 
 **Upload a new image** opens the host's native Payload creation form inside the picker when collection create access permits it. Save the media item there, then choose **Return to images** and select it. This preserves the host's required metadata, upload limits, MIME validation, access rules and hooks. Uploading creates a media item immediately; cancelling the picker does not delete that item. Only images matching the target field's filter are selectable.
 
 ## Host integration
 
-Use `createEditableAttrs(document._sourceMap)('layout.0.image')` on the exact `img` element, forwarding the returned attributes through custom image components. Source maps contain upload descriptors as well as text values. Resolve paths from the owning document, never from image URLs or media IDs: the same media can be used in multiple fields.
+Use `createEditableAttrs(document._sourceMap, owner)('layout.0.image')` on the exact `img` element, forwarding the returned attributes through custom image components. Alternatively, bind the document with `bindSourceMap` and spread `editableValue(image)` or `editableField(block, 'image')`. Source maps contain upload descriptors as well as text values. Resolve paths from the owning document, never from image URLs or media IDs: the same media can be used in multiple fields.
 
 For responsive `picture` elements, mark each `source` with its own upload field path and mark the fallback `img` separately. Clicking the image selects the matching media-query source. A host overlay can carry the desktop attributes plus `data-payload-mobile-path` for a mobile field at the 767px breakpoint; this is used by REC's cinematic hero. Prefer marking actual images where possible.
 
-The toolbar accepts `apiRoute` and `adminRoute` for non-default Payload routes. It must be mounted only in authenticated previews; provide the document collection, ID and configured locale. The media endpoint resolves the upload collection from the server schema and uses the authenticated request for every query.
+The workspace and toolbar accept `apiRoute` and `adminRoute` for non-default Payload routes. Mount editor controls only in authenticated previews; provide the document collection, ID and configured locale. The media endpoint resolves the upload collection from the server schema and uses the authenticated request for every query.
 
 ## Supported fields and restrictions
 
@@ -23,4 +29,13 @@ Many-value and polymorphic uploads, rich-text embedded images, CSS backgrounds, 
 
 ## Verification
 
-Run the plugin unit tests, typecheck and build. REC's disposable integration runner is `apps/web/src/lib/visual-editor/media.integration.ts`, run from its frontend Nix shell with `pnpm --filter web payload run src/lib/visual-editor/media.integration.ts`. It requires the local `rec-watches` database and running storefront, creates its own user/page/media, and cleans them up. It checks authenticated upload, picker access, keyboard selection, native upload UI, pending previews, draft/public isolation, publishing and desktop/mobile layouts.
+Run `pnpm test:unit` and `pnpm build` in a standalone clone; a separate typecheck is unnecessary after the build.
+
+From REC's `frontend/` Nix shell:
+
+```sh
+pnpm verify:visual-editor editing --runner media --plan
+pnpm verify:visual-editor editing --runner media --integration
+```
+
+Add profiles/runners for other affected boundaries. Inspect REC's `frontend/apps/web/src/lib/visual-editor/media.integration.ts` before execution; it requires the local database and running storefront and creates disposable user/page/media records. Check picker access, keyboard selection, native upload UI, pending previews, draft/public isolation and publishing in a desktop editor at both website preview widths. See [development and verification](CONTRIBUTING.md).
