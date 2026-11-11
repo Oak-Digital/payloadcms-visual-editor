@@ -12,6 +12,8 @@ import { PreviewRefreshContext, usePreviewRefresh } from '../../hooks/use-previe
 import { EditorIcon, OakMark } from './icons.js'
 import { VisualEditorToolbar } from '../toolbar/index.js'
 import styles from './styles.module.scss'
+import type { DotPosition } from './dot-placement.js'
+import { useDotDrag } from './use-dot-drag.js'
 
 export type WorkspaceSource = {
   /** Show a native collection creation link with this label. */
@@ -329,7 +331,8 @@ function WorkspaceShell({
   const [view, setView] = useState<
     'home' | 'content' | 'shared' | 'editor' | 'annotations' | 'settings'
   >('home')
-  const [dotPosition, setDotPosition] = useState('top-right')
+  const [dotPosition, setDotPosition] = useState<DotPosition>('top-right')
+  const dotDrag = useDotDrag(setDotPosition)
   const [size, setSize] = useState('standard')
   const [fullHeight, setFullHeight] = useState(false)
   const [reduceMotion, setReduceMotion] = useState(false)
@@ -789,6 +792,12 @@ function WorkspaceShell({
         ref={floating}
         className={styles.floating}
         data-dot-position={dotPosition}
+        data-dragging={Boolean(dotDrag.offset)}
+        style={
+          dotDrag.offset
+            ? { transform: `translate(${dotDrag.offset.x}px, ${dotDrag.offset.y}px)` }
+            : undefined
+        }
         data-open={open}
         data-size={size}
         data-full-height={fullHeight}
@@ -800,7 +809,10 @@ function WorkspaceShell({
           aria-controls="visual-editor-shell"
           className={styles.launcher}
           ref={launcher}
-          onClick={reveal}
+          onClick={() => {
+            if (!dotDrag.consumeClick()) reveal()
+          }}
+          {...dotDrag.handlers}
           tabIndex={open ? -1 : 0}
           aria-hidden={open || undefined}
           type="button"
@@ -1137,11 +1149,13 @@ function WorkspaceShell({
             {view === 'settings' && (
               <section className={styles.view} key="settings">
                 <div className={styles.sectionLabel}>DOT PLACEMENT</div>
-                <div className={styles.segmented}>
+                <div className={`${styles.segmented} ${styles.placement}`}>
                   {(
                     [
+                      ['top-left', 'Top left'],
                       ['top-right', 'Top right'],
-                      ['right-bottom', 'Right bottom'],
+                      ['bottom-left', 'Bottom left'],
+                      ['bottom-right', 'Bottom right'],
                     ] as const
                   ).map(([value, label]) => (
                     <button

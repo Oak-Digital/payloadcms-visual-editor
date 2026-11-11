@@ -157,9 +157,20 @@
       0 18px 42px #0004,
       inset 0 0 0 1px #414144;
   }
-  &[data-dot-position='right-bottom'] {
+  &[data-dot-position^='bottom-'] {
     top: auto;
     bottom: 24px;
+  }
+  &[data-dot-position$='-left'] {
+    right: auto;
+    left: 24px;
+  }
+  &[data-dragging='true'] {
+    overflow: visible;
+    transition: none;
+    .launcher {
+      cursor: grabbing;
+    }
   }
   &[data-open='true'][data-full-height='true'] {
     height: calc(100dvh - 48px);
@@ -177,7 +188,14 @@
     scroll-behavior: auto !important;
   }
 }
+.segmented.placement {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+}
 .floating .launcher {
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
   position: absolute;
   top: 0;
   right: 0;
