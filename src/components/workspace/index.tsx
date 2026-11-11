@@ -14,6 +14,7 @@ import { VisualEditorToolbar } from '../toolbar/index.js'
 import styles from './styles.module.scss'
 import type { DotPosition } from './dot-placement.js'
 import { useDotDrag } from './use-dot-drag.js'
+import { useStatusCollapse } from './use-status-collapse.js'
 
 export type WorkspaceSource = {
   /** Show a native collection creation link with this label. */
@@ -340,6 +341,14 @@ function WorkspaceShell({
   const [annotationEditing, setAnnotationEditing] = useState(false)
   const [statusBadge, setStatusBadge] = useState('Loading…')
   const [statusError, setStatusError] = useState('')
+  const statusCollapseBlocked =
+    busy || !ready || !!statusError || sharedPending || statusBadge === 'Restore edits'
+  const statusPanel = useStatusCollapse({
+    active: open,
+    blocked: statusCollapseBlocked,
+    status: `${src}:${statusBadge}:${statusError}:${sharedPending}`,
+    preview: iframe,
+  })
   const launcher = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const floating = useRef<HTMLElement>(null)
@@ -1243,49 +1252,83 @@ function WorkspaceShell({
               </a>
             </div>
           )}
-          <footer className={styles.footer}>
-            <div className={styles.changeLine}>
+          <footer
+            className={styles.footer}
+            data-collapsed={statusPanel.collapsed}
+            ref={statusPanel.footer}
+          >
+            <span
+              className={styles.statusAnnouncement}
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {sharedPending ? 'Unsaved' : statusBadge}
+            </span>
+            <div
+              className={styles.statusDetails}
+              id="visual-editor-status-details"
+              inert={statusPanel.collapsed}
+              aria-hidden={statusPanel.collapsed}
+            >
+              <div className={styles.statusDetailsInner}>
+                <div className={styles.changeLine}>
+                  <button
+                    className={styles.changeStatus}
+                    aria-label={`Status: ${sharedPending ? 'Unsaved' : statusBadge}`}
+                    disabled={!ready}
+                    onClick={() => (sharedPending ? setSharedVisible(true) : editorView('changes'))}
+                    type="button"
+                  >
+                    <span>Status</span>
+                    <span
+                      className={styles.statusBadge}
+                      data-pending={pending || sharedPending}
+                      data-error={!!statusError}
+                    >
+                      {sharedPending ? 'Unsaved' : statusBadge}
+                    </span>
+                  </button>
+                  <div
+                    className={styles.historyActions}
+                    id="visual-editor-history-actions"
+                    key={`history:${src}`}
+                  />
+                </div>
+                {statusError && (
+                  <p className={styles.statusDetail} role="alert">
+                    {statusError}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className={styles.footerActions}>
+              <div
+                className={styles.actions}
+                hidden={sharedPending}
+                id="visual-editor-actions"
+                key={`actions:${src}`}
+              />
+              {sharedPending && (
+                <button className={styles.row} onClick={() => setSharedVisible(true)}>
+                  Review shared changes
+                </button>
+              )}
               <button
-                className={styles.changeStatus}
-                aria-label={`Status: ${sharedPending ? 'Unsaved' : statusBadge}`}
-                disabled={!ready}
-                onClick={() => (sharedPending ? setSharedVisible(true) : editorView('changes'))}
+                className={styles.statusToggle}
+                aria-label={
+                  statusPanel.collapsed ? 'Expand status details' : 'Collapse status details'
+                }
+                aria-controls="visual-editor-status-details"
+                aria-expanded={!statusPanel.collapsed}
+                disabled={statusCollapseBlocked}
+                onClick={statusPanel.toggle}
+                title={statusPanel.collapsed ? 'Expand status details' : 'Collapse status details'}
                 type="button"
               >
-                <span>Status</span>
-                <span
-                  className={styles.statusBadge}
-                  data-pending={pending || sharedPending}
-                  data-error={!!statusError}
-                  role="status"
-                  aria-live="polite"
-                  aria-atomic="true"
-                >
-                  {sharedPending ? 'Unsaved' : statusBadge}
-                </span>
+                <EditorIcon name="chevron" />
               </button>
-              <div
-                className={styles.historyActions}
-                id="visual-editor-history-actions"
-                key={`history:${src}`}
-              />
             </div>
-            {statusError && (
-              <p className={styles.statusDetail} role="alert">
-                {statusError}
-              </p>
-            )}
-            <div
-              className={styles.actions}
-              hidden={sharedPending}
-              id="visual-editor-actions"
-              key={`actions:${src}`}
-            />
-            {sharedPending && (
-              <button className={styles.row} onClick={() => setSharedVisible(true)}>
-                Review shared changes
-              </button>
-            )}
           </footer>
         </div>
         {sharedTarget && (

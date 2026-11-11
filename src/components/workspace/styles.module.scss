@@ -636,10 +636,28 @@
 }
 .footer {
   padding: 20px;
+  transition:
+    padding 280ms ease-in-out,
+    border-radius 280ms ease-in-out;
+  &[data-collapsed='true'] {
+    padding: 6px;
+    border-radius: 26px;
+    .statusDetails {
+      grid-template-rows: 0fr;
+      opacity: 0;
+    }
+    .statusToggle > [aria-hidden='true'] {
+      transform: rotate(-90deg);
+    }
+  }
   border: 1px solid #414144;
   border-radius: 28px;
   background: linear-gradient(180deg, #28282b, #171719);
   flex-shrink: 0;
+}
+.floating .footer[data-collapsed='true'] .actions button {
+  min-height: 38px;
+  padding-block: 8px;
 }
 .footer .changeStatus {
   background: transparent;
@@ -651,8 +669,52 @@
   font-size: 16px;
   text-align: left;
 }
+.statusDetails {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 280ms ease-in-out,
+    opacity 180ms ease-in-out;
+}
+.statusDetailsInner {
+  min-height: 0;
+  overflow: hidden;
+}
+.statusAnnouncement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.footerActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.floating .statusToggle {
+  flex: 0 0 28px;
+  width: 28px;
+  min-height: 38px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: #bdbcc0;
+  border: 0;
+  > [aria-hidden='true'] {
+    width: 16px;
+    height: 16px;
+    transform: rotate(90deg);
+    transition: transform 280ms ease-in-out;
+  }
+}
 .actions {
-  min-height: 40px;
+  flex: 1;
+  min-width: 0;
 }
 .actions > footer {
   display: flex;
@@ -665,6 +727,9 @@
 .floating .actions button {
   @include button.action;
   flex: 1;
+  transition:
+    min-height 280ms ease-in-out,
+    padding 280ms ease-in-out;
 }
 .floating .actions button:last-child {
   @include button.action(primary);
@@ -1015,7 +1080,7 @@
   max-width: calc(100% - 64px);
   flex-shrink: 0;
 }
-.changeStatus > span[role='status'] {
+.changeStatus > .statusBadge {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1164,7 +1229,7 @@
   .historyActions {
     display: none;
   }
-  .changeStatus > span[role='status'] {
+  .changeStatus > .statusBadge {
     background: transparent;
     padding: 0;
     color: #b2b99d;
