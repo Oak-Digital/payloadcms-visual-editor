@@ -1,3 +1,5 @@
+import styles from './icons.module.scss'
+
 const paths = {
   back: 'm14 5-7 7 7 7',
   chevron: 'm9 5 7 7-7 7',
@@ -26,6 +28,9 @@ const paths = {
 } as const
 
 export function EditorIcon({ name }: { name: keyof typeof paths }) {
+  if (name in styles) {
+    return <span aria-hidden="true" className={styles[name]} />
+  }
   return (
     <svg
       aria-hidden="true"
@@ -44,9 +49,5 @@ export function EditorIcon({ name }: { name: keyof typeof paths }) {
 }
 
 export function OakMark() {
-  return (
-    <svg aria-label="Oak" role="img" width="19" height="19" viewBox="0 0 30 30" fill="currentColor">
-      <path d="M28.721 23.225c-.786.66-1.914.594-2.517-.146l-5.777-7.263 3.724 8.854c-5.015 3.642-12.558 7.147-20.813 4.271a4.78 4.78 0 0 1-3.155-3.903C-.994 16.325 3.724 9.5 8.156 5.179l8.339 5.847-6.282-7.71c-.603-.746-.455-1.89.337-2.554 2.631-2.206 8.467.539 13.349 6.155 1.874-1.743 2.631-3.692 2.7-4.624q-.001-.045.005-.09a.597.597 0 0 1 .658-.575l.139.015.37.036c.287.03.51.262.535.554.099 1.108-.381 4.18-2.904 6.557 4.427 5.928 5.926 12.239 3.31 14.435z" />
-    </svg>
-  )
+  return <span aria-label="Oak" className={styles.oak} role="img" />
 }

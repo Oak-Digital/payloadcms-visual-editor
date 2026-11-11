@@ -6,7 +6,9 @@
   z-index: 5;
   display: flex;
   flex-direction: column;
-  background: #171717;
+  background: linear-gradient(180deg, #303033, #19191b);
+  padding: 12px;
+  gap: 10px;
   color: #eee;
   border-radius: inherit;
   overflow: hidden;
@@ -19,17 +21,17 @@
   align-items: center;
   gap: 10px;
   padding: 20px;
-  border-bottom: 1px solid #333;
-  min-height: 77px;
-  background: linear-gradient(115deg, #242125, #1b1b1b 60%, #20231d);
+  border-bottom: 0;
+  min-height: 68px;
+  background: transparent;
 }
 .header > div {
   flex: 1;
   min-width: 0;
 }
 .header h2 {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 17px;
+  font-weight: 600;
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -46,7 +48,7 @@
   color: inherit;
   cursor: pointer;
   border: 1px solid #383838;
-  border-radius: 9px;
+  border-radius: 12px;
   background: #222;
   padding: 10px;
 }
@@ -64,6 +66,9 @@
   min-height: 0;
   overflow: auto;
   padding: 20px;
+  border: 1px solid #414144;
+  border-radius: 28px;
+  background: #252527;
   animation: enter 0.2s ease-out;
 }
 .body p {
@@ -135,8 +140,8 @@
   width: 100%;
   padding: 12px;
   border: 1px solid #383838;
-  border-radius: 9px;
-  background: #212121;
+  border-radius: 12px;
+  background: #1c1c1e;
   color: #eee;
   font: inherit;
 }
@@ -160,9 +165,10 @@
   flex: 1;
 }
 .footer {
-  border-top: 1px solid #333;
-  padding: 13px 18px 17px;
-  background: linear-gradient(110deg, #1d1b1e, #1b1b1b 60%, #1f211c);
+  border: 1px solid #414144;
+  border-radius: 28px;
+  padding: 20px;
+  background: linear-gradient(180deg, #28282b, #171719);
   font-size: 11px;
 }
 .status {
@@ -177,8 +183,8 @@
   padding: 5px;
 }
 .editor .primary {
-  background: #e0e0e0;
-  color: #181818;
+  background: #b2b99d;
+  color: #20251b;
 }
 .editor .danger {
   color: #e5afa1;

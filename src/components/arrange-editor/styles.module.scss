@@ -108,8 +108,9 @@
     border-top: 1px solid #383838;
   }
   .primary {
-    background: #007cae;
-    border-color: #27baff;
+    background: #b2b99d;
+    border-color: #b2b99d;
+    color: #20251b;
   }
   .error {
     color: #ffb2a8;
@@ -247,8 +248,9 @@
     outline-offset: 2px;
   }
   .primary {
-    background: #007cae;
-    border-color: #27baff;
+    background: #b2b99d;
+    border-color: #b2b99d;
+    color: #20251b;
   }
 }
 
@@ -421,7 +423,10 @@
 
 .blockModes {
   display: flex;
-  gap: 10px;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 23px;
+  background: #1c1c1e;
   margin-bottom: 20px;
   button {
     flex: 1;
@@ -430,7 +435,8 @@
     padding: 9px;
   }
   button[aria-pressed='true'] {
-    background: #333;
+    border-radius: 21px;
+    background: #3a393c;
   }
 }
 
@@ -547,17 +553,17 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  min-height: 60px;
-  padding: 10px 12px;
-  border: 1px solid #383838;
-  border-radius: 10px;
-  background: #222;
+  min-height: 66px;
+  padding: 14px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: #303032;
   text-align: left;
   &:hover,
   &:focus-visible,
   &[aria-expanded='true'] {
-    border-color: #8ccdea;
-    background: #222a2e;
+    border-color: #b2b99d;
+    background: #373739;
   }
 }
 .fieldCopy {
@@ -612,9 +618,9 @@
   }
   .doneField {
     margin-left: auto;
-    color: #171717;
-    border-color: #ddd;
-    background: #ddd;
+    color: #20251b;
+    border-color: #b2b99d;
+    background: #b2b99d;
     &:not(:disabled):hover {
       border-color: #fff;
       background: #fff;
@@ -647,10 +653,25 @@
 }
 .blocks:has(.blockSelect) li {
   padding: 0;
-  min-height: 62px;
+  min-height: 66px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: #303032;
   .blockSelect {
-    min-height: 60px;
-    padding: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    min-height: 64px;
+    padding: 14px;
+    font-size: 14px;
+    font-weight: 600;
+    background: transparent;
+    border: 0;
+    > span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   }
   &:hover,
   &:focus-within {

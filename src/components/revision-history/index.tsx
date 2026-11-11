@@ -152,12 +152,12 @@ export function RevisionHistory({
           {!loading && revisions.length === 0 && <p>No saved revisions yet.</p>}
           <ol>
             {revisions.slice(0, limit).map((revision, index) => {
-              return (
-                <li key={revision.id} data-version-id={revision.id}>
+              const content = (
+                <span className={styles.copy}>
                   <time dateTime={revision.updatedAt}>
                     {new Date(revision.updatedAt).toLocaleString()}
                   </time>
-                  <p>
+                  <small>
                     {index === 0
                       ? revision.version._status === 'published'
                         ? 'Current published version'
@@ -165,11 +165,24 @@ export function RevisionHistory({
                       : revision.version._status === 'published'
                         ? 'Published'
                         : 'Draft'}
-                  </p>
-                  {onPreview && (
-                    <button type="button" disabled={working} onClick={() => preview(revision)}>
-                      Preview revision
+                  </small>
+                </span>
+              )
+              return (
+                <li key={revision.id} data-version-id={revision.id}>
+                  {onPreview ? (
+                    <button
+                      aria-label={`Preview revision ${new Date(revision.updatedAt).toLocaleString()}`}
+                      className={styles.revision}
+                      disabled={working}
+                      onClick={() => preview(revision)}
+                      type="button"
+                    >
+                      {content}
+                      <span aria-hidden="true">›</span>
                     </button>
+                  ) : (
+                    content
                   )}
                 </li>
               )
@@ -186,7 +199,6 @@ export function RevisionHistory({
           )}
         </>
       )}
-      <p>Saving creates a new revision.</p>
     </section>
   )
 }

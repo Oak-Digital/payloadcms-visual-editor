@@ -23,8 +23,16 @@ afterEach(async () => {
 it('requires a successful preview and clean pending state before restoring a draft', async () => {
   root = createRoot(container)
   const docs = [
-    { id: 'v1', updatedAt: '2026-01-02T00:00:00Z', version: { title: 'Current', _status: 'draft' } },
-    { id: 'v0', updatedAt: '2026-01-01T00:00:00Z', version: { title: 'Old', _status: 'published' } },
+    {
+      id: 'v1',
+      updatedAt: '2026-01-02T00:00:00Z',
+      version: { title: 'Current', _status: 'draft' },
+    },
+    {
+      id: 'v0',
+      updatedAt: '2026-01-01T00:00:00Z',
+      version: { title: 'Old', _status: 'published' },
+    },
   ]
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ docs })))
   const onPreview = vi.fn(async () => 'current-revision')
@@ -50,7 +58,7 @@ it('requires a successful preview and clean pending state before restoring a dra
   expect(container.querySelector('pre')).toBeNull()
   await act(async () => {
     ;[...container.querySelectorAll('button')]
-      .find((button) => button.textContent === 'Preview revision')
+      .find((button) => button.getAttribute('aria-label')?.startsWith('Preview revision '))
       ?.click()
     await Promise.resolve()
   })

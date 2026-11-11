@@ -1685,6 +1685,7 @@ export function ArrangeEditor({
 
   async function preparePublish() {
     if (saving.current || busy || needsSync || historical || Object.keys(recoveries).length) return
+    onReveal?.()
     setTab('publish')
     setPicker(undefined)
     setAdding(undefined)
@@ -2740,13 +2741,15 @@ export function ArrangeEditor({
                                                 )}
                                                 type="button"
                                               >
-                                                {humanize(
-                                                  rows.find((row) => row.id === id)?.label ||
-                                                    session.additions[path]?.find(
-                                                      (addition) => addition.id === id,
-                                                    )?.blockType ||
-                                                    'Block',
-                                                )}
+                                                <span>
+                                                  {humanize(
+                                                    rows.find((row) => row.id === id)?.label ||
+                                                      session.additions[path]?.find(
+                                                        (addition) => addition.id === id,
+                                                      )?.blockType ||
+                                                      'Block',
+                                                  )}
+                                                </span>
                                                 <span aria-hidden="true"> ›</span>
                                               </button>
                                             ) : (

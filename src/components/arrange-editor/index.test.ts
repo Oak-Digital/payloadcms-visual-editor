@@ -290,6 +290,7 @@ it('reports distinct save/publish states to the footer without duplicating them 
   const actions = document.getElementById('actions')!
   const pending = vi.fn()
   let finish: (response: Response) => void = () => {}
+  const reveal = vi.fn()
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
     const body = JSON.parse(String(init?.body))
     if (body.action === 'review')
@@ -320,6 +321,7 @@ it('reports distinct save/publish states to the footer without duplicating them 
           actionsContainer: actions,
           onClose: vi.fn(),
           onPendingChange: pending,
+          onReveal: reveal,
         }),
       ),
     )
@@ -333,7 +335,9 @@ it('reports distinct save/publish states to the footer without duplicating them 
     await act(async () => finish(new Response('{}')))
     expect(pending.mock.lastCall?.[3]).toBe('Draft saved.')
     expect(panel.textContent).not.toContain('Draft saved.')
+    reveal.mockClear()
     await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
+    expect(reveal).toHaveBeenCalledOnce()
     expect(panel.textContent).toContain('Compare with published')
     expect(actions.textContent).toContain('Publish now')
     await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())

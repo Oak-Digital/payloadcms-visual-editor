@@ -1,0 +1,70 @@
+.chevron {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  background: url('./assets/chevron.svg') center / contain no-repeat;
+}
+.settings {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  background: url('./assets/settings.svg') center / contain no-repeat;
+}
+.layers {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 21px;
+  height: 21px;
+  background: url('./assets/layers.svg') center / contain no-repeat;
+}
+.redo {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  background: url('./assets/redo.svg') center / contain no-repeat;
+}
+.edit {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 21px;
+  height: 21px;
+  background: url('./assets/edit.svg') center / contain no-repeat;
+}
+.undo {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  background: url('./assets/undo.svg') center / contain no-repeat;
+}
+.comment {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 21px;
+  height: 21px;
+  background: url('./assets/comment.svg') center / contain no-repeat;
+}
+.oak {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 25px;
+  height: 25px;
+  background: url('./assets/oak.svg') center / contain no-repeat;
+}
+.history {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 21px;
+  height: 21px;
+  background: url('./assets/history.svg') center / contain no-repeat;
+}
+.minus {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  background: url('./assets/minus.svg') center / contain no-repeat;
+}

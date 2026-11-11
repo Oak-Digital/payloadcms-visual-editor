@@ -735,9 +735,15 @@ function WorkspaceShell({
       ? 'Loading content…'
       : changeCount
         ? `${changeCount} ${changeCount === 1 ? 'change' : 'changes'} · Unsaved`
-        : 'No pending changes')
+        : 'All changes saved')
   return createPortal(
-    <div className={styles.workspace} data-mode={mode} data-visual-editor-workspace ref={root}>
+    <div
+      className={styles.workspace}
+      data-mode={mode}
+      data-view={view}
+      data-visual-editor-workspace
+      ref={root}
+    >
       <main className={styles.stage}>
         <div className={styles.canvas} data-viewport={viewport}>
           {/* Trusted same-origin preview: the editor portals controls into this document. */}
@@ -836,100 +842,96 @@ function WorkspaceShell({
           <div className={styles.views}>
             {view === 'home' && (
               <section className={styles.view} key="home">
-                <div className={styles.sectionLabel}>
-                  YOU’RE EDITING <span className={styles.tag}>Draft preview</span>
-                </div>
-                <button className={styles.pageSelect} onClick={() => contentView()} type="button">
-                  <span className={styles.pageThumb}>
-                    <EditorIcon name="page" />
-                  </span>
-                  <span className={styles.grow}>
+                <div className={styles.pageContext}>
+                  <button className={styles.pageSelect} onClick={() => contentView()} type="button">
                     <strong title={currentLabel}>{currentLabel}</strong>
-                    <small>
+                    <EditorIcon name="chevron" />
+                  </button>
+                  <div className={styles.pageMetadata}>
+                    <span>
                       {sources.find((item) => item.slug === current.collection)?.label ||
-                        current.collection}{' '}
-                      · {current.locale || 'Default locale'}
-                    </small>
-                  </span>
-                  <EditorIcon name="chevron" />
-                </button>
-                <div className={styles.sectionLabel}>WORKSPACE MODE</div>
-                <nav aria-label="Editor tools" className={styles.segmented}>
-                  {(['browse', 'edit', 'annotate'] as const).map((value) => (
-                    <button
-                      type="button"
-                      key={value}
-                      aria-pressed={mode === value}
-                      onClick={() => {
-                        changeMode(value)
-                        if (value === 'annotate') setView('annotations')
-                      }}
-                    >
-                      <EditorIcon
-                        name={value === 'browse' ? 'eye' : value === 'edit' ? 'edit' : 'comment'}
-                      />
-                      {value === 'browse'
-                        ? 'Browse'
-                        : value === 'edit'
-                          ? 'Edit content'
-                          : 'Annotate'}
-                    </button>
-                  ))}
-                </nav>
-                <div className={styles.cards}>
-                  <button
-                    className={styles.card}
-                    title="Page blocks"
-                    disabled={!ready}
-                    onClick={() => editorView()}
-                    type="button"
-                  >
-                    <EditorIcon name="layers" />
-                    <strong>Page blocks</strong>
-                    <small>{blockCount} sections</small>
-                  </button>
-                  <button
-                    className={styles.card}
-                    title="Edit content"
-                    disabled={!ready}
-                    onClick={() => editorView()}
-                    type="button"
-                  >
-                    <EditorIcon name="edit" />
-                    <strong>Edit content</strong>
-                    <small>Select a field</small>
-                  </button>
-                  <button
-                    className={styles.card}
-                    title="Annotations"
-                    disabled={!ready}
-                    onClick={() => {
-                      changeMode('annotate')
-                      setView('annotations')
-                    }}
-                    type="button"
-                  >
-                    <EditorIcon name="comment" />
-                    <strong>Annotations</strong>
-                    <small>{annotationCount} notes</small>
-                  </button>
-                  <button
-                    className={styles.card}
-                    title="Revisions"
-                    disabled={!ready}
-                    onClick={() => editorView('revisions')}
-                    type="button"
-                  >
-                    <EditorIcon name="history" />
-                    <strong>Revisions</strong>
-                    <small>Changes & saved versions</small>
-                  </button>
+                        current.collection}
+                      {' / '}
+                      {current.locale || 'Default locale'}
+                    </span>
+                    <span className={styles.tag}>Draft preview</span>
+                  </div>
                 </div>
-                <div className={styles.sectionLabel}>SHARED CONTENT</div>
-                <button className={styles.row} onClick={() => setView('shared')} type="button">
-                  <span className={styles.tile}>
-                    <EditorIcon name="globe" />
-                  </span>
+                <div className={styles.tools}>
+                  <nav aria-label="Editor tools" className={styles.segmented}>
+                    {(['browse', 'edit', 'annotate'] as const).map((value) => (
+                      <button
+                        type="button"
+                        key={value}
+                        aria-pressed={mode === value}
+                        onClick={() => {
+                          changeMode(value)
+                          if (value === 'annotate') setView('annotations')
+                        }}
+                      >
+                        {value === 'browse'
+                          ? 'Browse'
+                          : value === 'edit'
+                            ? 'Edit content'
+                            : 'Annotate'}
+                      </button>
+                    ))}
+                  </nav>
+                  <div className={styles.cards}>
+                    <button
+                      className={styles.card}
+                      title="Page blocks"
+                      disabled={!ready}
+                      onClick={() => editorView()}
+                      type="button"
+                    >
+                      <EditorIcon name="layers" />
+                      <strong>Page blocks</strong>
+                      <small>{blockCount} sections</small>
+                    </button>
+                    <button
+                      className={styles.card}
+                      title="Edit content"
+                      disabled={!ready}
+                      onClick={() => editorView()}
+                      type="button"
+                    >
+                      <EditorIcon name="edit" />
+                      <strong>Edit content</strong>
+                      <small>Select a field</small>
+                    </button>
+                    <button
+                      className={styles.card}
+                      title="Annotations"
+                      disabled={!ready}
+                      onClick={() => {
+                        changeMode('annotate')
+                        setView('annotations')
+                      }}
+                      type="button"
+                    >
+                      <EditorIcon name="comment" />
+                      <strong>Annotations</strong>
+                      <small>{annotationCount} notes</small>
+                    </button>
+                    <button
+                      className={styles.card}
+                      title="Revisions"
+                      disabled={!ready}
+                      onClick={() => editorView('revisions')}
+                      type="button"
+                    >
+                      <EditorIcon name="history" />
+                      <strong>Revisions</strong>
+                      <small>Changes & saved versions</small>
+                    </button>
+                  </div>
+                </div>
+                <button
+                  className={styles.sharedLink}
+                  onClick={() => setView('shared')}
+                  type="button"
+                >
                   <span className={styles.grow}>
                     <strong>Menus & globals</strong>
                     <small>Navigation, footer, site settings</small>
@@ -1201,9 +1203,9 @@ function WorkspaceShell({
                 onClick={() => (sharedPending ? setSharedVisible(true) : editorView('changes'))}
                 type="button"
               >
-                <span data-pending={pending} />
-                <span role="status" aria-live="polite" aria-atomic="true">
-                  {sharedPending ? 'Shared edits pending' : footerStatus}
+                <span>Status</span>
+                <span className={styles.statusBadge} data-pending={pending}>
+                  {busy ? 'Working' : pending ? 'Unsaved' : 'Saved'}
                 </span>
               </button>
               <div
@@ -1212,6 +1214,9 @@ function WorkspaceShell({
                 key={`history:${src}`}
               />
             </div>
+            <p className={styles.statusDetail} role="status" aria-live="polite" aria-atomic="true">
+              {sharedPending ? 'Shared edits pending' : footerStatus}
+            </p>
             <div
               className={styles.actions}
               hidden={sharedPending}
