@@ -4,7 +4,25 @@
 // Shared Types
 // =============================================================================
 
+export type AnnotationTicketRequest = {
+  createdAt: number
+  id: string
+  comment: string
+  element: string
+  elementPath: string
+  url: string
+  document: PayloadCMSDocument
+  x: number
+  y: number
+}
+export type AnnotationTicket = { identifier: string; url: string }
+export type SubmitAnnotation = (request: AnnotationTicketRequest) => Promise<AnnotationTicket>
+
 export interface Annotation {
+  ticketRequest?: AnnotationTicketRequest
+  ticket?: AnnotationTicket
+  ticketError?: string
+
   media?: { id: string | number; url: string; alt?: string; focalX?: number; focalY?: number }
   // Local-only sync tracking (not sent to server)
   _syncedTo?: string // Session ID this annotation was synced to

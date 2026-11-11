@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 
-import type { Annotation, PayloadCMSDocument, PendingAnnotation } from '../../types.js'
+import type {
+  Annotation,
+  PayloadCMSDocument,
+  PendingAnnotation,
+  SubmitAnnotation,
+} from '../../types.js'
 import type { AnnotationPopupCSSHandle } from '../annotation-popup-css/index.js'
 
 import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
@@ -329,6 +334,8 @@ export type VisualEditorToolbarProps = {
   enableDemoMode?: boolean
   /** Server URL for sync (e.g., "http://localhost:4747"). If not provided, uses localStorage only. */
   endpoint?: string
+  /** Submit feedback through a host-owned ticket integration. */
+  submitAnnotation?: SubmitAnnotation
   /** Callback fired when an annotation is added. */
   onAnnotationAdd?: (annotation: Annotation) => void
   /** Callback fired when an annotation is deleted. */
@@ -380,6 +387,7 @@ export function VisualEditorToolbar({
   documentInfo,
   enableDemoMode = false,
   endpoint,
+  submitAnnotation,
   onAnnotationAdd,
   onAnnotationDelete,
   onAnnotationsClear,
@@ -1273,6 +1281,10 @@ export function VisualEditorToolbar({
   // Start editing an annotation (right-click or click on drawing stroke)
   const startEditAnnotation = useCallback(
     (annotation: Annotation) => {
+      if (annotation.ticketRequest) {
+        setSelectionNotice('Submitted notes stay unchanged. Add another note for further feedback.')
+        return
+      }
       if (annotation.media) {
         const element = Array.from(
           document.querySelectorAll<HTMLElement>('[data-payload-path]'),
@@ -1471,7 +1483,7 @@ export function VisualEditorToolbar({
       const computedStylesStr = getForensicComputedStyles(elementUnder)
       // annotation creation starts here
       setPendingAnnotation({
-        id: Date.now().toString(),
+        id: crypto.randomUUID(),
         accessibility: getAccessibilityInfo(elementUnder),
         boundingBox: {
           height: rect.height,
@@ -1555,6 +1567,46 @@ export function VisualEditorToolbar({
     [webhookUrl, settings.webhookUrl, settings.webhooksEnabled],
   )
 
+  const ticketSubmissions = useRef(new Set<string>())
+  const [sendingTickets, setSendingTickets] = useState<Set<string>>(new Set())
+  const sendAnnotationTicket = useCallback(
+    async (annotation: Annotation) => {
+      if (
+        !submitAnnotation ||
+        !annotation.ticketRequest ||
+        annotation.ticket ||
+        ticketSubmissions.current.has(annotation.id)
+      )
+        return
+      ticketSubmissions.current.add(annotation.id)
+      setSendingTickets(new Set(ticketSubmissions.current))
+      try {
+        const ticket = await submitAnnotation(annotation.ticketRequest)
+        setAnnotations((items) =>
+          items.map((item) =>
+            item.id === annotation.id ? { ...item, ticket, ticketError: undefined } : item,
+          ),
+        )
+      } catch (error) {
+        setAnnotations((items) =>
+          items.map((item) =>
+            item.id === annotation.id
+              ? {
+                  ...item,
+                  ticketError:
+                    error instanceof Error ? error.message : 'Unable to send feedback. Try again.',
+                }
+              : item,
+          ),
+        )
+      } finally {
+        ticketSubmissions.current.delete(annotation.id)
+        setSendingTickets(new Set(ticketSubmissions.current))
+      }
+    },
+    [submitAnnotation],
+  )
+
   // Add annotation
   const addAnnotation = useCallback(
     (comment: string) => {
@@ -1567,7 +1619,7 @@ export function VisualEditorToolbar({
         : undefined
 
       const newAnnotation: Annotation = {
-        id: Date.now().toString(),
+        id: crypto.randomUUID(),
         accessibility: pendingAnnotation.accessibility,
         boundingBox: pendingAnnotation.boundingBox,
         comment,
@@ -1632,7 +1684,21 @@ export function VisualEditorToolbar({
         return
       }
 
+      if (submitAnnotation && !isEditCmsMode && documentInfo) {
+        newAnnotation.ticketRequest = {
+          createdAt: newAnnotation.timestamp,
+          id: newAnnotation.id,
+          comment,
+          element: newAnnotation.element,
+          elementPath: newAnnotation.elementPath,
+          url: `${window.location.origin}${window.location.pathname}`,
+          document: documentInfo,
+          x: newAnnotation.x,
+          y: newAnnotation.y,
+        }
+      }
       setAnnotations((prev) => [...prev, newAnnotation])
+      void sendAnnotationTicket(newAnnotation)
       // Prevent immediate hover on newly added marker
       recentlyAddedIdRef.current = newAnnotation.id
       originalSetTimeout(() => {
@@ -1683,6 +1749,9 @@ export function VisualEditorToolbar({
     },
     [
       pendingAnnotation,
+      submitAnnotation,
+      sendAnnotationTicket,
+      documentInfo,
       isEditCmsMode,
       annotations,
       onAnnotationAdd,
@@ -2634,8 +2703,36 @@ export function VisualEditorToolbar({
                     <article key={annotation.id}>
                       <header>{annotation.element}</header>
                       <p>{annotation.comment}</p>
+                      {annotation.ticket ? (
+                        <a href={annotation.ticket.url} target="_blank" rel="noreferrer">
+                          {annotation.ticket.identifier} · Open ticket
+                        </a>
+                      ) : annotation.ticketRequest ? (
+                        <div aria-live="polite">
+                          {sendingTickets.has(annotation.id) ? (
+                            <p>Sending feedback…</p>
+                          ) : (
+                            <>
+                              <p role={annotation.ticketError ? 'alert' : undefined}>
+                                {annotation.ticketError || 'Not submitted.'}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => void sendAnnotationTicket(annotation)}
+                              >
+                                Retry submission
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      ) : null}
+
                       <nav>
-                        <button type="button" onClick={() => startEditAnnotation(annotation)}>
+                        <button
+                          type="button"
+                          disabled={Boolean(annotation.ticketRequest)}
+                          onClick={() => startEditAnnotation(annotation)}
+                        >
                           Edit note
                         </button>
                         <button type="button" onClick={() => deleteAnnotation(annotation.id)}>

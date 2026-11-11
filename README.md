@@ -32,7 +32,7 @@ The fork adds block/array source maps, locale-aware saving, collection allowlist
 
 Hosts using Next draft mode should pass `preparePreview(signal)` to `VisualEditorWorkspace`. Renew the authenticated draft cookie in that callback before the editor refreshes the route; an expired cookie must not switch the canvas to public content. Refresh failures and timeouts retain the saved state and offer a refresh-only retry. Concurrent refresh requests share one operation.
 
-Saving and publishing use the host's normal Payload hooks and validation. Host publication policies still apply: REC's `publishStatus` must already be Public for a published document to appear publicly. No webhook or agent endpoint is configured by REC.
+Saving and publishing use the host's normal Payload hooks and validation. Host publication policies still apply: REC's `publishStatus` must already be Public for a published document to appear publicly. REC supplies a server-backed annotation submission callback for Oak OS tickets.
 
 ## Bind shared renderers
 
@@ -141,3 +141,9 @@ Draft loaders in each host must bypass public caches only for authenticated prev
 The revisions endpoint authorizes historical reads and creates a selected-locale draft on restoration, guarded by the current version fingerprint and transaction. It never invokes native all-locale restoration. Host renderers handle `payload:render-revision` with `{ owner, versionId }` (null means return), render historical blocks without editing bindings, then dispatch `payload:revision-result` with `{ owner, versionId, revision }` or an error. Linked content remains at current saved values. Pending edits are preserved while previewing and must be saved or discarded before restoration.
 
 The arrange and shared-content endpoints support `action: 'review'`. They apply pending edits in memory, compare access-filtered values with published content, and return the reviewed revision without writing. Page/layout sessions and shared-content sessions retain their separate publishing scopes. Shared usage is access-filtered; unavailable usages are identified as incomplete. The review shows updated field content first, with the published value in a collapsed comparison. Rich-text fields are grouped into one change; section names identify their location. Removals are marked explicitly. Review controls freeze the proposed operations; stale revisions fail at persistence. Batch publication is sequential per document with explicit partial results, not a cross-document transaction. Previously saved source sessions remain in review after their last page reference disappears.
+
+## Annotation tickets
+
+Pass `submitAnnotation(request)` to `VisualEditorWorkspace` (or `VisualEditorToolbar`) to create a ticket when a feedback note is added. The callback returns `{ identifier, url }` or throws a user-facing error. Keep provider credentials and authorization in the host server. CMS field edits never invoke this callback.
+
+The editor retains the immutable request, note, position and returned ticket link in browser storage. Failed requests expose Retry submission; retries use the original request. Ticket notes persist until explicitly deleted or cleared, including across reloads. Submitted notes cannot be edited locally; add another note for further feedback. Deleting a note does not delete its external ticket. This is browser-local tracking, not shared annotation storage or ticket-status synchronization. Screenshots are not included.
