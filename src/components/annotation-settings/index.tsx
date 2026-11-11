@@ -59,6 +59,7 @@ export function AnnotationSettingsField() {
       <input
         id="oak-api-key"
         type="password"
+        aria-describedby="oak-api-key-status"
         autoComplete="new-password"
         maxLength={500}
         value={key.value || ''}
@@ -73,6 +74,17 @@ export function AnnotationSettingsField() {
           invalidate()
         }}
       />
+      <p id="oak-api-key-status" role="status">
+        {clear.value
+          ? 'Saved key will be removed on save.'
+          : key.value
+            ? configured.value
+              ? 'New key entered. Save to replace the saved key.'
+              : 'New key entered. Save to store it.'
+            : configured.value
+              ? 'API key saved.'
+              : 'No API key saved.'}
+      </p>
       {configured.value && (
         <label className={styles.clear}>
           <input
