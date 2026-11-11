@@ -3078,12 +3078,16 @@ export function ArrangeEditor({
                   {showAddActions &&
                     blockLists.map(({ key, path, label, full }) => (
                       <button
+                        className={styles.addBlock}
                         disabled={busy || needsSync || full}
                         key={`${key}:${path}`}
                         onClick={() => setAdding({ key, path })}
                         type="button"
                       >
-                        {blockLists.length === 1 ? 'Add block' : `Add block to ${label}`}
+                        <span aria-hidden="true" className={styles.addBlockIcon} />
+                        <span>
+                          {blockLists.length === 1 ? 'Add block' : `Add block to ${label}`}
+                        </span>
                       </button>
                     ))}
                 </div>
