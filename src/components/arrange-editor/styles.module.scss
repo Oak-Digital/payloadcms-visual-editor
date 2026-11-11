@@ -708,7 +708,9 @@
   gap: 8px;
   width: 100%;
 }
-.actions.contextActions .addBlock {
+.panel .addBlock {
+  width: 100%;
+  margin-top: 8px;
   display: flex;
   align-items: center;
   justify-content: flex-start;

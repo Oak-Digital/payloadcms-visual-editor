@@ -2729,6 +2729,9 @@ export function ArrangeEditor({
                               .flatMap(([key, session]) =>
                                 Object.entries(expandedOrders(session)).map(([path, rows]) => {
                                   const ids = session.orders[path] ?? rows.map((row) => row.id)
+                                  const list = blockLists.find(
+                                    (list) => list.key === key && list.path === path,
+                                  )
                                   return (
                                     <div key={`${key}:${path}`}>
                                       <ol
@@ -2843,6 +2846,24 @@ export function ArrangeEditor({
                                           </li>
                                         ))}
                                       </ol>
+                                      {showAddActions && list && (
+                                        <button
+                                          className={styles.addBlock}
+                                          disabled={busy || needsSync || list.full}
+                                          onClick={() => setAdding({ key, path })}
+                                          type="button"
+                                        >
+                                          <span
+                                            aria-hidden="true"
+                                            className={styles.addBlockIcon}
+                                          />
+                                          <span>
+                                            {blockLists.length === 1
+                                              ? 'Add block'
+                                              : `Add block to ${list.label}`}
+                                          </span>
+                                        </button>
+                                      )}
                                     </div>
                                   )
                                 }),
@@ -3019,7 +3040,7 @@ export function ArrangeEditor({
                 </>
               )}
             </div>
-            {(showBlockActions || showAddActions) && (
+            {showBlockActions && (
               <Portal container={contextActionsContainer}>
                 <div
                   className={`${styles.actions} ${styles.contextActions}`}
@@ -3082,21 +3103,6 @@ export function ArrangeEditor({
                       </button>
                     </div>
                   )}
-                  {showAddActions &&
-                    blockLists.map(({ key, path, label, full }) => (
-                      <button
-                        className={styles.addBlock}
-                        disabled={busy || needsSync || full}
-                        key={`${key}:${path}`}
-                        onClick={() => setAdding({ key, path })}
-                        type="button"
-                      >
-                        <span aria-hidden="true" className={styles.addBlockIcon} />
-                        <span>
-                          {blockLists.length === 1 ? 'Add block' : `Add block to ${label}`}
-                        </span>
-                      </button>
-                    ))}
                 </div>
               </Portal>
             )}

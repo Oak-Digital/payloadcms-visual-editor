@@ -831,10 +831,18 @@ it('routes contextual block actions to their list and hides them in chooser and 
         }),
       ),
     )
-    expect(panel.textContent).not.toContain('Add block to')
-    expect(context.textContent).toContain('Add block to Secondary content')
-    expect((context.querySelector('button') as HTMLButtonElement).disabled).toBe(true)
-    await click(context, 'Add block to Secondary content')
+    expect(panel.querySelector('[aria-label="Blocks"]')?.textContent).toContain('Add block to')
+    expect(
+      panel.querySelector('[aria-label="secondary block order"]')?.parentElement?.textContent,
+    ).toContain('Add block to Secondary content')
+    expect(
+      (
+        panel
+          .querySelector('[aria-label="layout block order"]')
+          ?.parentElement?.querySelector(':scope > button') as HTMLButtonElement
+      ).disabled,
+    ).toBe(true)
+    await click(panel, 'Add block to Secondary content')
     expect(context.childElementCount).toBe(0)
     expect(panel.querySelector('[aria-label="Add Text"]')).toBeTruthy()
     expect(panel.querySelector('[aria-label="Add Hero"]')).toBeNull()
@@ -848,7 +856,9 @@ it('routes contextual block actions to their list and hides them in chooser and 
     expect([...context.querySelectorAll('button')].every((button) => button.disabled)).toBe(true)
     expect(panel.textContent).not.toContain('Duplicate block')
     await click(panel, 'Back')
-    expect(context.textContent).toContain('Add block to Secondary content')
+    expect(
+      panel.querySelector('[aria-label="secondary block order"]')?.parentElement?.textContent,
+    ).toContain('Add block to Secondary content')
   } finally {
     await act(async () => root.unmount())
     vi.restoreAllMocks()
