@@ -27,18 +27,43 @@ export async function screenshotStore(id: string, value?: Blob | null): Promise<
   }
 }
 
-export async function captureScreenshot(id: string): Promise<void> {
+export type CaptureBounds = { x: number; y: number; width: number; height: number }
+export type CapturePoint = { x: number; y: number }
+
+export function markerInCapture(
+  point: CapturePoint,
+  bounds: CaptureBounds,
+  width: number,
+  height: number,
+) {
+  return {
+    x: ((point.x - bounds.x) / bounds.width) * width,
+    y: ((point.y - bounds.y) / bounds.height) * height,
+  }
+}
+
+export async function captureScreenshot(
+  id: string,
+  point: CapturePoint,
+  area?: CaptureBounds,
+): Promise<void> {
   // A saved capture always wins, including after a response was lost or the page reloaded.
   if (await screenshotStore(id)) return
+  const bounds = area ?? {
+    x: 0,
+    y: 0,
+    width: Math.max(document.documentElement.scrollWidth, window.innerWidth),
+    height: Math.max(document.documentElement.scrollHeight, window.innerHeight),
+  }
   const { default: html2canvas } = await import('html2canvas-pro')
   const canvas = await html2canvas(document.documentElement, {
-    x: window.scrollX,
-    y: window.scrollY,
-    width: window.innerWidth,
-    height: window.innerHeight,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
     windowWidth: window.innerWidth,
     windowHeight: window.innerHeight,
-    scale: Math.min(1, 1920 / window.innerWidth, 1920 / window.innerHeight),
+    scale: Math.min(1, 1920 / bounds.width, 1920 / bounds.height),
     useCORS: true,
     logging: false,
     ignoreElements: (element: Element) =>
@@ -62,6 +87,16 @@ export async function captureScreenshot(id: string): Promise<void> {
         })
     },
   })
+  const marker = markerInCapture(point, bounds, canvas.width, canvas.height)
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Unable to draw the note marker.')
+  context.beginPath()
+  context.arc(marker.x, marker.y, 9, 0, Math.PI * 2)
+  context.fillStyle = '#3b82f6'
+  context.fill()
+  context.lineWidth = 2
+  context.strokeStyle = '#fff'
+  context.stroke()
   const blob = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(
       (value) =>

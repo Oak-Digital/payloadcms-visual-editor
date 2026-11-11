@@ -12,7 +12,7 @@ import type {
 } from '../../types.js'
 import type { AnnotationPopupCSSHandle } from '../annotation-popup-css/index.js'
 
-import { captureScreenshot } from '../../annotations/screenshot.js'
+import { ScreenshotCapture } from '../workspace/screenshot-capture.js'
 import { annotationLabel } from '../../utils/annotation-label.js'
 import annotationStyles from '../workspace/styles.module.scss'
 import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
@@ -1587,21 +1587,15 @@ export function VisualEditorToolbar({
       ticketSubmissions.current.add(annotation.id)
       setSendingTickets(new Set(ticketSubmissions.current))
       try {
-        let request = annotation.ticketRequest
-        if (!request.screenshot) {
-          await captureScreenshot(annotation.id)
-          request = { ...request, screenshot: true }
-          // Persist the immutable capture flag before any external write.
-          const stored = loadAnnotations<Annotation>(pathname)
-          const updated = { ...annotation, ticketRequest: request }
-          const notes = stored.some((item) => item.id === annotation.id)
-            ? stored.map((item) => (item.id === annotation.id ? updated : item))
-            : [...stored, updated]
-          localStorage.setItem(getStorageKey(pathname), JSON.stringify(notes))
-          setAnnotations((items) =>
-            items.map((item) => (item.id === annotation.id ? updated : item)),
-          )
-        }
+        const request = annotation.ticketRequest
+        if (!request.screenshot)
+          throw new Error('The original screenshot is missing. Create a new note to capture it.')
+        // Persist the captured request before the external write so reload retries reuse it.
+        const stored = loadAnnotations<Annotation>(pathname)
+        const notes = stored.some((item) => item.id === annotation.id)
+          ? stored.map((item) => (item.id === annotation.id ? annotation : item))
+          : [...stored, annotation]
+        localStorage.setItem(getStorageKey(pathname), JSON.stringify(notes))
         const ticket = await submitAnnotation(request, annotation.ticket)
         setAnnotations((items) =>
           items.map((item) =>
@@ -1631,8 +1625,13 @@ export function VisualEditorToolbar({
   )
 
   // Add annotation
-  const addAnnotation = useCallback(
-    (comment: string) => {
+  const [screenshotDraft, setScreenshotDraft] = useState<{
+    id: string
+    comment: string
+    point: { x: number; y: number }
+  } | null>(null)
+  const saveAnnotation = useCallback(
+    (comment: string, screenshotId?: string) => {
       if (pendingAnnotation?.state !== 'pending') {
         return
       }
@@ -1642,7 +1641,7 @@ export function VisualEditorToolbar({
         : undefined
 
       const newAnnotation: Annotation = {
-        id: crypto.randomUUID(),
+        id: screenshotId ?? crypto.randomUUID(),
         accessibility: pendingAnnotation.accessibility,
         boundingBox: pendingAnnotation.boundingBox,
         comment,
@@ -1709,6 +1708,7 @@ export function VisualEditorToolbar({
 
       if (submitAnnotation && !isEditCmsMode && documentInfo) {
         newAnnotation.ticketRequest = {
+          screenshot: Boolean(screenshotId),
           createdAt: newAnnotation.timestamp,
           id: newAnnotation.id,
           comment,
@@ -1784,6 +1784,19 @@ export function VisualEditorToolbar({
       currentSessionId,
     ],
   )
+
+  const addAnnotation = (comment: string) => {
+    if (isEditCmsMode) return saveAnnotation(comment)
+    if (!pendingAnnotation) return
+    setScreenshotDraft({
+      id: crypto.randomUUID(),
+      comment,
+      point: {
+        x: (pendingAnnotation.x / 100) * window.innerWidth + window.scrollX,
+        y: pendingAnnotation.y + (pendingAnnotation.isFixed ? window.scrollY : 0),
+      },
+    })
+  }
 
   // Cancel annotation with exit animation
   const cancelAnnotation = useCallback(() => {
@@ -2343,6 +2356,7 @@ export function VisualEditorToolbar({
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.target as Element).closest('dialog[data-annotation-popup]')) return
       // Don't trigger shortcuts when typing in inputs
       const target = e.target as HTMLElement
       const isTyping =
@@ -2603,6 +2617,16 @@ export function VisualEditorToolbar({
       ref={portalWrapperRef}
       style={{ display: 'contents' }}
     >
+      {screenshotDraft && (
+        <ScreenshotCapture
+          draft={screenshotDraft}
+          onCancel={() => setScreenshotDraft(null)}
+          onComplete={() => {
+            saveAnnotation(screenshotDraft.comment, screenshotDraft.id)
+            setScreenshotDraft(null)
+          }}
+        />
+      )}
       <ArrangeEditor
         actionsContainer={workspace?.actionsContainer}
         contextActionsContainer={workspace?.contextActionsContainer}
