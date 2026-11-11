@@ -68,3 +68,23 @@
   height: 20px;
   background: url('./assets/minus.svg') center / contain no-repeat;
 }
+
+@each $name, $asset,
+  $size
+    in (
+      contentBack content-back 18px,
+      contentMinus content-minus 18px,
+      contentDown content-down 16px,
+      contentSearch content-search 16px,
+      contentPage content-page 18px,
+      contentExternal content-external 16px
+    )
+{
+  .#{$name} {
+    display: inline-block;
+    flex-shrink: 0;
+    width: $size;
+    height: $size;
+    background: url('./assets/#{$asset}.svg') center / contain no-repeat;
+  }
+}

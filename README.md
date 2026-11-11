@@ -105,7 +105,7 @@ The selected reference offers source selection, **Edit shared layout**, and **Ma
 
 ## Workspace
 
-Collection sources can set `createLabel` (for example, `New page`) to show a creation button above search. It opens the native Payload creation form in a new tab with the current locale, preserving pending workspace edits.
+Collection sources can set `createLabel` (for example, `New page`) to show a creation button beside the content source selector, above search. It opens the native Payload creation form in a new tab with the current locale, preserving pending workspace edits.
 
 `VisualEditorWorkspace` from the `/client` export surrounds an authenticated preview with a persistent frame, searchable content navigation, desktop/mobile preview widths, editing tools, and the existing contextual editor. Supply `documentInfo` and `sources` (`slug`, `label`, optional `titleField` and `previewURL(document)`). Sources without a preview resolver open the native collection editor in a new tab; `global: true` opens that Global's native editor. Listing uses Payload's REST API and its access checks.
 

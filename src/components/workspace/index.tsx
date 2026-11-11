@@ -308,6 +308,7 @@ function WorkspaceShell({
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [hasNext, setHasNext] = useState(false)
+  const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const navigationActions = useRef<{ save: () => Promise<boolean>; discard: () => boolean } | null>(
@@ -718,11 +719,12 @@ function WorkspaceShell({
         setEntries(
           result.docs.map((doc: Record<string, unknown>) => ({
             id: String(doc.id),
-            label: String(doc[source.titleField ?? 'title'] || doc.name || doc.slug || doc.id),
+            label: String(doc[source.titleField ?? 'title'] || doc.name || doc.slug || 'Untitled'),
             url: source.previewURL?.(doc),
           })),
         )
         setHasNext(Boolean(result.hasNextPage))
+        setTotalPages(Math.max(1, result.totalPages))
       } catch (err) {
         if (!controller.signal.aborted) {
           setError(err instanceof Error ? err.message : 'Unable to load content.')
@@ -853,7 +855,7 @@ function WorkspaceShell({
                 }}
                 type="button"
               >
-                <EditorIcon name="back" />
+                <EditorIcon name={view === 'content' ? 'contentBack' : 'back'} />
               </button>
             )}
             <div className={styles.headerCopy}>
@@ -877,7 +879,7 @@ function WorkspaceShell({
               onClick={collapse}
               type="button"
             >
-              <EditorIcon name="minus" />
+              <EditorIcon name={view === 'content' ? 'contentMinus' : 'minus'} />
             </button>
           </header>
           <div
@@ -1010,24 +1012,52 @@ function WorkspaceShell({
             {view === 'content' && (
               <section
                 aria-label="Content navigation"
+                className={`${styles.view} ${styles.contentView}`}
                 id="visual-editor-navigation"
-                className={styles.view}
                 key="content"
               >
-                <label className={styles.field}>
-                  Content source
-                  <select
-                    aria-label="Content source"
-                    value={sourceSlug}
-                    onChange={(event) => contentView(event.target.value)}
+                <div className={styles.contentControls}>
+                  <label
+                    className={styles.contentSourceLabel}
+                    htmlFor="visual-editor-content-source"
                   >
-                    {sources.map((item) => (
-                      <option key={item.slug} value={item.slug}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    Content source
+                  </label>
+                  <div className={styles.contentToolbar}>
+                    <div className={styles.contentSelect}>
+                      <select
+                        aria-label="Content source"
+                        id="visual-editor-content-source"
+                        onChange={(event) => contentView(event.target.value)}
+                        value={sourceSlug}
+                      >
+                        {sources.map((item) => (
+                          <option key={item.slug} value={item.slug}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                      <EditorIcon name="contentDown" />
+                    </div>
+                    {!source?.global && source?.createLabel && (
+                      <a
+                        className={styles.createContent}
+                        href={`${adminRoute}/collections/${encodeURIComponent(source.slug)}/create${
+                          current.locale
+                            ? `?${new URLSearchParams({ locale: current.locale })}`
+                            : ''
+                        }`}
+                        rel="noreferrer"
+                        target="_blank"
+                        title={`${source.createLabel} in Payload (opens in a new tab)`}
+                      >
+                        <span aria-hidden="true">+</span>
+                        <span>{source.createLabel}</span>
+                        <EditorIcon name="contentExternal" />
+                      </a>
+                    )}
+                  </div>
+                </div>
                 {source?.global && source.editable ? (
                   <button
                     className={styles.row}
@@ -1045,20 +1075,23 @@ function WorkspaceShell({
                     rel="noreferrer"
                     target="_blank"
                   >
-                    Open {source.label} in Payload ↗
+                    <span className={styles.grow}>Open {source.label} in Payload</span>
+                    <EditorIcon name="contentExternal" />
                   </a>
                 ) : (
                   <>
-                    <input
-                      aria-label="Search content"
-                      placeholder="Search content…"
-                      className={styles.search}
-                      value={search}
-                      onChange={(event) => {
-                        setSearch(event.target.value)
-                        setPage(1)
-                      }}
-                    />
+                    <div className={styles.contentSearch}>
+                      <EditorIcon name="contentSearch" />
+                      <input
+                        aria-label="Search content"
+                        onChange={(event) => {
+                          setSearch(event.target.value)
+                          setPage(1)
+                        }}
+                        placeholder={`Search ${source?.label.toLowerCase() ?? 'content'}…`}
+                        value={search}
+                      />
+                    </div>
                     {loading ? (
                       <p role="status">Loading content…</p>
                     ) : (
@@ -1076,7 +1109,9 @@ function WorkspaceShell({
                                     label: entry.label,
                                   })
                                 }
+                                type="button"
                               >
+                                <EditorIcon name="contentPage" />
                                 <span className={styles.grow}>
                                   <strong>{entry.label}</strong>
                                 </span>
@@ -1091,7 +1126,7 @@ function WorkspaceShell({
                                 onClick={() => (pending ? setNavigation(entry) : navigate(entry))}
                                 type="button"
                               >
-                                <EditorIcon name="page" />
+                                <EditorIcon name="contentPage" />
                                 <span className={styles.grow}>
                                   <strong>{entry.label}</strong>
                                 </span>
@@ -1100,11 +1135,16 @@ function WorkspaceShell({
                             ) : (
                               <a
                                 className={styles.row}
+                                title={entry.label}
                                 href={`${adminRoute}/collections/${source?.slug}/${encodeURIComponent(entry.id)}`}
                                 rel="noreferrer"
                                 target="_blank"
                               >
-                                {entry.label} ↗
+                                <EditorIcon name="contentPage" />
+                                <span className={styles.grow}>
+                                  <strong>{entry.label}</strong>
+                                </span>
+                                <EditorIcon name="contentExternal" />
                               </a>
                             )}
                           </li>
@@ -1121,7 +1161,9 @@ function WorkspaceShell({
                       >
                         Previous
                       </button>
-                      <span>Page {page}</span>
+                      <span>
+                        Page {page} of {totalPages}
+                      </span>
                       <button
                         disabled={!hasNext || loading}
                         onClick={() => setPage(page + 1)}
@@ -1234,25 +1276,6 @@ function WorkspaceShell({
               key={`annotations:${src}`}
             />
           </div>
-          {view === 'content' && !source?.global && source?.createLabel && (
-            <div className={styles.contextActions} role="group" aria-label="Content actions">
-              <a
-                className={styles.row}
-                href={`${adminRoute}/collections/${encodeURIComponent(source.slug)}/create${
-                  current.locale ? `?${new URLSearchParams({ locale: current.locale })}` : ''
-                }`}
-                rel="noreferrer"
-                target="_blank"
-                title={`${source.createLabel} in Payload (opens in a new tab)`}
-              >
-                <EditorIcon name="plus" />
-                <span className={styles.grow}>
-                  <strong>{source.createLabel}</strong>
-                </span>
-                <span aria-hidden="true">↗</span>
-              </a>
-            </div>
-          )}
           <footer
             className={styles.footer}
             data-collapsed={statusPanel.collapsed}

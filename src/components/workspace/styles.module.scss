@@ -626,14 +626,6 @@
   height: 14px;
   margin-top: 2px;
 }
-.contextActions {
-  flex-shrink: 0;
-  padding: 12px 18px;
-  border-top: 1px solid #343434;
-}
-.floating .contextActions .row {
-  margin-bottom: 0;
-}
 .footer {
   padding: 20px;
   transition:
@@ -794,24 +786,6 @@
 }
 .panel summary {
   font-size: 11px;
-}
-.field {
-  display: grid;
-  gap: 8px;
-  margin: 20px 0;
-  font-size: 11px;
-  color: #b3b3b3;
-}
-.field:first-child {
-  margin-top: 0;
-}
-.field :is(input, select),
-.search {
-  width: 100%;
-  min-width: 0;
-}
-.search {
-  margin-bottom: 14px;
 }
 .toggle {
   display: flex;
@@ -1263,5 +1237,189 @@
   }
   50% {
     translate: 0 -4px;
+  }
+}
+
+.workspace[data-view='content'] {
+  .floating[data-open='true'] {
+    border-radius: 28px;
+  }
+  .shell {
+    padding: 20px 24px 24px;
+    gap: 0;
+    min-height: min(760px, calc(100dvh - 48px));
+  }
+  .header {
+    height: 44px;
+    padding: 0;
+    gap: 12px;
+    h2 {
+      font-size: 18px;
+      &:focus {
+        outline: none;
+      }
+    }
+  }
+  .header .iconButton {
+    width: 18px;
+  }
+  .footer {
+    padding: 20px 0 0;
+    border: 0;
+    border-top: 1px solid #3b3b3e;
+    border-radius: 0;
+    background: transparent;
+    &[data-collapsed='true'] {
+      padding-top: 12px;
+    }
+  }
+}
+.contentView {
+  :focus-visible {
+    outline-offset: -2px;
+  }
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 0 24px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  > * {
+    flex-shrink: 0;
+  }
+  .entries {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    padding-top: 8px;
+  }
+  .row {
+    min-height: 56px;
+    margin: 0;
+    padding: 12px;
+    gap: 12px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    strong {
+      font-size: 14px;
+      line-height: 21px;
+    }
+    &:hover {
+      background: #343436;
+      text-decoration: none;
+    }
+    &[aria-current='page'] {
+      background: #3a3d35;
+      box-shadow: none;
+      > svg:last-child {
+        color: #c4cbb2;
+      }
+    }
+  }
+  .pagination {
+    margin-top: 0;
+    padding-top: 8px;
+    color: #a9a9ae;
+    gap: 10px;
+    button {
+      min-height: 32px;
+      padding: 5px 12px;
+      border-radius: 10px;
+      background: #2c2c2f;
+      font-size: 13px;
+      &:disabled {
+        opacity: 1;
+        color: #77777e;
+      }
+    }
+  }
+}
+.contentControls {
+  display: grid;
+  gap: 12px;
+}
+.contentSourceLabel {
+  color: #a9a9ae;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 17px;
+}
+.contentToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.contentSelect {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  select {
+    appearance: none;
+    width: 100%;
+    height: 40px;
+    padding: 0 36px 0 12px;
+    border-color: #414144;
+    border-radius: 10px;
+    background: #252527;
+    color: #e8e8e9;
+    font-size: 13px;
+  }
+  > [aria-hidden] {
+    position: absolute;
+    right: 12px;
+    top: 12px;
+    pointer-events: none;
+  }
+}
+.createContent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 6px;
+  min-height: 40px;
+  min-width: 136px;
+  padding: 0 12px;
+  border: 1px solid #383838;
+  border-radius: 10px;
+  background: #343436;
+  color: #e8e8e9;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  &:hover {
+    background: #3e3e41;
+    text-decoration: none;
+  }
+}
+.contentSearch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #414144;
+  border-radius: 10px;
+  background: #202022;
+  input {
+    width: 100%;
+    min-width: 0;
+    padding: 10px 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    font-size: 13px;
+    &::placeholder {
+      color: #a9a9ae;
+    }
+  }
+  &:focus-within {
+    outline: 2px solid #b6b6b6;
+    outline-offset: -2px;
+  }
+  input:focus-visible {
+    outline: none;
   }
 }
