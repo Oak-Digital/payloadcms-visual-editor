@@ -4,4 +4,9 @@ export { VisualEditorWorkspace } from '../components/workspace/index.js'
 export type { WorkspaceSource } from '../components/workspace/index.js'
 export { useSharedContentPreview } from '../hooks/use-shared-content-preview.js'
 
-export type { AnnotationTicketRequest, AnnotationTicket, SubmitAnnotation } from '../types.js'
+export type {
+  AnnotationTicketRequest,
+  AnnotationTicket,
+  SubmitAnnotation,
+  DeleteAnnotationTicket,
+} from '../types.js'

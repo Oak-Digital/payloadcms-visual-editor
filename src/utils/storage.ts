@@ -27,8 +27,8 @@ export function loadAnnotations<T = Annotation>(pathname: string): T[] {
     const data = JSON.parse(stored)
     const cutoff = Date.now() - DEFAULT_RETENTION_DAYS * 24 * 60 * 60 * 1000
     return data.filter(
-      (a: { timestamp?: number; ticketRequest?: unknown }) =>
-        a.ticketRequest || !a.timestamp || a.timestamp > cutoff,
+      (a: { timestamp?: number; ticketRequest?: unknown; archivedAt?: string }) =>
+        a.archivedAt || a.ticketRequest || !a.timestamp || a.timestamp > cutoff,
     )
   } catch {
     return []

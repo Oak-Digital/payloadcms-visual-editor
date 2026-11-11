@@ -658,7 +658,7 @@
 .annotations .annotationTools {
   align-items: flex-start;
   justify-content: space-between;
-  margin: 0 0 20px;
+  margin: 0 0 10px;
 }
 .annotationOptions {
   position: relative;
@@ -692,11 +692,11 @@
   }
 }
 .annotations .annotationCard {
-  padding: 16px;
+  padding: 10px 12px;
   border: 1px solid #343434;
   border-radius: 14px;
   background: #1e1e1e;
-  margin-bottom: 12px;
+  margin-bottom: 7px;
   min-width: 0;
 }
 .annotationCardHeader,
@@ -713,51 +713,55 @@
 .annotationNumber {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: #283f50;
   color: #c0e3ff;
   font-size: 11px;
 }
-.annotationStatus {
-  padding: 4px 7px;
-  border-radius: 6px;
-  background: #27342c;
-  color: #b4cfbc;
-  font-size: 10px;
+.annotationTabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: 10px;
+  background: #242424;
+  border-radius: 9px;
+  button {
+    flex: 1;
+    padding: 7px 10px;
+    border-color: transparent;
+    background: transparent;
+    color: #aaa;
+    &[aria-pressed='true'] {
+      background: #393939;
+      color: #fff;
+    }
+  }
 }
 .annotations .annotationComment {
   color: #f0f0f0;
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: 13px;
+  line-height: 1.4;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  margin: 16px 0;
+  margin: 7px 0;
 }
 .annotations .annotationTicket {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid #414141;
-  border-radius: 8px;
-  padding: 10px;
-  color: #dedede;
+  gap: 4px;
+  color: #b4cfbc;
   font-size: 11px;
-  background: #262626;
-  &:hover {
-    background: #303030;
-    text-decoration: none;
-  }
+  white-space: nowrap;
 }
 .annotations .annotationCardActions {
   justify-content: flex-end;
-  margin: 10px 0 -4px;
+  margin: 3px 0 -3px;
   button {
     background: transparent;
     border-color: transparent;
-    padding: 6px 0 6px 10px;
+    padding: 4px 0 4px 10px;
     color: #aaa;
     &:hover {
       color: #eee;

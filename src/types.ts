@@ -18,7 +18,14 @@ export type AnnotationTicketRequest = {
 export type AnnotationTicket = { identifier: string; url: string }
 export type SubmitAnnotation = (request: AnnotationTicketRequest) => Promise<AnnotationTicket>
 
+export type DeleteAnnotationTicket = (
+  request: AnnotationTicketRequest,
+  ticket: AnnotationTicket,
+) => Promise<void>
+
 export interface Annotation {
+  archivedAt?: string
+
   ticketRequest?: AnnotationTicketRequest
   ticket?: AnnotationTicket
   ticketError?: string

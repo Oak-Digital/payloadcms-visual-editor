@@ -8,6 +8,7 @@ import type {
   PayloadCMSDocument,
   PendingAnnotation,
   SubmitAnnotation,
+  DeleteAnnotationTicket,
 } from '../../types.js'
 import type { AnnotationPopupCSSHandle } from '../annotation-popup-css/index.js'
 
@@ -338,6 +339,7 @@ export type VisualEditorToolbarProps = {
   endpoint?: string
   /** Submit feedback through a host-owned ticket integration. */
   submitAnnotation?: SubmitAnnotation
+  deleteAnnotationTicket?: DeleteAnnotationTicket
   /** Callback fired when an annotation is added. */
   onAnnotationAdd?: (annotation: Annotation) => void
   /** Callback fired when an annotation is deleted. */
@@ -390,6 +392,7 @@ export function VisualEditorToolbar({
   enableDemoMode = false,
   endpoint,
   submitAnnotation,
+  deleteAnnotationTicket,
   onAnnotationAdd,
   onAnnotationDelete,
   onAnnotationsClear,
@@ -1826,6 +1829,45 @@ export function VisualEditorToolbar({
     [annotations, pendingAnnotation, onAnnotationDelete, fireWebhook, endpoint],
   )
 
+  const [annotationTab, setAnnotationTab] = useState<'active' | 'archived'>('active')
+  const [deletingTickets, setDeletingTickets] = useState<Set<string>>(new Set())
+  const deletingTicketIds = useRef(new Set<string>())
+  const [ticketDeleteErrors, setTicketDeleteErrors] = useState<Record<string, string>>({})
+  const archiveAnnotation = (id: string, archived: boolean) => {
+    setAnnotations((items) =>
+      items.map((item) =>
+        item.id === id
+          ? { ...item, archivedAt: archived ? new Date().toISOString() : undefined }
+          : item,
+      ),
+    )
+  }
+  const removeTicket = async (annotation: Annotation) => {
+    if (
+      !deleteAnnotationTicket ||
+      !annotation.ticket ||
+      !annotation.ticketRequest ||
+      deletingTicketIds.current.has(annotation.id)
+    )
+      return
+    deletingTicketIds.current.add(annotation.id)
+    setDeletingTickets(new Set(deletingTicketIds.current))
+    setTicketDeleteErrors((errors) => ({ ...errors, [annotation.id]: '' }))
+    try {
+      await deleteAnnotationTicket(annotation.ticketRequest, annotation.ticket)
+      deleteAnnotation(annotation.id)
+    } catch (error) {
+      setTicketDeleteErrors((errors) => ({
+        ...errors,
+        [annotation.id]:
+          error instanceof Error ? error.message : 'Unable to delete ticket. Try again.',
+      }))
+    } finally {
+      deletingTicketIds.current.delete(annotation.id)
+      setDeletingTickets(new Set(deletingTicketIds.current))
+    }
+  }
+
   // Handle marker hover - finds element(s) for live position tracking
   const handleMarkerHover = useCallback((annotation: Annotation | null) => {
     if (!annotation) {
@@ -1975,7 +2017,7 @@ export function VisualEditorToolbar({
   // Copy output
   const copyOutput = useCallback(async () => {
     const output = generateOutput(
-      annotations,
+      annotations.filter((item) => !item.archivedAt),
       window.location.pathname + window.location.search,
       settings.outputDetail,
     )
@@ -2436,7 +2478,7 @@ export function VisualEditorToolbar({
       window.parent.postMessage(
         {
           type: 'visual-editor:annotations',
-          count: annotations.filter((item) => !item.payloadCMS.path).length,
+          count: annotations.filter((item) => !item.archivedAt && !item.payloadCMS.path).length,
         },
         window.location.origin,
       )
@@ -2475,8 +2517,22 @@ export function VisualEditorToolbar({
 
   // Filter annotations for rendering (exclude exiting ones from normal flow)
   const visibleAnnotations = annotations.filter(
-    (a) => !exitingMarkers.has(a.id) && a.kind !== 'placement' && a.kind !== 'rearrange',
+    (a) =>
+      !a.archivedAt &&
+      !exitingMarkers.has(a.id) &&
+      a.kind !== 'placement' &&
+      a.kind !== 'rearrange',
   )
+  const feedbackNotes = annotations.filter(
+    (item) =>
+      !item.payloadCMS.path &&
+      !exitingMarkers.has(item.id) &&
+      item.kind !== 'placement' &&
+      item.kind !== 'rearrange',
+  )
+  const archivedNotes = feedbackNotes.filter((item) => item.archivedAt)
+  const activeNotes = feedbackNotes.filter((item) => !item.archivedAt)
+  const displayedNotes = annotationTab === 'archived' ? archivedNotes : activeNotes
   const hasVisibleAnnotations = visibleAnnotations.length > 0
   const exitingAnnotationsList = annotations.filter((a) => exitingMarkers.has(a.id))
 
@@ -2676,6 +2732,26 @@ export function VisualEditorToolbar({
               />
             ) : (
               <>
+                <div
+                  className={annotationStyles.annotationTabs}
+                  role="group"
+                  aria-label="Note views"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={annotationTab === 'active'}
+                    onClick={() => setAnnotationTab('active')}
+                  >
+                    Active ({activeNotes.length})
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={annotationTab === 'archived'}
+                    onClick={() => setAnnotationTab('archived')}
+                  >
+                    Archived ({archivedNotes.length})
+                  </button>
+                </div>
                 <p className={annotationStyles.annotationHint}>
                   Click anywhere on the page to leave a note.
                 </p>
@@ -2700,77 +2776,97 @@ export function VisualEditorToolbar({
                       <button type="button" onClick={() => setShowSettings(!showSettings)}>
                         Annotation settings
                       </button>
-                      <button type="button" disabled={!hasAnnotations} onClick={clearAll}>
-                        Clear all notes
+                      <button
+                        type="button"
+                        disabled={!activeNotes.length}
+                        onClick={() =>
+                          setAnnotations((items) =>
+                            items.map((item) =>
+                              !item.payloadCMS.path && !item.archivedAt
+                                ? { ...item, archivedAt: new Date().toISOString() }
+                                : item,
+                            ),
+                          )
+                        }
+                      >
+                        Resolve all notes
                       </button>
                     </div>
                   </details>
                 </nav>
-                {visibleAnnotations
-                  .filter((item) => !item.payloadCMS.path)
-                  .map((annotation) => (
-                    <article key={annotation.id} className={annotationStyles.annotationCard}>
-                      <header className={annotationStyles.annotationCardHeader}>
-                        <span className={annotationStyles.annotationTarget}>
-                          <span className={annotationStyles.annotationNumber}>
-                            {visibleAnnotations.findIndex((item) => item.id === annotation.id) + 1}
-                          </span>
-                          {annotationLabel(annotation.element)}
+                {displayedNotes.map((annotation) => (
+                  <article key={annotation.id} className={annotationStyles.annotationCard}>
+                    <header className={annotationStyles.annotationCardHeader}>
+                      <span className={annotationStyles.annotationTarget}>
+                        <span className={annotationStyles.annotationNumber}>
+                          {displayedNotes.findIndex((item) => item.id === annotation.id) + 1}
                         </span>
-                        {annotation.ticket && (
-                          <span className={annotationStyles.annotationStatus}>Submitted</span>
-                        )}
-                      </header>
-                      <p className={annotationStyles.annotationComment}>{annotation.comment}</p>
-                      {annotation.ticket ? (
+                        {annotationLabel(annotation.element)}
+                      </span>
+                      {annotation.ticket && (
                         <a
                           className={annotationStyles.annotationTicket}
                           href={annotation.ticket.url}
                           target="_blank"
                           rel="noreferrer"
+                          aria-label={`Open ticket ${annotation.ticket.identifier}`}
                         >
-                          <span>{annotation.ticket.identifier}</span>
-                          <span>
-                            Open ticket <span aria-hidden="true">↗</span>
-                          </span>
+                          {annotation.ticket.identifier} <span aria-hidden="true">↗</span>
                         </a>
-                      ) : annotation.ticketRequest ? (
-                        <div aria-live="polite">
-                          {sendingTickets.has(annotation.id) ? (
-                            <p>Sending feedback…</p>
-                          ) : (
-                            <>
-                              <p role={annotation.ticketError ? 'alert' : undefined}>
-                                {annotation.ticketError || 'Not submitted.'}
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() => void sendAnnotationTicket(annotation)}
-                              >
-                                Retry submission
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      ) : null}
-
-                      <nav className={annotationStyles.annotationCardActions}>
-                        {!annotation.ticketRequest && (
-                          <button type="button" onClick={() => startEditAnnotation(annotation)}>
-                            Edit note
-                          </button>
+                      )}
+                    </header>
+                    <p className={annotationStyles.annotationComment}>{annotation.comment}</p>
+                    {!annotation.ticket && annotation.ticketRequest ? (
+                      <div aria-live="polite">
+                        {sendingTickets.has(annotation.id) ? (
+                          <p>Sending feedback…</p>
+                        ) : (
+                          <>
+                            <p role={annotation.ticketError ? 'alert' : undefined}>
+                              {annotation.ticketError || 'Not submitted.'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => void sendAnnotationTicket(annotation)}
+                            >
+                              Retry submission
+                            </button>
+                          </>
                         )}
+                      </div>
+                    ) : null}
+
+                    {ticketDeleteErrors[annotation.id] && (
+                      <p role="alert">{ticketDeleteErrors[annotation.id]}</p>
+                    )}
+                    <nav className={annotationStyles.annotationCardActions}>
+                      {!annotation.ticketRequest && (
+                        <button type="button" onClick={() => startEditAnnotation(annotation)}>
+                          Edit note
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={deletingTickets.has(annotation.id)}
+                        onClick={() => archiveAnnotation(annotation.id, !annotation.archivedAt)}
+                      >
+                        {annotation.archivedAt ? 'Restore' : 'Resolve'}
+                      </button>
+                      {annotation.ticket && deleteAnnotationTicket && (
                         <button
                           type="button"
-                          title="Remove this note from the editor only"
-                          onClick={() => deleteAnnotation(annotation.id)}
+                          disabled={deletingTickets.has(annotation.id)}
+                          onClick={() => void removeTicket(annotation)}
                         >
-                          Remove note
+                          {deletingTickets.has(annotation.id) ? 'Deleting…' : 'Delete ticket'}
                         </button>
-                      </nav>
-                    </article>
-                  ))}
-                {!hasAnnotations && <p>No annotations yet.</p>}
+                      )}
+                    </nav>
+                  </article>
+                ))}
+                {!displayedNotes.length && (
+                  <p>{annotationTab === 'archived' ? 'No archived notes.' : 'No active notes.'}</p>
+                )}
                 {showSettings && (
                   <SettingsPanel
                     connectionStatus={connectionStatus}

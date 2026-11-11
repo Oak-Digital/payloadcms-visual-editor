@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import type { PayloadCMSDocument, SubmitAnnotation } from '../../types.js'
+import type { PayloadCMSDocument, SubmitAnnotation, DeleteAnnotationTicket } from '../../types.js'
 
 import { SharedContentEditor } from '../shared-content/index.js'
 import type { SharedTarget } from '../../utils/shared-content.js'
@@ -45,12 +45,14 @@ export function VisualEditorWorkspace({
   sources,
   preparePreview,
   submitAnnotation,
+  deleteAnnotationTicket,
 }: {
   adminRoute?: string
   apiRoute?: string
   documentInfo: PayloadCMSDocument
   sources: WorkspaceSource[]
   submitAnnotation?: SubmitAnnotation
+  deleteAnnotationTicket?: DeleteAnnotationTicket
   /** Renew the host's authenticated preview session before a route refresh. */
   preparePreview?: (signal: AbortSignal) => Promise<void>
 }) {
@@ -60,6 +62,7 @@ export function VisualEditorWorkspace({
       {canvas ? (
         <WorkspaceCanvas
           submitAnnotation={submitAnnotation}
+          deleteAnnotationTicket={deleteAnnotationTicket}
           adminRoute={adminRoute}
           apiRoute={apiRoute}
           documentInfo={documentInfo}
@@ -78,11 +81,13 @@ export function VisualEditorWorkspace({
 
 function WorkspaceCanvas({
   submitAnnotation,
+  deleteAnnotationTicket,
   adminRoute,
   apiRoute,
   documentInfo,
 }: {
   submitAnnotation?: SubmitAnnotation
+  deleteAnnotationTicket?: DeleteAnnotationTicket
   adminRoute: string
   apiRoute: string
   documentInfo: PayloadCMSDocument
@@ -232,6 +237,7 @@ function WorkspaceCanvas({
   return (
     <VisualEditorToolbar
       submitAnnotation={submitAnnotation}
+      deleteAnnotationTicket={deleteAnnotationTicket}
       adminRoute={adminRoute}
       apiRoute={apiRoute}
       documentInfo={documentInfo}

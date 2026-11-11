@@ -7,6 +7,7 @@ it('retains ticket requests and links beyond ordinary note retention', () => {
   const timestamp = Date.now() - 8 * 24 * 60 * 60 * 1000
   const notes = [
     { id: 'ordinary', timestamp },
+    { id: 'archived', timestamp, archivedAt: new Date().toISOString() },
     { id: 'failed', timestamp, ticketRequest: { id: 'request' }, ticketError: 'Offline' },
     { id: 'sent', timestamp, ticketRequest: { id: 'request2' }, ticket: { identifier: 'REC-1' } },
   ]
