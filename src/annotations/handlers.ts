@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { readAnnotationForm } from './request.js'
 import type { CollectionSlug, PayloadHandler, PayloadRequest, TypedLocale } from 'payload'
 import type { AnnotationTicketRequest } from '../types.js'
 import { defaultSettingsAccess, type AnnotationSettingsAccess } from './config.js'
@@ -57,8 +58,18 @@ export const createAnnotationHandler =
     if (!sameOrigin(req)) return fail('Invalid origin.', 403)
     if (!authenticated(req)) return fail('Sign in to Payload again, then retry.', 403)
     let input: unknown
+    let screenshot: File | undefined
     try {
-      input = await req.json?.()
+      if (req.headers.get('content-type')?.startsWith('multipart/form-data')) {
+        if (Number(req.headers.get('content-length')) > 11 * 1024 * 1024)
+          return fail('Screenshot is too large.', 413)
+        const form = await readAnnotationForm(req)
+        input = JSON.parse(String(form?.get('annotation')))
+        const file = form?.get('screenshot')
+        if (!(file instanceof File) || !file.size || file.size > 10 * 1024 * 1024)
+          return fail('Provide a screenshot smaller than 10 MB.', 400)
+        screenshot = file
+      } else input = await req.json?.()
     } catch {
       return fail('Invalid annotation.', 400)
     }
@@ -101,11 +112,58 @@ export const createAnnotationHandler =
       return fail('Annotation settings are unavailable. Try again.', 503)
     }
     if (!integration) return fail('Annotation tickets are disabled or not configured.', 503)
+    if (action === 'submit' && input.screenshot && !screenshot)
+      return fail('The saved screenshot is missing. Restore it before retrying.', 400)
+    if (screenshot && screenshot.type !== 'image/jpeg')
+      return fail('Provide a JPEG screenshot.', 400)
     const { key, projectId, bugLabelId } = integration
     const authHeaders = { Authorization: `Bearer ${key}` }
     const documentLine = `Document: ${input.document.collection}/${input.document.id} (${locale || 'default'})`
+    const annotation = input
+    async function uploadScreenshot(taskId: string, identifier: string) {
+      const ticket = { identifier, url: `https://os.oak.dk/task/${identifier}` }
+      try {
+        if (
+          !screenshot ||
+          annotation.createdAt > Date.now() + 60000 ||
+          Date.now() - annotation.createdAt > 23 * 60 * 60 * 1000
+        )
+          throw new Error('expired')
+        const response = await fetch(
+          `https://os.oak.dk/api/v1/tasks/${encodeURIComponent(taskId)}/images`,
+          {
+            method: 'POST',
+            headers: {
+              ...authHeaders,
+              'Content-Type': 'image/jpeg',
+              'Idempotency-Key': createHash('sha256')
+                .update(`${projectId}:${req.user!.id}:${annotation.id}:screenshot`)
+                .digest('hex'),
+            },
+            body: screenshot,
+            signal: AbortSignal.timeout(30000),
+          },
+        )
+        if (!response.ok) throw new Error('upload')
+        const uploaded = await response.json()
+        if (typeof uploaded.data?.id !== 'string') throw new Error('Invalid image response')
+        return Response.json({ ...ticket, screenshotUploaded: true }, { headers })
+      } catch {
+        return Response.json(
+          {
+            ...ticket,
+            screenshotError:
+              Date.now() - annotation.createdAt > 23 * 60 * 60 * 1000
+                ? 'Screenshot retry expired. Check the ticket in Oak OS.'
+                : 'Ticket created. Screenshot upload was not confirmed. Retry the same screenshot.',
+          },
+          { headers },
+        )
+      }
+    }
+
     try {
-      if (action === 'delete') {
+      if (action === 'delete' || input.identifier) {
         if (!input.identifier || !identifierPattern.test(input.identifier))
           return fail('Invalid ticket.', 400)
         const current = await fetch(`https://os.oak.dk/api/v1/tasks/${input.identifier}`, {
@@ -113,17 +171,19 @@ export const createAnnotationHandler =
           cache: 'no-store',
           signal: AbortSignal.timeout(15000),
         })
-        if (current.status === 404) return noContent()
+        if (current.status === 404)
+          return action === 'delete' ? noContent() : fail('This ticket no longer exists.', 404)
         if (!current.ok) return fail('Unable to check the Oak OS ticket. Try again.', 502)
         const { data: task } = await current.json()
         if (
           task?.project?.id !== projectId ||
           task.identifier !== input.identifier ||
           typeof task.description !== 'string' ||
-          !task.description.endsWith(`\nAnnotation: ${input.id}`) ||
+          !task.description.split('\n').includes(`Annotation: ${input.id}`) ||
           !task.description.includes(`\n${documentLine}\n`)
         )
           return fail('This ticket does not match the annotation.', 403)
+        if (action === 'submit') return uploadScreenshot(task.id, input.identifier)
         const version = current.headers.get('etag')
         if (!version || typeof task.id !== 'string')
           return fail('Unable to check the ticket version. Try again.', 502)
@@ -180,6 +240,10 @@ export const createAnnotationHandler =
       const identifier = result.data?.identifier
       if (typeof identifier !== 'string' || !identifierPattern.test(identifier))
         throw new Error('Invalid ticket response')
+      if (screenshot) {
+        if (typeof result.data?.id !== 'string') throw new Error('Invalid ticket response')
+        return uploadScreenshot(result.data.id, identifier)
+      }
       return Response.json({ identifier, url: `https://os.oak.dk/task/${identifier}` }, { headers })
     } catch {
       return fail(

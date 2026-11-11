@@ -12,6 +12,7 @@ import type {
 } from '../../types.js'
 import type { AnnotationPopupCSSHandle } from '../annotation-popup-css/index.js'
 
+import { captureScreenshot } from '../../annotations/screenshot.js'
 import { annotationLabel } from '../../utils/annotation-label.js'
 import annotationStyles from '../workspace/styles.module.scss'
 import { usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
@@ -1579,17 +1580,34 @@ export function VisualEditorToolbar({
       if (
         !submitAnnotation ||
         !annotation.ticketRequest ||
-        annotation.ticket ||
+        (annotation.ticket && !annotation.ticket.screenshotError) ||
         ticketSubmissions.current.has(annotation.id)
       )
         return
       ticketSubmissions.current.add(annotation.id)
       setSendingTickets(new Set(ticketSubmissions.current))
       try {
-        const ticket = await submitAnnotation(annotation.ticketRequest)
+        let request = annotation.ticketRequest
+        if (!request.screenshot) {
+          await captureScreenshot(annotation.id)
+          request = { ...request, screenshot: true }
+          // Persist the immutable capture flag before any external write.
+          const stored = loadAnnotations<Annotation>(pathname)
+          const updated = { ...annotation, ticketRequest: request }
+          const notes = stored.some((item) => item.id === annotation.id)
+            ? stored.map((item) => (item.id === annotation.id ? updated : item))
+            : [...stored, updated]
+          localStorage.setItem(getStorageKey(pathname), JSON.stringify(notes))
+          setAnnotations((items) =>
+            items.map((item) => (item.id === annotation.id ? updated : item)),
+          )
+        }
+        const ticket = await submitAnnotation(request, annotation.ticket)
         setAnnotations((items) =>
           items.map((item) =>
-            item.id === annotation.id ? { ...item, ticket, ticketError: undefined } : item,
+            item.id === annotation.id
+              ? { ...item, ticket, ticketError: ticket.screenshotError }
+              : item,
           ),
         )
       } catch (error) {
@@ -1609,7 +1627,7 @@ export function VisualEditorToolbar({
         setSendingTickets(new Set(ticketSubmissions.current))
       }
     },
-    [submitAnnotation],
+    [submitAnnotation, pathname],
   )
 
   // Add annotation
@@ -2816,7 +2834,8 @@ export function VisualEditorToolbar({
                       )}
                     </header>
                     <p className={annotationStyles.annotationComment}>{annotation.comment}</p>
-                    {!annotation.ticket && annotation.ticketRequest ? (
+                    {(!annotation.ticket || annotation.ticket.screenshotError) &&
+                    annotation.ticketRequest ? (
                       <div aria-live="polite">
                         {sendingTickets.has(annotation.id) ? (
                           <p>Sending feedback…</p>
@@ -2829,7 +2848,7 @@ export function VisualEditorToolbar({
                               type="button"
                               onClick={() => void sendAnnotationTicket(annotation)}
                             >
-                              Retry submission
+                              {annotation.ticket ? 'Retry screenshot' : 'Retry submission'}
                             </button>
                           </>
                         )}
@@ -2847,7 +2866,9 @@ export function VisualEditorToolbar({
                       )}
                       <button
                         type="button"
-                        disabled={deletingTickets.has(annotation.id)}
+                        disabled={
+                          deletingTickets.has(annotation.id) || sendingTickets.has(annotation.id)
+                        }
                         onClick={() => archiveAnnotation(annotation.id, !annotation.archivedAt)}
                       >
                         {annotation.archivedAt ? 'Restore' : 'Resolve'}
@@ -2855,7 +2876,9 @@ export function VisualEditorToolbar({
                       {annotation.ticket && deleteAnnotationTicket && (
                         <button
                           type="button"
-                          disabled={deletingTickets.has(annotation.id)}
+                          disabled={
+                            deletingTickets.has(annotation.id) || sendingTickets.has(annotation.id)
+                          }
                           onClick={() => void removeTicket(annotation)}
                         >
                           {deletingTickets.has(annotation.id) ? 'Deleting…' : 'Delete ticket'}

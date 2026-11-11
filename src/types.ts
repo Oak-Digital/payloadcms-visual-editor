@@ -5,6 +5,7 @@
 // =============================================================================
 
 export type AnnotationTicketRequest = {
+  screenshot?: boolean
   createdAt: number
   id: string
   comment: string
@@ -15,8 +16,16 @@ export type AnnotationTicketRequest = {
   x: number
   y: number
 }
-export type AnnotationTicket = { identifier: string; url: string }
-export type SubmitAnnotation = (request: AnnotationTicketRequest) => Promise<AnnotationTicket>
+export type AnnotationTicket = {
+  identifier: string
+  url: string
+  screenshotUploaded?: boolean
+  screenshotError?: string
+}
+export type SubmitAnnotation = (
+  request: AnnotationTicketRequest,
+  ticket?: AnnotationTicket,
+) => Promise<AnnotationTicket>
 
 export type DeleteAnnotationTicket = (
   request: AnnotationTicketRequest,

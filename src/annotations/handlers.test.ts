@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { PayloadRequest } from 'payload'
@@ -23,6 +24,7 @@ async function payloadRequest(request: Request): Promise<PayloadRequest> {
     url: request.url,
     headers: request.headers,
     json: () => request.json(),
+    body: request.body,
     user,
     payload: {
       findByID: mocks.findByID,
@@ -173,6 +175,100 @@ describe('annotation ticket submission', () => {
       expect((await DELETE(deletionRequest())).status).toBe(403)
     }
     expect(mocks.fetch).toHaveBeenCalledTimes(3)
+  })
+  it('deletes a matching annotation with appended image Markdown', async () => {
+    mocks.fetch
+      .mockResolvedValueOnce(
+        ticketResponse({
+          description: `Note\nDocument: pages/page (en)\nAnnotation: ${input.id}\n\n![image.jpg](/api/files/image)`,
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    expect((await DELETE(deletionRequest())).status).toBe(204)
+  })
+  it('does not accept partial annotation markers', async () => {
+    mocks.fetch.mockResolvedValueOnce(
+      ticketResponse({
+        description: `Note\nDocument: pages/page (en)\nAnnotation: ${input.id}-other`,
+      }),
+    )
+    expect((await DELETE(deletionRequest())).status).toBe(403)
+  })
+  const imageRequest = (
+    overrides = {},
+    file = new File(['jpeg'], 'screenshot.jpg', { type: 'image/jpeg' }),
+  ) => {
+    const form = new FormData()
+    form.set('annotation', JSON.stringify({ ...input, screenshot: true, ...overrides }))
+    form.set('screenshot', file)
+    return new Request('http://localhost:3000/api/payload-visual-editor/annotations', {
+      method: 'POST',
+      headers: { origin: 'http://localhost:3000' },
+      body: form,
+    })
+  }
+  it('uploads after creation and returns the ticket when upload is not confirmed', async () => {
+    mocks.fetch
+      .mockResolvedValueOnce(Response.json({ data: { id: 'task-id', identifier: 'REC-123' } }))
+      .mockRejectedValueOnce(new Error('timeout'))
+    const response = await POST(imageRequest())
+    const ticket = await response.json()
+    expect(response.status).toBe(200)
+    expect(ticket).toMatchObject({
+      identifier: 'REC-123',
+      screenshotError: expect.stringContaining('Retry'),
+    })
+    const firstUpload = mocks.fetch.mock.calls[1]
+    expect(firstUpload[0]).toBe('https://os.oak.dk/api/v1/tasks/task-id/images')
+    expect(firstUpload[1].body).toBeInstanceOf(File)
+    mocks.fetch
+      .mockResolvedValueOnce(ticketResponse())
+      .mockResolvedValueOnce(Response.json({ data: { id: 'image' } }))
+    expect(
+      await (await POST(imageRequest({ identifier: ticket.identifier }))).json(),
+    ).toMatchObject({ screenshotUploaded: true })
+    expect(mocks.fetch.mock.calls[2][1].method).toBeUndefined()
+    expect(mocks.fetch.mock.calls[3][1].headers['Idempotency-Key']).toBe(
+      firstUpload[1].headers['Idempotency-Key'],
+    )
+    expect(firstUpload[1].headers['Idempotency-Key']).not.toBe(
+      mocks.fetch.mock.calls[0][1].headers['Idempotency-Key'],
+    )
+  })
+  it('checks project and annotation ownership before retrying an upload', async () => {
+    mocks.fetch.mockResolvedValueOnce(ticketResponse({ project: { id: 'other' } }))
+    expect((await POST(imageRequest({ identifier: 'REC-123' }))).status).toBe(403)
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+  })
+  it('does not recreate deleted tickets or upload expired retries', async () => {
+    mocks.fetch.mockResolvedValueOnce(new Response(null, { status: 404 }))
+    expect((await POST(imageRequest({ identifier: 'REC-123' }))).status).toBe(404)
+    mocks.fetch.mockResolvedValueOnce(ticketResponse())
+    expect(
+      await (
+        await POST(
+          imageRequest({ identifier: 'REC-123', createdAt: Date.now() - 24 * 60 * 60 * 1000 }),
+        )
+      ).json(),
+    ).toMatchObject({ screenshotError: expect.stringContaining('expired') })
+    expect(mocks.fetch).toHaveBeenCalledTimes(2)
+  })
+  it('rejects missing, unsupported and oversized screenshots before creating a ticket', async () => {
+    expect((await POST(request({ ...input, screenshot: true }))).status).toBe(400)
+    expect(
+      (await POST(imageRequest({}, new File(['svg'], 'x.svg', { type: 'image/svg+xml' })))).status,
+    ).toBe(400)
+    expect(
+      (
+        await POST(
+          imageRequest(
+            {},
+            new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'x.jpg', { type: 'image/jpeg' }),
+          ),
+        )
+      ).status,
+    ).toBe(400)
+    expect(mocks.fetch).not.toHaveBeenCalled()
   })
   it('accepts already-deleted tickets on retry', async () => {
     mocks.fetch.mockResolvedValueOnce(new Response(null, { status: 404 }))
