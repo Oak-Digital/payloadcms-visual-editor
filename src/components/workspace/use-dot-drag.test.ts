@@ -42,9 +42,9 @@ it('distinguishes clicks, throws, paused releases and cancelled drags', () => {
     expect(drag.consumeClick()).toBe(false)
     act(() => {
       drag.handlers.onPointerDown(event(28, 20))
-      drag.handlers.onPointerMove(event(70, 100))
-      drag.handlers.onPointerMove(event(70, 110))
-      drag.handlers.onPointerUp(event(70, 115))
+      drag.handlers.onPointerMove(event(110, 40))
+      drag.handlers.onPointerMove(event(200, 60))
+      drag.handlers.onPointerUp(event(200, 61))
     })
     expect(drop).toHaveBeenLastCalledWith('bottom-right')
     expect(drag.consumeClick()).toBe(true)
@@ -54,7 +54,7 @@ it('distinguishes clicks, throws, paused releases and cancelled drags', () => {
       drag.handlers.onPointerMove(event(88, 450))
       drag.handlers.onPointerUp(event(88, 700))
     })
-    expect(drop).toHaveBeenLastCalledWith('bottom-right')
+    expect(drop).toHaveBeenLastCalledWith('top-left')
     drop.mockClear()
     act(() => {
       drag.handlers.onPointerDown(event(28, 210))

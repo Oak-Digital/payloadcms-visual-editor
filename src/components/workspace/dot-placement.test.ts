@@ -1,62 +1,85 @@
 import { describe, expect, it } from 'vitest'
-import { resolveDotPosition } from './dot-placement.js'
+import { dotFlight, releaseVelocity, resolveDotPosition } from './dot-placement.js'
 
-describe('dot placement', () => {
-  it.each([
-    [100, 100, 'top-left'],
-    [900, 100, 'top-right'],
-    [100, 700, 'bottom-left'],
-    [900, 700, 'bottom-right'],
-  ] as const)('snaps a slow drag at %s, %s to %s', (x, y, corner) => {
-    expect(resolveDotPosition(x, y, 0, 0, 1000, 800)).toBe(corner)
+describe('release momentum', () => {
+  it('uses recent direction instead of the overall drag direction', () => {
+    expect(
+      releaseVelocity(
+        [
+          { x: 0, y: 0, time: 0 },
+          { x: 300, y: 20, time: 200 },
+          { x: 260, y: 30, time: 220 },
+        ],
+        { x: 220, y: 40, time: 240 },
+      ),
+    ).toEqual({ x: -2, y: 0.5 })
   })
-
+  it('loses momentum after a pause', () => {
+    expect(
+      releaseVelocity(
+        [
+          { x: 0, y: 0, time: 0 },
+          { x: 100, y: 50, time: 40 },
+        ],
+        { x: 100, y: 50, time: 250 },
+      ),
+    ).toEqual({ x: 0, y: 0 })
+  })
+  it('includes the final movement reported on pointer up', () => {
+    expect(
+      releaseVelocity(
+        [
+          { x: 0, y: 0, time: 0 },
+          { x: 20, y: 10, time: 20 },
+        ],
+        { x: 60, y: 30, time: 40 },
+      ),
+    ).toEqual({ x: 1.5, y: 0.75 })
+  })
+  it('distinguishes slow and fast releases from the same position', () => {
+    expect(resolveDotPosition(1200, 100, -0.2, 0, 1440, 1000)).toBe('top-right')
+    expect(resolveDotPosition(1200, 100, -1.5, 0, 1440, 1000)).toBe('top-left')
+  })
   it.each([
     [-2, -2, 'top-left'],
     [2, -2, 'top-right'],
     [-2, 2, 'bottom-left'],
     [2, 2, 'bottom-right'],
-  ] as const)('projects a throw with velocity %s, %s to %s', (vx, vy, corner) => {
-    expect(resolveDotPosition(550, 450, vx, vy, 1000, 800)).toBe(corner)
-  })
-
-  it('handles releases outside the viewport', () => {
-    expect(resolveDotPosition(-200, 1200, 0, 0, 1000, 800)).toBe('bottom-left')
+  ] as const)('projects the release direction to %s, %s', (vx, vy, corner) => {
+    expect(resolveDotPosition(720, 500, vx, vy, 1440, 1000)).toBe(corner)
   })
 })
 
-describe('early release', () => {
-  it.each([
-    [1300, 80, -0.4, 0.03, 'top-left'],
-    [140, 80, 0.4, 0.03, 'top-right'],
-    [80, 140, 0.03, 0.4, 'bottom-left'],
-    [1360, 860, 0.03, -0.4, 'top-right'],
-    [1300, 140, -0.4, 0.4, 'bottom-left'],
-  ] as const)('sends a short throw toward its intended corner', (x, y, vx, vy, corner) => {
-    expect(resolveDotPosition(x, y, vx, vy, 1440, 1000)).toBe(corner)
-    expect(resolveDotPosition((x / 1440) * 3840, (y / 1000) * 2160, vx, vy, 3840, 2160)).toBe(
-      corner,
-    )
-  })
+function point(frame: Keyframe) {
+  const values = String(frame.transform)
+    .match(/-?[\d.]+/g)!
+    .map(Number)
+  return { x: values[0], y: values[1] }
+}
 
-  it('keeps slow releases near their current corner', () => {
-    expect(resolveDotPosition(1300, 80, -0.1, 0.02, 1440, 1000)).toBe('top-right')
+describe('throw trajectory', () => {
+  const start = { x: 600, y: 300 }
+  const target = { x: 24, y: 24 }
+  const viewport = { width: 1440, height: 1000 }
+  it('moves faster initially when released faster toward the same corner', () => {
+    const slow = dotFlight(start, target, { x: -0.3, y: 0 }, viewport)
+    const fast = dotFlight(start, target, { x: -2, y: 0 }, viewport)
+    expect(point(fast.frames[1]).x).toBeLessThan(point(slow.frames[1]).x)
+    expect(fast.duration).not.toBe(slow.duration)
   })
-})
-
-describe('deliberate movement without release velocity', () => {
-  it.each([
-    [1328, 52, -60, 0, 'top-left'],
-    [112, 52, 60, 0, 'top-right'],
-    [52, 112, 0, 60, 'bottom-left'],
-    [1388, 888, 0, -60, 'top-right'],
-    [1328, 112, -60, 60, 'bottom-left'],
-  ] as const)('retains direction after slowing or pausing', (x, y, dx, dy, corner) => {
-    expect(resolveDotPosition(x, y, 0, 0, 1440, 1000, dx, dy)).toBe(corner)
+  it('follows release direction before curving toward the corner', () => {
+    const flight = dotFlight(start, target, { x: -1, y: 2 }, viewport)
+    expect(point(flight.frames[1]).y).toBeGreaterThan(start.y - target.y)
+    expect(flight.frames.at(-1)?.transform).toBe('translate(0, 0)')
   })
-
-  it('keeps small nudges and a drag returned to its starting point nearby', () => {
-    expect(resolveDotPosition(1368, 52, 0, 0, 1440, 1000, -20, 0)).toBe('top-right')
-    expect(resolveDotPosition(1388, 52, 0, 0, 1440, 1000, 0, 0)).toBe('top-right')
+  it('keeps extreme throws within the viewport', () => {
+    const flight = dotFlight(start, target, { x: -20, y: -20 }, viewport)
+    for (const frame of flight.frames) {
+      const p = point(frame)
+      expect(p.x + target.x).toBeGreaterThanOrEqual(8)
+      expect(p.y + target.y).toBeGreaterThanOrEqual(8)
+      expect(p.x + target.x).toBeLessThanOrEqual(viewport.width - 64)
+      expect(p.y + target.y).toBeLessThanOrEqual(viewport.height - 64)
+    }
   })
 })

@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { PointerEvent, RefObject } from 'react'
 
-import { resolveDotPosition } from './dot-placement.js'
-import type { DotPosition } from './dot-placement.js'
+import { dotFlight, releaseVelocity, resolveDotPosition } from './dot-placement.js'
+import type { DotPosition, PointerSample } from './dot-placement.js'
 
 type Drag = {
   id: number
@@ -10,9 +10,7 @@ type Drag = {
   startY: number
   left: number
   top: number
-  x: number
-  y: number
-  samples: { x: number; y: number; time: number }[]
+  samples: PointerSample[]
   baseLeft: number
   baseTop: number
   moved: boolean
@@ -29,7 +27,11 @@ export function useDotDrag(
   const [offset, setOffset] = useState<{ x: number; y: number } | null>(null)
 
   const animation = useRef<Animation | null>(null)
-  const [landing, setLanding] = useState<{ x: number; y: number } | null>(null)
+  const [landing, setLanding] = useState<{
+    x: number
+    y: number
+    velocity: { x: number; y: number }
+  } | null>(null)
   const [systemReduceMotion, setSystemReduceMotion] = useState(false)
 
   useEffect(() => {
@@ -47,24 +49,11 @@ export function useDotDrag(
       return
     }
     const bounds = element.getBoundingClientRect()
-    const x = landing.x - bounds.left
-    const y = landing.y - bounds.top
-    const distance = Math.hypot(x, y)
-    const bounce = Math.min(6, distance * 0.025)
-    const dx = distance ? (-x / distance) * bounce : 0
-    const dy = distance ? (-y / distance) * bounce : 0
-    const flight = element.animate(
-      [
-        {
-          transform: `translate(${x}px, ${y}px)`,
-          offset: 0,
-          easing: 'cubic-bezier(0.16, 0.7, 0.3, 1)',
-        },
-        { transform: `translate(${dx}px, ${dy}px)`, offset: 0.8, easing: 'ease-in-out' },
-        { transform: 'translate(0, 0)', offset: 1 },
-      ],
-      { duration: Math.min(850, 440 + distance * 0.25) },
-    )
+    const motion = dotFlight(landing, { x: bounds.left, y: bounds.top }, landing.velocity, {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    })
+    const flight = element.animate(motion.frames, { duration: motion.duration, easing: 'linear' })
     animation.current = flight
     flight.onfinish = () => setLanding(null)
     return () => {
@@ -76,14 +65,11 @@ export function useDotDrag(
   function move(event: PointerEvent<HTMLButtonElement>) {
     const current = drag.current
     if (!current || current.id !== event.pointerId) return
-    if (event.clientX !== current.x || event.clientY !== current.y) {
-      current.samples.push({ x: event.clientX, y: event.clientY, time: event.timeStamp })
-      while (current.samples.length > 2 && current.samples[1].time < event.timeStamp - 100) {
-        current.samples.shift()
-      }
+    const events = event.nativeEvent?.getCoalescedEvents?.() ?? []
+    for (const sample of [...events, event]) {
+      current.samples.push({ x: sample.clientX, y: sample.clientY, time: sample.timeStamp })
     }
-    current.x = event.clientX
-    current.y = event.clientY
+    current.samples = current.samples.filter((sample) => sample.time >= event.timeStamp - 100)
     const x = event.clientX - current.startX
     const y = event.clientY - current.startY
     current.moved ||= Math.hypot(x, y) > 6
@@ -99,24 +85,24 @@ export function useDotDrag(
     if (!current || current.id !== event.pointerId) return
     suppressClick.current = current.moved
     if (current.moved && !cancelled) {
-      const last = current.samples[current.samples.length - 1]
-      const first = current.samples[0]
-      const elapsed = last.time - first.time
-      const recent = event.timeStamp - last.time < 120 && elapsed > 0
+      const velocity = releaseVelocity(current.samples, {
+        x: event.clientX,
+        y: event.clientY,
+        time: event.timeStamp,
+      })
       setLanding({
         x: current.left + event.clientX - current.startX,
         y: current.top + event.clientY - current.startY,
+        velocity,
       })
       onDrop(
         resolveDotPosition(
           current.left + event.clientX - current.startX + 28,
           current.top + event.clientY - current.startY + 28,
-          recent ? (last.x - first.x) / elapsed : 0,
-          recent ? (last.y - first.y) / elapsed : 0,
+          velocity.x,
+          velocity.y,
           window.innerWidth,
           window.innerHeight,
-          event.clientX - current.startX,
-          event.clientY - current.startY,
         ),
       )
     }
@@ -152,8 +138,6 @@ export function useDotDrag(
           baseTop: base.top,
           left: bounds.left,
           top: bounds.top,
-          x: event.clientX,
-          y: event.clientY,
           samples: [{ x: event.clientX, y: event.clientY, time: event.timeStamp }],
           moved: false,
         }
