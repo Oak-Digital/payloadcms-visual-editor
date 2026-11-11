@@ -156,6 +156,7 @@ export function ArrangeEditor({
   const [tab, setTab] = useState<'menu' | 'content' | 'revisions' | 'changes' | 'publish'>(
     panelContainer ? 'content' : 'menu',
   )
+  const publishReturnTab = useRef<Exclude<typeof tab, 'publish'>>(tab === 'publish' ? 'content' : tab)
   const [reviewItems, setReviewItems] = useState<PublishReviewItem[]>([])
   const [reviewLoading, setReviewLoading] = useState(false)
   const [reviewFailed, setReviewFailed] = useState(false)
@@ -528,7 +529,7 @@ export function ArrangeEditor({
   function goBack() {
     if (busy) return
     if (tab === 'publish') {
-      setTab('menu')
+      setTab(publishReturnTab.current)
       return
     }
     if (pickerSelection) setPickerSelection(undefined)
@@ -536,7 +537,7 @@ export function ArrangeEditor({
     else if (adding) setAdding(undefined)
     else if (tab === 'revisions' || tab === 'changes' || tab === 'menu') {
       if (onHome) onHome()
-      else setTab('menu')
+      else setTab(panelContainer ? 'content' : 'menu')
     } else if (target) closeField()
     else if (selectedRow) {
       const trail = fieldLayoutTrail(blockLayout ? [blockLayout] : [], selectedRow)
@@ -552,7 +553,7 @@ export function ArrangeEditor({
       setSelectedBlock(layoutView.block)
       setLayoutView(undefined)
     } else if (onHome) onHome()
-    else setTab('menu')
+    else setTab(panelContainer ? 'content' : 'menu')
   }
   useEffect(() => {
     if (!panelContainer) return
@@ -1727,6 +1728,7 @@ export function ArrangeEditor({
   async function preparePublish() {
     if (saving.current || busy || needsSync || historical || Object.keys(recoveries).length) return
     onReveal?.()
+    if (tab !== 'publish') publishReturnTab.current = tab
     setTab('publish')
     setPicker(undefined)
     setAdding(undefined)

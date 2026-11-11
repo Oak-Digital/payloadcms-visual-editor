@@ -1019,3 +1019,62 @@ it('opens canvas rich text in an anchored overlay and retains structured edits a
     document.body.innerHTML = ''
   }
 })
+
+it.each(['blocks', 'changes', 'revisions'])(
+  'returns from publish review to %s without opening the menu',
+  async (view) => {
+    document.body.innerHTML = '<h1 data-payload-path="title">Original</h1><div id="editor"></div><div id="panel"></div>'
+    const root = createRoot(document.getElementById('editor')!)
+    const panel = document.getElementById('panel')!
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const { action } = JSON.parse(String(init?.body))
+      return Response.json(
+        action === 'review'
+          ? { label: 'Page', revision: 'one', published: true, draft: true, changes: [] }
+          : { revision: 'one', publicationStatus: 'draft', fields: { title: { type: 'text', value: 'Original' } }, orders: {} },
+      )
+    })
+    const click = async (label: string) => {
+      const button = [...panel.querySelectorAll('button')].find(
+        (button) => button.textContent === label || button.getAttribute('aria-label') === label,
+      )!
+      expect(button, label).toBeTruthy()
+      expect(button.disabled).toBe(false)
+      await act(async () => button.click())
+    }
+    try {
+      await act(async () =>
+        root.render(
+          createElement(ArrangeEditor, {
+            active: true,
+            adminRoute: '/admin',
+            apiRoute: '/api',
+            documentInfo: { id: 'navigation-page', collection: 'pages', hasDrafts: true },
+            panelContainer: panel,
+            onClose: vi.fn(),
+          }),
+        ),
+      )
+      await act(async () =>
+        window.dispatchEvent(new MessageEvent('message', {
+          origin: window.location.origin,
+          source: window.parent,
+          data: { type: 'visual-editor:show', view },
+        })),
+      )
+      const title = panel.querySelector('h2')!.textContent
+      await click('Publish all')
+      expect(panel.querySelector('h2')!.textContent).toBe('Review publish')
+      await click('Refresh review')
+      await click('Back')
+      expect(panel.querySelector('h2')!.textContent).toBe(title)
+      expect(panel.querySelector('[aria-label="Editor menu"]')).toBeNull()
+      await click('Back')
+      expect(panel.querySelector('[aria-label="Editor menu"]')).toBeNull()
+    } finally {
+      await act(async () => root.unmount())
+      document.body.replaceChildren()
+      vi.restoreAllMocks()
+    }
+  },
+)
