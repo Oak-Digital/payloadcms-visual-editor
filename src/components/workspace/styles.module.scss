@@ -1026,6 +1026,10 @@
   min-height: 130px;
 }
 
+.workspace[data-view='home'] .floating {
+  --editor-height: 880px;
+}
+
 .workspace[data-view='home'] .view {
   padding: 0;
   border: 0;
