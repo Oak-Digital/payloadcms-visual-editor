@@ -117,6 +117,7 @@ export const createArrangeHandler =
       await appendDraftBlocks(collection.fields, visible, body.orders, req, collections)
       const sourceMap = buildSourceMap(collection.fields, visible, true)
       const snapshot: ArrangeSnapshot = {
+        publicationStatus: visible._status === 'published' ? 'published' : 'draft',
         fields: {},
         orders: {},
         blockTypes: {},

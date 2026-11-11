@@ -370,6 +370,8 @@ export type VisualEditorToolbarProps = {
       count: number,
       status: string,
       blocks: number,
+      badge: string,
+      error: string,
     ) => void
     historyContainer: HTMLElement
     headerContainer: HTMLElement

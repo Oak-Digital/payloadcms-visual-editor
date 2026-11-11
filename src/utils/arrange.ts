@@ -74,6 +74,7 @@ export function arrangeArrayRows(
   })
 }
 export type ArrangeSnapshot = {
+  publicationStatus?: 'draft' | 'published'
   layout?: FieldLayout[]
   label?: string
   usage?: {

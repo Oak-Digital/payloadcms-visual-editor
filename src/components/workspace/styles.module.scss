@@ -1105,6 +1105,9 @@
   &[data-pending='true'] {
     background: #d4bd83;
   }
+  &[data-error='true'] {
+    background: #e4aaa3;
+  }
 }
 .footer .statusDetail {
   font-size: 12px;

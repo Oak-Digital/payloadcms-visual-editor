@@ -272,7 +272,7 @@ it('keeps textarea drafts and save actions mounted while hidden and rejects unre
     expect(panel.textContent).toContain('Inline draft')
     await message({ type: 'visual-editor:back' })
     expect(home).toHaveBeenCalled()
-    expect(pending).toHaveBeenLastCalledWith(true, false, 1, '', 0)
+    expect(pending).toHaveBeenLastCalledWith(true, false, 1, '', 0, 'Unsaved', '')
   } finally {
     await act(async () => root.unmount())
     document.body.innerHTML = ''
@@ -290,6 +290,7 @@ it('reports distinct save/publish states to the footer without duplicating them 
   const actions = document.getElementById('actions')!
   const pending = vi.fn()
   let finish: (response: Response) => void = () => {}
+  let publicationStatus = 'published'
   const reveal = vi.fn()
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
     const body = JSON.parse(String(init?.body))
@@ -306,7 +307,11 @@ it('reports distinct save/publish states to the footer without duplicating them 
         finish = resolve
       })
     return new Response(
-      JSON.stringify({ fields: { title: { type: 'text', value: 'Original' } }, orders: {} }),
+      JSON.stringify({
+        publicationStatus,
+        fields: { title: { type: 'text', value: 'Original' } },
+        orders: {},
+      }),
     )
   })
   try {
@@ -325,14 +330,27 @@ it('reports distinct save/publish states to the footer without duplicating them 
         }),
       ),
     )
+    expect(pending.mock.lastCall?.[5]).toBe('Published')
+    expect([...actions.querySelectorAll('button')].every((button) => button.disabled)).toBe(true)
     await act(async () => {
       const title = document.querySelector('h1')!
       title.textContent = 'Staged inline'
       title.dispatchEvent(new InputEvent('input', { bubbles: true }))
     })
     await act(async () => (actions.querySelector('button') as HTMLButtonElement).click())
+    expect(pending.mock.lastCall?.[5]).toBe('Saving…')
+    expect([...actions.querySelectorAll('button')].every((button) => button.disabled)).toBe(true)
+    await act(async () => finish(Response.json({ error: 'Save rejected' }, { status: 500 })))
+    expect(pending.mock.lastCall?.[5]).toBe('Save failed')
+    expect(pending.mock.lastCall?.[6]).toContain('Save rejected')
+    expect((actions.querySelector('button') as HTMLButtonElement).disabled).toBe(false)
+    await act(async () => (actions.querySelector('button') as HTMLButtonElement).click())
+    expect(pending.mock.lastCall?.[6]).toBe('')
+    publicationStatus = 'draft'
     expect(pending.mock.lastCall?.[3]).toBe('Saving draft…')
     await act(async () => finish(new Response('{}')))
+    expect(pending.mock.lastCall?.[5]).toBe('Draft saved')
+    expect(pending.mock.lastCall?.[6]).toBe('')
     expect(pending.mock.lastCall?.[3]).toBe('Draft saved.')
     expect(panel.textContent).not.toContain('Draft saved.')
     reveal.mockClear()
@@ -341,8 +359,12 @@ it('reports distinct save/publish states to the footer without duplicating them 
     expect(panel.textContent).toContain('Compare with published')
     expect(actions.textContent).toContain('Publish now')
     await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
+    expect(pending.mock.lastCall?.[5]).toBe('Publishing…')
+    publicationStatus = 'published'
     expect(pending.mock.lastCall?.[3]).toBe('Publishing…')
     await act(async () => finish(new Response('{}')))
+    expect(pending.mock.lastCall?.[5]).toBe('Published')
+    expect(pending.mock.lastCall?.[6]).toBe('')
     expect(pending.mock.lastCall?.[3]).toBe('All changes published.')
     expect(panel.textContent).not.toContain('All changes published.')
     await act(async () =>
@@ -354,6 +376,8 @@ it('reports distinct save/publish states to the footer without duplicating them 
     await act(async () =>
       finish(new Response(JSON.stringify({ error: 'Rejected for verification' }), { status: 500 })),
     )
+    expect(pending.mock.lastCall?.[5]).toBe('Publish failed')
+    expect(pending.mock.lastCall?.[6]).toContain('Rejected for verification')
     expect(pending.mock.lastCall?.[3]).toBe('Publish failed · Changes kept')
     expect(panel.querySelector('[role="alert"]')?.textContent).toContain(
       'Rejected for verification',
@@ -569,6 +593,8 @@ it.each([
       await act(async () => button('Save draft').click())
       expect(saves()).toHaveLength(1)
       expect(saves()[0].changes).toEqual([{ path: 'title', value: savedTitle }])
+      expect(pending.mock.lastCall?.[5]).toBe('Draft saved')
+      expect(pending.mock.lastCall?.[6]).toBe('')
       expect(pending.mock.lastCall?.[3]).toBe('Draft saved.')
       expect(localStorage.getItem(key)).toBeNull()
     } finally {

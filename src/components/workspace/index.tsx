@@ -232,9 +232,20 @@ function WorkspaceCanvas({
               count: number,
               status: string,
               blocks: number,
+              badge: string,
+              error: string,
             ) =>
               window.parent.postMessage(
-                { type: 'visual-editor:pending', busy, pending, count, status, blocks },
+                {
+                  type: 'visual-editor:pending',
+                  busy,
+                  pending,
+                  count,
+                  status,
+                  blocks,
+                  badge,
+                  error,
+                },
                 window.location.origin,
               ),
           }
@@ -326,21 +337,11 @@ function WorkspaceShell({
   const [size, setSize] = useState('standard')
   const [fullHeight, setFullHeight] = useState(false)
   const [reduceMotion, setReduceMotion] = useState(false)
-  const [changeCount, setChangeCount] = useState(0)
   const [blockCount, setBlockCount] = useState(0)
   const [annotationCount, setAnnotationCount] = useState(0)
   const [annotationEditing, setAnnotationEditing] = useState(false)
-  const [saveStatus, setSaveStatus] = useState('')
-  const [recentlySaved, setRecentlySaved] = useState(false)
-  useEffect(() => {
-    if (busy || pending || !['Draft saved.', 'All changes published.'].includes(saveStatus)) {
-      setRecentlySaved(false)
-      return
-    }
-    setRecentlySaved(true)
-    const timer = window.setTimeout(() => setRecentlySaved(false), 5000)
-    return () => window.clearTimeout(timer)
-  }, [saveStatus, busy, pending, src])
+  const [statusBadge, setStatusBadge] = useState('Loading…')
+  const [statusError, setStatusError] = useState('')
   const launcher = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const floating = useRef<HTMLElement>(null)
@@ -503,11 +504,11 @@ function WorkspaceShell({
       setReady(false)
       setLoadFailed(false)
       setMode('edit')
-      setChangeCount(0)
       setBlockCount(0)
       setAnnotationCount(0)
       setAnnotationEditing(false)
-      setSaveStatus('')
+      setStatusBadge('Loading…')
+      setStatusError('')
       setSrc(url.href)
       setPickerOpen(false)
       setView('home')
@@ -605,9 +606,9 @@ function WorkspaceShell({
       if (event.data?.type === 'visual-editor:pending') {
         setPending(Boolean(event.data.pending))
         setBusy(Boolean(event.data.busy))
-        setChangeCount(Number(event.data.count) || 0)
         setBlockCount(Number(event.data.blocks) || 0)
-        setSaveStatus(String(event.data.status || ''))
+        setStatusBadge(String(event.data.badge || 'Loading…'))
+        setStatusError(String(event.data.error || ''))
       }
       if (
         event.data?.type === 'visual-editor:mode' &&
@@ -761,13 +762,6 @@ function WorkspaceShell({
     annotations: 'Annotations',
     settings: 'Workspace settings',
   }
-  const footerStatus =
-    saveStatus ||
-    (busy
-      ? 'Loading content…'
-      : changeCount
-        ? `${changeCount} ${changeCount === 1 ? 'change' : 'changes'} · Unsaved`
-        : 'All changes saved')
   return createPortal(
     <div
       className={styles.workspace}
@@ -1248,17 +1242,22 @@ function WorkspaceShell({
             <div className={styles.changeLine}>
               <button
                 className={styles.changeStatus}
-                aria-label={footerStatus}
+                aria-label={`Status: ${sharedPending ? 'Unsaved' : statusBadge}`}
                 disabled={!ready}
                 onClick={() => (sharedPending ? setSharedVisible(true) : editorView('changes'))}
                 type="button"
               >
                 <span>Status</span>
-                {(busy || pending || recentlySaved) && (
-                  <span className={styles.statusBadge} data-pending={pending}>
-                    {busy ? 'Working' : pending ? 'Unsaved' : 'Saved'}
-                  </span>
-                )}
+                <span
+                  className={styles.statusBadge}
+                  data-pending={pending || sharedPending}
+                  data-error={!!statusError}
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  {sharedPending ? 'Unsaved' : statusBadge}
+                </span>
               </button>
               <div
                 className={styles.historyActions}
@@ -1266,9 +1265,11 @@ function WorkspaceShell({
                 key={`history:${src}`}
               />
             </div>
-            <p className={styles.statusDetail} role="status" aria-live="polite" aria-atomic="true">
-              {sharedPending ? 'Shared edits pending' : footerStatus}
-            </p>
+            {statusError && (
+              <p className={styles.statusDetail} role="alert">
+                {statusError}
+              </p>
+            )}
             <div
               className={styles.actions}
               hidden={sharedPending}

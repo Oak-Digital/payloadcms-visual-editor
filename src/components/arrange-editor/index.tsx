@@ -135,6 +135,8 @@ export function ArrangeEditor({
     count: number,
     status: string,
     blocks: number,
+    badge: string,
+    error: string,
   ) => void
   headerContainer?: HTMLElement
   historyContainer?: HTMLElement
@@ -442,6 +444,41 @@ export function ArrangeEditor({
         : Object.keys(session.changes).length + Object.keys(session.orders).length),
     0,
   )
+  const hasDrafts = Object.values(sessions).some(
+    (session) => session.snapshot.publicationStatus !== 'published',
+  )
+  const publicationError = reviewItems.find((item) => item.status === 'failed')?.error
+  const footerError = error || publicationError || recoveryNotice
+  const badge =
+    !ready && !error
+      ? 'Loading…'
+      : busy
+        ? !ready || operation === 'load'
+          ? 'Loading…'
+          : refreshing || operation === 'refresh'
+            ? reviewLoading
+              ? 'Reviewing…'
+              : 'Updating preview…'
+            : operation === 'add'
+              ? 'Adding block…'
+              : operation === 'publish'
+                ? 'Publishing…'
+                : 'Saving…'
+        : needsSync
+          ? 'Preview failed'
+          : publicationError || (error && operation === 'publish')
+            ? 'Publish failed'
+            : error
+              ? operation === 'save'
+                ? 'Save failed'
+                : 'Error'
+              : hasRecoveries
+                ? 'Restore edits'
+                : count > 0
+                  ? 'Unsaved'
+                  : hasDrafts
+                    ? 'Draft saved'
+                    : 'Published'
   useEffect(() => {
     onPendingChange?.(
       count > 0 || needsSync || Object.keys(recoveries).length > 0,
@@ -469,8 +506,12 @@ export function ArrangeEditor({
           ),
         0,
       ),
+      badge,
+      footerError,
     )
   }, [
+    badge,
+    footerError,
     count,
     needsSync,
     busy,
@@ -1892,6 +1933,10 @@ export function ArrangeEditor({
           ...previous,
           [key]: {
             ...(previous[key] || session),
+            snapshot: {
+              ...session.snapshot,
+              publicationStatus: action === 'publish' ? 'published' : 'draft',
+            },
             additions: {},
             changes: {},
             media: {},
@@ -3060,7 +3105,7 @@ export function ArrangeEditor({
                   onClick={() => void submit('save')}
                   type="button"
                 >
-                  Save draft
+                  {busy && operation === 'save' ? 'Saving…' : 'Save draft'}
                   {count > 0 && !actionsContainer && <span className={styles.count}>{count}</span>}
                 </button>
                 <button
@@ -3071,6 +3116,7 @@ export function ArrangeEditor({
                     !!historical ||
                     !ready ||
                     !Object.keys(sessions).length ||
+                    (!count && !hasDrafts && tab !== 'publish') ||
                     Object.keys(recoveries).length > 0 ||
                     (tab === 'publish' &&
                       (reviewFailed || !reviewItems.some((item) => item.status !== 'published')))
@@ -3078,7 +3124,11 @@ export function ArrangeEditor({
                   onClick={() => void (tab === 'publish' ? submit('publish') : preparePublish())}
                   type="button"
                 >
-                  {tab === 'publish' ? 'Publish now' : 'Publish all'}
+                  {busy && operation === 'publish'
+                    ? 'Publishing…'
+                    : tab === 'publish'
+                      ? 'Publish now'
+                      : 'Publish all'}
                 </button>
               </footer>
             </Portal>
