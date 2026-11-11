@@ -10,15 +10,17 @@ This repository is a submodule at `frontend/packages/payload-visual-editor`. The
 
 A completed build records input and output fingerprints in `dist/.watch-build.json`. The watcher reuses matching output at startup, including a build produced or restored by Turbo; missing or changed inputs/outputs trigger a full initial build. Standalone `pnpm dev` uses the same check. Restart the watcher after changing build configuration or dependencies. Run `pnpm test:watch` in this package to check startup reuse, incremental updates and error recovery. See [watcher measurements](README.watcher.md) for the before/after results.
 
-From REC's `frontend/` Nix shell:
+From REC's `frontend/` Nix shell, select a verification profile:
 
 ```sh
-pnpm --filter @oak-digital/payload-visual-editor test:unit
-pnpm --filter @oak-digital/payload-visual-editor typecheck
-pnpm --filter @oak-digital/payload-visual-editor build
+pnpm verify:visual-editor ui --plan
+pnpm verify:visual-editor ui --integration
+pnpm verify:visual-editor tooling
 ```
 
-For a standalone clone, use `pnpm install --frozen-lockfile`, then the same package scripts without `--filter`. The upstream demo is retained under `dev/` as a reference, with its own dependencies in `dev/package.json`. Install them separately inside `dev/` using `pnpm install --ignore-workspace` if working on that demo. REC is the verified integration target. The plugin workspace deliberately does not install the demo's Next/Payload UI stack.
+The host's `frontend/scripts/README.visual-editor-verification.md` defines profiles, affected feature runners and manual checks. Combined profiles deduplicate checks; Turbo reuses unchanged unit/build results. The build already checks TypeScript, so a separate plugin typecheck is unnecessary after a successful build.
+
+For a standalone clone, use `pnpm install --frozen-lockfile`, then `pnpm test:unit` and `pnpm build` (also `pnpm test:watch` for tooling changes). The upstream demo is retained under `dev/` as a reference, with its own dependencies in `dev/package.json`. Install them separately inside `dev/` using `pnpm install --ignore-workspace` if working on that demo. REC is the verified integration target. The plugin workspace deliberately does not install the demo's Next/Payload UI stack.
 
 ## Configure
 

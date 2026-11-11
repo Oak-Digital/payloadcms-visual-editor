@@ -7,6 +7,16 @@
     },
     "dev": {
       "dependsOn": ["build"]
+    },
+    "test:unit": {
+      "dependsOn": [],
+      "outputs": [],
+      "cache": true
+    },
+    "test:watch": {
+      "dependsOn": [],
+      "outputs": [],
+      "cache": true
     }
   }
 }
