@@ -409,6 +409,43 @@
   width: 14px;
   height: 14px;
 }
+.sidebarSize {
+  position: relative;
+  isolation: isolate;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 3px auto 3px 3px;
+    width: calc((100% - 10px) / 2);
+    border-radius: 21px;
+    background: #3a393c;
+    transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  &[data-size='large']::before {
+    transform: translateX(calc(100% + 4px));
+  }
+
+  button {
+    min-width: 0;
+    transition: color 250ms ease;
+  }
+
+  button[aria-pressed='true'] {
+    background: transparent;
+  }
+}
+.floating[data-reduce-motion='true'] .sidebarSize::before {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebarSize::before {
+    transition: none;
+  }
+}
 .cards {
   display: grid;
   grid-template-columns: 1fr 1fr;

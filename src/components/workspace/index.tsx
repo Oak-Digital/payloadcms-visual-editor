@@ -1128,7 +1128,12 @@ function WorkspaceShell({
                   ))}
                 </div>
                 <div className={styles.sectionLabel}>SIDEBAR SIZE</div>
-                <div className={styles.segmented}>
+                <div
+                  aria-label="Sidebar size"
+                  className={`${styles.segmented} ${styles.sidebarSize}`}
+                  data-size={size}
+                  role="group"
+                >
                   {['standard', 'large'].map((value) => (
                     <button
                       key={value}
