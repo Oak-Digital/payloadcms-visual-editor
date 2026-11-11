@@ -134,7 +134,7 @@
   margin-bottom: 8px;
   color: #aaa;
 }
-.editor input:not([type='checkbox']),
+.editor input:not([type='checkbox']):not([type='radio']),
 .editor select,
 .editor textarea {
   box-sizing: border-box;
