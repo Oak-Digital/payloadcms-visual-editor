@@ -973,8 +973,7 @@ function WorkspaceShell({
                   <EditorIcon name="chevron" />
                 </button>
                 <div className={styles.previewControls}>
-                  <span>Preview width</span>
-                  <div aria-label="Preview width" className={styles.segmented}>
+                  <div aria-label="Device preview" role="group" className={styles.segmented}>
                     {(['desktop', 'mobile'] as const).map((value) => (
                       <button
                         aria-label={`${value === 'desktop' ? 'Desktop' : 'Mobile'} preview`}

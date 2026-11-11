@@ -559,27 +559,22 @@
   color: #aaa;
 }
 .previewControls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px;
-  min-height: 60px;
+  padding: 8px;
   border: 1px solid #414144;
-  border-radius: 30px;
-  background: #1e1e20;
-}
-.previewControls > span {
-  flex: 1;
-  white-space: nowrap;
-  font-size: 12px;
-  color: #b5b4b8;
+  border-radius: 28px;
+  background: #252527;
 }
 .previewControls .segmented {
-  width: 252px;
+  width: 100%;
+  padding: 0;
+  gap: 8px;
   background: transparent;
 }
 .previewControls button {
-  padding: 7px;
+  min-width: 0;
+  min-height: 40px;
+  border-radius: 20px;
+  padding: 8px 12px;
 }
 .hint {
   display: flex;
