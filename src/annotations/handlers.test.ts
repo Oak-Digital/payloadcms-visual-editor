@@ -90,7 +90,42 @@ describe('annotation ticket submission', () => {
       title: input.comment,
     })
     expect(options.body).not.toContain('secret=omit')
-    expect(JSON.parse(options.body).description).toContain('Position: 50% across, 200px down')
+    expect(JSON.parse(options.body).description).not.toContain('Position:')
+  })
+  it('keeps readable context separate from identifiers and preserves ticket deletion', async () => {
+    mocks.findByID.mockResolvedValueOnce({ id: 'page', title: 'Our story' })
+    await POST(
+      request({
+        ...input,
+        element: '<RedirectBoundary> <InnerLayoutRouter> <EditorialMotion> h2 "Great success"',
+        elementPath: 'layout.1.heading',
+      }),
+    )
+    const { description } = JSON.parse(mocks.fetch.mock.calls[0][1].body)
+    const [summary, details] = description.split('<details>')
+    expect(summary).toContain('**Page:** [Our story](http://localhost:3000/en/test)')
+    expect(summary).toContain('**Language:** en')
+    expect(summary).toContain('**Element:** Heading — “Great success”')
+    expect(description).not.toMatch(/RedirectBoundary|InnerLayoutRouter|EditorialMotion|Position:/)
+    expect(summary).not.toContain(input.id)
+    expect(details).toContain('Selector: layout.1.heading')
+    expect(details).toContain(`Annotation: ${input.id}`)
+    expect(details).toContain('Document: pages/page (en)')
+    mocks.fetch
+      .mockResolvedValueOnce(ticketResponse({ description }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    expect((await DELETE(deletionRequest())).status).toBe(204)
+  })
+  it('uses the configured title field and escapes summary content', async () => {
+    const req = await payloadRequest(request({ ...input, element: 'h2 "<success>"' }))
+    req.payload.config.collections = [
+      { slug: 'pages', admin: { useAsTitle: 'name' } },
+    ] as typeof req.payload.config.collections
+    mocks.findByID.mockResolvedValueOnce({ name: 'Story [draft]' })
+    await createAnnotationHandler({ pages: true }, 'submit')(req)
+    const { description } = JSON.parse(mocks.fetch.mock.calls[0][1].body)
+    expect(description).toContain(String.raw`[Story \[draft\]]`)
+    expect(description).toContain(String.raw`Heading — “\<success\>”`)
   })
   it('reuses the same idempotency key after an unknown outcome', async () => {
     mocks.fetch.mockRejectedValueOnce(new Error('timeout'))

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { annotationLabel } from '../utils/annotation-label.js'
 import { readAnnotationForm } from './request.js'
 import type { CollectionSlug, PayloadHandler, PayloadRequest, TypedLocale } from 'payload'
 import type { AnnotationTicketRequest } from '../types.js'
@@ -92,8 +93,9 @@ export const createAnnotationHandler =
       !req.payload.config.localization.localeCodes.includes(locale || '')
     )
       return fail('Invalid locale.', 400)
+    let document: Record<string, unknown>
     try {
-      await req.payload.findByID({
+      document = await req.payload.findByID({
         collection: input.document.collection as CollectionSlug,
         id: input.document.id,
         locale: locale as TypedLocale,
@@ -210,15 +212,39 @@ export const createAnnotationHandler =
       const idempotencyKey = createHash('sha256')
         .update(`${projectId}:${req.user!.id}:${input.id}`)
         .digest('hex')
+      const escapeMarkdown = (value: string) =>
+        value.replace(/\s+/g, ' ').replace(/[\\`*_{}\[\]()<>#!|]/g, '\\$&')
+      const collection = req.payload.config.collections?.find(
+        (entry) => entry.slug === input.document.collection,
+      )
+      const title = document[collection?.admin?.useAsTitle || 'title']
+      const pageTitle = typeof title === 'string' && title.trim() ? title : pageURL.pathname
+      const element = input.element.replace(/^(?:<[^>]*>\s*)+/, '').trim()
+      const label = annotationLabel(element)
+      const quotedText = element.match(/"([\s\S]*)"$/)?.[1]
+      const elementSummary = quotedText
+        ? `${label} — “${quotedText}”`
+        : label === 'Page element'
+          ? element || label
+          : label
       const description = [
         input.comment.trim(),
         '',
-        `Page: ${pageURL.href}`,
+        `**Page:** [${escapeMarkdown(pageTitle)}](${pageURL.href})`,
+        '',
+        ...(locale ? [`**Language:** ${escapeMarkdown(locale)}`, ''] : []),
+        `**Element:** ${escapeMarkdown(elementSummary)}`,
+        '',
+        '<details>',
+        '<summary>Technical details</summary>',
+        '',
         documentLine,
-        `Element: ${input.element}`,
+        '',
         `Selector: ${input.elementPath}`,
-        `Position: ${input.x}% across, ${input.y}px down`,
+        '',
         `Annotation: ${input.id}`,
+        '',
+        '</details>',
       ].join('\n')
       const response = await fetch('https://os.oak.dk/api/v1/tasks', {
         method: 'POST',
