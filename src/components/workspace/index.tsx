@@ -343,6 +343,27 @@ function WorkspaceShell({
   }, [saveStatus, busy, pending, src])
   const launcher = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
+  const floating = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    const container = floating.current
+    if (!container) return
+    const content = sharedVisible
+      ? container.querySelector<HTMLElement>('[aria-label="Shared content editor"]')
+      : container.querySelector<HTMLElement>('#visual-editor-shell')
+    if (!content) return
+
+    const resize = () => {
+      container.style.setProperty(
+        '--editor-height',
+        `${Math.ceil(content.getBoundingClientRect().height)}px`,
+      )
+    }
+    const observer = new ResizeObserver(resize)
+    observer.observe(content)
+    resize()
+    return () => observer.disconnect()
+  }, [sharedVisible, sharedTarget, open])
 
   const send = useCallback((type: string, values: Record<string, unknown> = {}) => {
     iframe.current?.contentWindow?.postMessage({ type, ...values }, window.location.origin)
@@ -775,6 +796,7 @@ function WorkspaceShell({
       </main>
       <aside
         aria-label="Floating visual editor"
+        ref={floating}
         className={styles.floating}
         data-dot-position={dotPosition}
         data-open={open}
