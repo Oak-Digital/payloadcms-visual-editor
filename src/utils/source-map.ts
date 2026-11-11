@@ -78,6 +78,10 @@ function addEditableFields({
       continue
     switch (field.type) {
       case 'array': {
+        // Empty relationship arrays still need their add control before any rows exist.
+        if (controls && typeof field.custom?.visualEditorRelationship === 'string') {
+          sourceMap[appendPath(path, field.name)] = { type: 'control' }
+        }
         const rows = getNamedValue(source, field.name)
         if (Array.isArray(rows))
           rows.forEach((row, index) => {

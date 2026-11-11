@@ -342,6 +342,51 @@ describe('relationship array editing', () => {
       })
     return { ...fixtureData, read, save }
   }
+  it.each([{ slides: undefined }, { slides: [] }])(
+    'discovers an empty relationship array without canvas paths: %j',
+    async ({ slides }) => {
+      const { call, doc, payload } = arrayFixture()
+      ;(doc.layout[0] as any).slides = slides
+      const snapshot = await (await call({ paths: [] })).json()
+      expect(snapshot.fields['layout.0.slides']).toMatchObject({
+        type: 'array',
+        value: [],
+        minRows: 1,
+        maxRows: 3,
+        choices: [{ id: 'new', label: 'new' }],
+      })
+      expect(snapshot.layout[0].children[0].children).toContainEqual(
+        expect.objectContaining({ path: 'layout.0.slides', type: 'array', children: [] }),
+      )
+      expect(payload.update).not.toHaveBeenCalled()
+    },
+  )
+  it('prepares an empty product picker for a new block and saves its first product', async () => {
+    const { call, payload } = arrayFixture()
+    const id = '0123456789abcdef01234567'
+    const orders = [
+      { path: 'layout', ids: ['a', 'b', id], additions: [{ id, blockType: 'section' }] },
+    ]
+    const snapshot = await (await call({ paths: [], orders })).json()
+    expect(snapshot.fields['layout.2.slides']).toMatchObject({ type: 'array', value: [] })
+    expect(payload.update).not.toHaveBeenCalled()
+    const response = await call({
+      action: 'save',
+      revision: snapshot.revision,
+      orders,
+      changes: [{ path: 'layout.2.slides', value: [{ relationship: 'new' }] }],
+    })
+    expect(response.status).toBe(200)
+    expect(payload.update.mock.calls[0][0].data.layout[2].slides).toEqual([{ product: 'new' }])
+  })
+  it('keeps inaccessible empty product arrays out of the editor', async () => {
+    const { call, doc, block, payload } = arrayFixture()
+    ;(doc.layout[0] as any).slides = []
+    block.blocks[0].fields.at(-1).access = { update: () => false }
+    const snapshot = await (await call({ paths: [] })).json()
+    expect(snapshot.fields['layout.0.slides']).toBeUndefined()
+    expect(payload.update).not.toHaveBeenCalled()
+  })
   it('duplicates nested rows with independent identities and applies copied row edits before reordering', async () => {
     const { call, payload } = arrayFixture()
     const id = '0123456789abcdef01234567'
