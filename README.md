@@ -32,7 +32,7 @@ The fork adds block/array source maps, locale-aware saving, collection allowlist
 
 Hosts using Next draft mode should pass `preparePreview(signal)` to `VisualEditorWorkspace`. Renew the authenticated draft cookie in that callback before the editor refreshes the route; an expired cookie must not switch the canvas to public content. Refresh failures and timeouts retain the saved state and offer a refresh-only retry. Concurrent refresh requests share one operation.
 
-Saving and publishing use the host's normal Payload hooks and validation. Host publication policies still apply: REC's `publishStatus` must already be Public for a published document to appear publicly. REC supplies a server-backed annotation submission callback for Oak OS tickets.
+Saving and publishing use the host's normal Payload hooks and validation. Host publication policies still apply: REC's `publishStatus` must already be Public for a published document to appear publicly. REC enables the plugin’s built-in Oak OS annotation integration.
 
 ## Bind shared renderers
 
@@ -144,6 +144,18 @@ The arrange and shared-content endpoints support `action: 'review'`. They apply 
 
 ## Annotation tickets
 
-Pass `submitAnnotation(request)` to `VisualEditorWorkspace` (or `VisualEditorToolbar`) to create a ticket when a feedback note is added. The submission callback returns `{ identifier, url }` or throws a user-facing error. Keep provider credentials and authorization in the host server. CMS field edits never invoke this callback.
+Enable the reusable Oak OS integration on any Payload host:
 
-The editor retains the immutable request, note, position and returned ticket link in browser storage. Failed requests expose Retry submission; retries use the original request. Ticket notes persist across reloads. Resolve archives a note locally; the Archived view allows restoring it. Submitted notes cannot be edited locally; add another note for further feedback. Hosts can pass `deleteAnnotationTicket(request, ticket)` to enable a separate Delete ticket action. The editor removes the note only after the callback succeeds; failures keep it available for retry. This is browser-local tracking, not shared annotation storage or ticket-status synchronization. Screenshots are not included.
+```ts
+payloadVisualEditor({ collections: { pages: true }, annotations: true })
+```
+
+Pass `annotationTickets` to `VisualEditorWorkspace`. The plugin registers **Tools & Settings → Visual Editor**, plus POST/DELETE `/payload-visual-editor/annotations` and POST `/payload-visual-editor/connection` beneath the host’s Payload API route. Regenerate the host’s types/import map and restart its server after enabling the feature.
+
+In the Global, enter the site’s project API key, choose **Test connection**, select its project and Bug label, enable annotation tickets, and save. Blank key input preserves the saved key; Remove saved key requires disabling tickets first. Keys are encrypted using the host’s Payload secret and never returned through the public/admin API. Keep the Payload secret stable; changing it requires re-entering the key. Configuration and credentials belong to each site’s database, with no environment-variable fallback or REC-specific IDs.
+
+By default, settings access is limited to accounts in the host’s configured admin auth collection. Hosts with roles can supply `annotations: { settingsAccess: ({ req }) => /* your admin check */ }`. The same policy protects Test connection. Annotation endpoints require the host’s admin auth collection, an enabled document collection, a configured locale and document read access. The saved project and annotation identity are checked before deleting a ticket, with its current ETag.
+
+The editor retains notes, positions, ticket links and immutable requests in browser storage. Resolve archives a note locally; Archived offers Restore. Delete ticket removes the external ticket and then the local note; failures preserve the note for retry. Retries use the original request and a stable idempotency key. Submissions older than 23 hours require checking Oak OS first because its idempotency records expire after 24 hours. This is browser-local tracking, not shared annotation storage or ticket-status synchronization. Screenshots are not included.
+
+Custom providers can still supply `submitAnnotation(request)` and `deleteAnnotationTicket(request, ticket)` callbacks instead of the built-in client. Submission returns `{ identifier, url }`; deletion resolves only after success. Keep credentials and authorization in the server. CMS field edits never invoke these callbacks.

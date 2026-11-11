@@ -1,3 +1,8 @@
+import { createAnnotationSettings, type AnnotationSettingsAccess } from './annotations/config.js'
+import {
+  createAnnotationHandler,
+  createAnnotationConnectionHandler,
+} from './annotations/handlers.js'
 import type { CollectionAfterReadHook, CollectionSlug, Config, Field, FieldHook } from 'payload'
 
 import { createVisualEditorMutationHandler } from './endpoints/visualEditorMutationHandler.js'
@@ -30,6 +35,8 @@ export type PayloadVisualEditorConfig = {
    */
   collections?: Partial<Record<CollectionSlug, true>>
   sharedContent?: SharedContentConfig
+  /** Register reusable Oak OS annotation settings and endpoints. */
+  annotations?: boolean | { settingsAccess?: AnnotationSettingsAccess }
   disabled?: boolean
 }
 
@@ -93,6 +100,33 @@ const payloadVisualEditor =
 
     if (!config.endpoints) {
       config.endpoints = []
+    }
+
+    if (pluginOptions.annotations) {
+      const settingsAccess =
+        typeof pluginOptions.annotations === 'object'
+          ? pluginOptions.annotations.settingsAccess
+          : undefined
+      if (config.globals?.some((global) => global.slug === 'visual-editor-settings'))
+        throw new Error('The visual-editor-settings Global is owned by the visual editor plugin.')
+      config.globals = [...(config.globals ?? []), createAnnotationSettings(settingsAccess)]
+      config.endpoints.push(
+        {
+          path: '/payload-visual-editor/annotations',
+          method: 'post',
+          handler: createAnnotationHandler(pluginOptions.collections ?? {}, 'submit'),
+        },
+        {
+          path: '/payload-visual-editor/annotations',
+          method: 'delete',
+          handler: createAnnotationHandler(pluginOptions.collections ?? {}, 'delete'),
+        },
+        {
+          path: '/payload-visual-editor/connection',
+          method: 'post',
+          handler: createAnnotationConnectionHandler(settingsAccess),
+        },
+      )
     }
 
     config.admin ??= {}

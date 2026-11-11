@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 
 import type { PayloadCMSDocument, SubmitAnnotation, DeleteAnnotationTicket } from '../../types.js'
 
+import { annotationTicketClient } from '../../annotations/client.js'
 import { SharedContentEditor } from '../shared-content/index.js'
 import type { SharedTarget } from '../../utils/shared-content.js'
 import { PreviewRefreshContext, usePreviewRefresh } from '../../hooks/use-preview-refresh.js'
@@ -43,6 +44,7 @@ export function VisualEditorWorkspace({
   apiRoute = '/api',
   documentInfo,
   sources,
+  annotationTickets = false,
   preparePreview,
   submitAnnotation,
   deleteAnnotationTicket,
@@ -51,18 +53,23 @@ export function VisualEditorWorkspace({
   apiRoute?: string
   documentInfo: PayloadCMSDocument
   sources: WorkspaceSource[]
+  annotationTickets?: boolean
   submitAnnotation?: SubmitAnnotation
   deleteAnnotationTicket?: DeleteAnnotationTicket
   /** Renew the host's authenticated preview session before a route refresh. */
   preparePreview?: (signal: AbortSignal) => Promise<void>
 }) {
+  const ticketClient = useMemo(
+    () => (annotationTickets ? annotationTicketClient(apiRoute) : undefined),
+    [annotationTickets, apiRoute],
+  )
   const [canvas] = useState(isCanvas)
   return (
     <PreviewRefreshContext.Provider value={preparePreview}>
       {canvas ? (
         <WorkspaceCanvas
-          submitAnnotation={submitAnnotation}
-          deleteAnnotationTicket={deleteAnnotationTicket}
+          submitAnnotation={submitAnnotation ?? ticketClient?.submit}
+          deleteAnnotationTicket={deleteAnnotationTicket ?? ticketClient?.delete}
           adminRoute={adminRoute}
           apiRoute={apiRoute}
           documentInfo={documentInfo}

@@ -10,3 +10,5 @@ export type {
   SubmitAnnotation,
   DeleteAnnotationTicket,
 } from '../types.js'
+
+export { AnnotationSettingsField } from '../components/annotation-settings/index.js'

@@ -1,0 +1,52 @@
+.connection {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  margin-bottom: 28px;
+}
+.connection h3,
+.connection p {
+  margin: 0;
+}
+.connection input:not([type='checkbox']),
+.connection select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--theme-elevation-150);
+  border-radius: 4px;
+  color: var(--theme-text);
+  background: var(--theme-input-bg);
+  font: inherit;
+}
+.connection button {
+  justify-self: start;
+  padding: 10px 16px;
+  border: 1px solid var(--theme-elevation-200);
+  border-radius: 4px;
+  color: var(--theme-text);
+  background: var(--theme-elevation-100);
+  cursor: pointer;
+}
+.connection button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.clear {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.selectors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.selectors > div {
+  display: grid;
+  gap: 8px;
+}
+@media (max-width: 600px) {
+  .selectors {
+    grid-template-columns: 1fr;
+  }
+}
