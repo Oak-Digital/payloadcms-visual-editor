@@ -149,6 +149,13 @@
     height var(--editor-duration) cubic-bezier(0.22, 1, 0.36, 1),
     border-radius var(--editor-duration) cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 0.4s;
+  &[data-open='false'][data-dragging='false'][data-settling='false'] {
+    animation: float-idle 4.8s ease-in-out infinite;
+    &:hover,
+    &:focus-within {
+      animation-play-state: paused;
+    }
+  }
   &[data-open='true'] {
     width: min(var(--editor-width), calc(100cqw - 32px));
     height: min(var(--editor-height), calc(100dvh - 48px));
@@ -1176,5 +1183,17 @@
   }
   .actions button:last-child {
     flex: 1.56;
+  }
+}
+
+@keyframes float-idle {
+  0%,
+  15%,
+  85%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -4px;
   }
 }

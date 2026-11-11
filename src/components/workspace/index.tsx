@@ -332,7 +332,6 @@ function WorkspaceShell({
     'home' | 'content' | 'shared' | 'editor' | 'annotations' | 'settings'
   >('home')
   const [dotPosition, setDotPosition] = useState<DotPosition>('top-right')
-  const dotDrag = useDotDrag(setDotPosition)
   const [size, setSize] = useState('standard')
   const [fullHeight, setFullHeight] = useState(false)
   const [reduceMotion, setReduceMotion] = useState(false)
@@ -344,6 +343,7 @@ function WorkspaceShell({
   const launcher = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const floating = useRef<HTMLElement>(null)
+  const dotDrag = useDotDrag(setDotPosition, floating, reduceMotion, open)
 
   useEffect(() => {
     const container = floating.current
@@ -793,6 +793,7 @@ function WorkspaceShell({
         className={styles.floating}
         data-dot-position={dotPosition}
         data-dragging={Boolean(dotDrag.offset)}
+        data-settling={dotDrag.settling}
         style={
           dotDrag.offset
             ? { transform: `translate(${dotDrag.offset.x}px, ${dotDrag.offset.y}px)` }
