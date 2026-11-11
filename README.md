@@ -6,7 +6,9 @@ Package: `@oak-digital/payload-visual-editor`. Tested with Payload 3.79.0, Next 
 
 ## Develop inside REC Watches
 
-This repository is a submodule at `frontend/packages/payload-visual-editor`. The host uses `workspace:*` and builds this package before type generation and app startup. `pnpm dev --filter web` also starts this package's source watcher. Edit `src/`; JavaScript, declarations and SCSS are rebuilt into `dist/`, and Next reloads the changes. Do not edit generated `dist/` files.
+This repository is a submodule at `frontend/packages/payload-visual-editor`. The host uses `workspace:*` and builds this package before type generation and app startup. `pnpm dev --filter web` also starts this package's source watcher. Edit `src/`; the watcher compiles changed runtime files and copies changed assets into `dist/`, while a separate TypeScript watcher updates declarations and diagnostics. Test edits do not trigger runtime rebuilds. Next reloads the changed output. Do not edit generated `dist/` files.
+
+A completed build records input and output fingerprints in `dist/.watch-build.json`. The watcher reuses matching output at startup, including a build produced or restored by Turbo; missing or changed inputs/outputs trigger a full initial build. Standalone `pnpm dev` uses the same check. Restart the watcher after changing build configuration or dependencies. Run `pnpm test:watch` in this package to check startup reuse, incremental updates and error recovery. See [watcher measurements](README.watcher.md) for the before/after results.
 
 From REC's `frontend/` Nix shell:
 
