@@ -42,6 +42,27 @@ export function markerInCapture(
   }
 }
 
+export function drawScreenshotMarker(
+  canvas: HTMLCanvasElement,
+  point: CapturePoint,
+  bounds: CaptureBounds,
+) {
+  const marker = markerInCapture(point, bounds, canvas.width, canvas.height)
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Unable to draw the note marker.')
+  context.save()
+  // html2canvas leaves its crop translation and scale on the rendering context.
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  context.beginPath()
+  context.arc(marker.x, marker.y, 9, 0, Math.PI * 2)
+  context.fillStyle = '#3b82f6'
+  context.fill()
+  context.lineWidth = 2
+  context.strokeStyle = '#fff'
+  context.stroke()
+  context.restore()
+}
+
 export async function captureScreenshot(
   id: string,
   point: CapturePoint,
@@ -87,16 +108,7 @@ export async function captureScreenshot(
         })
     },
   })
-  const marker = markerInCapture(point, bounds, canvas.width, canvas.height)
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('Unable to draw the note marker.')
-  context.beginPath()
-  context.arc(marker.x, marker.y, 9, 0, Math.PI * 2)
-  context.fillStyle = '#3b82f6'
-  context.fill()
-  context.lineWidth = 2
-  context.strokeStyle = '#fff'
-  context.stroke()
+  drawScreenshotMarker(canvas, point, bounds)
   const blob = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(
       (value) =>
