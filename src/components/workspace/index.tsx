@@ -15,6 +15,7 @@ import styles from './styles.module.scss'
 import { useDotPosition } from './use-dot-position.js'
 import { useDotDrag } from './use-dot-drag.js'
 import { useStatusCollapse } from './use-status-collapse.js'
+import { useWorkspaceLayout } from './use-workspace-layout.js'
 
 export type WorkspaceSource = {
   /** Show a native collection creation link with this label. */
@@ -334,6 +335,7 @@ function WorkspaceShell({
     'home' | 'content' | 'shared' | 'editor' | 'annotations' | 'settings'
   >('home')
   const [dotPosition, setDotPosition] = useDotPosition()
+  const [{ layout, framed }, setWorkspaceLayout] = useWorkspaceLayout()
   const [size, setSize] = useState('standard')
   const [fullHeight, setFullHeight] = useState(false)
   const [reduceMotion, setReduceMotion] = useState(false)
@@ -777,6 +779,11 @@ function WorkspaceShell({
       className={styles.workspace}
       data-mode={mode}
       data-view={view}
+      data-layout={layout}
+      data-framed={framed}
+      data-open={open}
+      data-size={size}
+      data-reduce-motion={reduceMotion}
       data-visual-editor-workspace
       ref={root}
     >
@@ -799,7 +806,9 @@ function WorkspaceShell({
         )}
       </main>
       <aside
-        aria-label="Floating visual editor"
+        aria-label={
+          layout === 'sidebar' && open ? 'Sidebar visual editor' : 'Floating visual editor'
+        }
         ref={floating}
         className={styles.floating}
         data-dot-position={dotPosition}
@@ -1201,6 +1210,27 @@ function WorkspaceShell({
             )}
             {view === 'settings' && (
               <section className={styles.view} key="settings">
+                <div className={styles.sectionLabel}>LAYOUT</div>
+                <div aria-label="Editor layout" className={styles.segmented} role="group">
+                  {(['floating', 'sidebar'] as const).map((value) => (
+                    <button
+                      key={value}
+                      aria-pressed={layout === value}
+                      onClick={() => setWorkspaceLayout({ layout: value })}
+                      type="button"
+                    >
+                      {value === 'floating' ? 'Floating' : 'Sidebar'}
+                    </button>
+                  ))}
+                </div>
+                <label className={styles.toggle}>
+                  Container frame
+                  <input
+                    type="checkbox"
+                    checked={framed}
+                    onChange={(event) => setWorkspaceLayout({ framed: event.target.checked })}
+                  />
+                </label>
                 <div className={styles.sectionLabel}>DOT PLACEMENT</div>
                 <div className={`${styles.segmented} ${styles.placement}`}>
                   {(
@@ -1243,7 +1273,8 @@ function WorkspaceShell({
                   Full-screen height
                   <input
                     type="checkbox"
-                    checked={fullHeight}
+                    checked={layout === 'sidebar' || fullHeight}
+                    disabled={layout === 'sidebar'}
                     onChange={(event) => setFullHeight(event.target.checked)}
                   />
                 </label>
