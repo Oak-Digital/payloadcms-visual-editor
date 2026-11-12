@@ -11,7 +11,10 @@ vi.mock('../media-picker/index.js', () => ({ MediaPicker: () => null }))
 vi.mock('../rich-text-editor/dialog.js', () => ({ RichTextDialog: () => null }))
 vi.mock('../revision-history/index.js', () => ({ RevisionHistory: () => null }))
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-beforeEach(() => vi.stubGlobal('matchMedia', () => ({ matches: false })))
+beforeEach(() => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false }))
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+})
 
 it('separates rearranging from editing and locates the selected block after moving it', async () => {
   document.body.innerHTML =
@@ -110,6 +113,7 @@ it('separates rearranging from editing and locates the selected block after movi
     await click('Add block')
     expect(container.querySelector('[aria-label="Add block"]')).toBeTruthy()
     await click('Add Section')
+    await click('Place here at end')
     expect(container.textContent).not.toContain('Save draft to edit this block.')
     expect(document.querySelector('[data-draft-block] h2')?.textContent).toBe('Section')
     expect(document.querySelector('[data-draft-block] img')?.getAttribute('src')).toContain(

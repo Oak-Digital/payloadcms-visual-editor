@@ -47,6 +47,7 @@ import styles from './styles.module.scss'
 import { RecoveryPanel } from './recovery-panel.js'
 import { ArrayEditor } from './array-editor.js'
 import { CanvasBlockControls } from './canvas-block-controls.js'
+import { BlockPlacement } from './block-placement.js'
 import { createDraftBlockPreviews } from './draft-block-preview.js'
 import { createCanvasTextEditor } from './canvas-text.js'
 
@@ -162,7 +163,8 @@ export function ArrangeEditor({
   const [reviewFailed, setReviewFailed] = useState(false)
   const reviewSessions = useRef<Record<string, Session>>({})
   const [blockMode, setBlockMode] = useState<'edit' | 'rearrange'>('edit')
-  const [adding, setAdding] = useState<Target>()
+  const [adding, setAdding] = useState<Target & { blockType?: string; label?: string }>()
+  const placedBlock = useRef<{ key: string; path: string; id: string } | undefined>(undefined)
   const [revisionRefresh, setRevisionRefresh] = useState(0)
   const [historical, setHistorical] = useState<PayloadCMSDocument>()
   const revisionRequest = useRef<{ cancel: () => void } | undefined>(undefined)
@@ -243,7 +245,7 @@ export function ArrangeEditor({
       : selectedBlock
         ? `${selectedBlock.key}:${selectedBlock.id}`
         : adding
-          ? `add:${adding.key}:${adding.path}`
+          ? `add:${adding.key}:${adding.path}:${adding.blockType || ''}`
           : (layoutView?.key ?? 'blocks')
   function selectOwner(key: string) {
     if (key === documentKey(documentInfo)) setLayoutView(undefined)
@@ -255,9 +257,7 @@ export function ArrangeEditor({
         block: selectedBlock,
       })
   }
-  function selectBlock(key: string, path: string, id: string) {
-    selectOwner(key)
-    onReveal?.()
+  function scrollToBlock(key: string, path: string, id: string) {
     for (const list of document.querySelectorAll<HTMLElement>('[data-payload-block-list]')) {
       if (
         list.dataset.payloadBlockList !== path ||
@@ -273,8 +273,15 @@ export function ArrangeEditor({
           : 'smooth',
         block: 'start',
       })
-      if (block) break
+      if (block) return true
     }
+    return false
+  }
+  function selectBlock(key: string, path: string, id: string) {
+    selectOwner(key)
+    onReveal?.()
+    scrollToBlock(key, path, id)
+    setAdding(undefined)
     setSelectedRow(undefined)
     setSelectedBlock({ key, path, id })
     setTarget(undefined)
@@ -282,6 +289,7 @@ export function ArrangeEditor({
     setBlockMode('edit')
   }
   function selectField(key: string, path: string) {
+    setAdding(undefined)
     setRichTextAnchor(undefined)
     selectOwner(key)
     onReveal?.()
@@ -534,7 +542,8 @@ export function ArrangeEditor({
     }
     if (pickerSelection) setPickerSelection(undefined)
     else if (picker) setPicker(undefined)
-    else if (adding) setAdding(undefined)
+    else if (adding)
+      setAdding(adding.blockType ? { key: adding.key, path: adding.path } : undefined)
     else if (tab === 'revisions' || tab === 'changes' || tab === 'menu') {
       if (onHome) onHome()
       else setTab(panelContainer ? 'content' : 'menu')
@@ -555,6 +564,18 @@ export function ArrangeEditor({
     } else if (onHome) onHome()
     else setTab(panelContainer ? 'content' : 'menu')
   }
+  useEffect(() => {
+    if (!active || !adding) return
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      if (!busy) setAdding(undefined)
+    }
+    const documents = new Set([document, panelContainer?.ownerDocument ?? document])
+    documents.forEach((doc) => doc.addEventListener('keydown', cancel, true))
+    return () => documents.forEach((doc) => doc.removeEventListener('keydown', cancel, true))
+  }, [active, adding, busy, panelContainer])
   useEffect(() => {
     if (!panelContainer) return
     const receive = (event: MessageEvent) => {
@@ -909,7 +930,7 @@ export function ArrangeEditor({
       const inline = element.closest<HTMLElement>('[data-arrange-inline]')
       if (!inline || element.closest('a')) event.preventDefault()
       event.stopImmediatePropagation()
-      if (busy || needsSync || tab === 'publish' || blockMode === 'rearrange') {
+      if (busy || needsSync || adding || tab === 'publish' || blockMode === 'rearrange') {
         return
       }
       const editable = element.closest('[data-payload-path]')
@@ -1007,6 +1028,7 @@ export function ArrangeEditor({
     previewEpoch,
     layoutView,
     historical,
+    adding,
   ])
 
   function undo() {
@@ -1084,7 +1106,7 @@ export function ArrangeEditor({
   }, [])
   useLayoutEffect(() => {
     canvasText.current?.update({
-      enabled: active && !historical && tab !== 'publish' && blockMode === 'edit',
+      enabled: active && !historical && !adding && tab !== 'publish' && blockMode === 'edit',
       blocked: busy || needsSync,
       refreshing,
       resolve: (element) => {
@@ -1169,6 +1191,13 @@ export function ArrangeEditor({
     }
     return () => restore.reverse().forEach((undo) => undo())
   }, [active, sessions, target, documentInfo, refreshing, previewEpoch])
+
+  useEffect(() => {
+    const placed = placedBlock.current
+    if (!placed || !active || busy) return
+    if (selectedBlock?.id !== placed.id || scrollToBlock(placed.key, placed.path, placed.id))
+      placedBlock.current = undefined
+  }, [active, busy, selectedBlock, previewEpoch])
 
   function stage(target: Target, value: unknown, media?: MediaChoice) {
     const current = sessions[target.key]
@@ -1278,7 +1307,13 @@ export function ArrangeEditor({
     })
   }
 
-  async function addBlock(key: string, path: string, blockType: string, sourceId?: string) {
+  async function addBlock(
+    key: string,
+    path: string,
+    blockType: string,
+    sourceId?: string,
+    beforeId?: string | null,
+  ) {
     if (busy || needsSync) return
     const session = sessions[key]
     const original = session.snapshot.orders[path].map((row) => row.id)
@@ -1288,12 +1323,18 @@ export function ArrangeEditor({
     ).join('')
     const max = session.snapshot.blockLimits?.[path]?.max
     if (max !== undefined && ids.length >= max) return
+    const destination = sourceId
+      ? ids.indexOf(sourceId) + 1
+      : beforeId
+        ? ids.indexOf(beforeId)
+        : ids.length
+    if (destination < 0) return
     const additions = [
       ...(session.additions[path] ?? []),
       { id, blockType, ...(sourceId ? { sourceId } : {}) },
     ]
     const nextIds = [...ids]
-    nextIds.splice(sourceId ? ids.indexOf(sourceId) + 1 : ids.length, 0, id)
+    nextIds.splice(destination, 0, id)
     const orders = { ...session.orders, [path]: nextIds }
     setOperation('add')
     setBusy(true)
@@ -1360,6 +1401,7 @@ export function ArrangeEditor({
       setStatus('')
       setAdding(undefined)
       setSelectedBlock({ key, path, id })
+      placedBlock.current = { key, path, id }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to add block')
     } finally {
@@ -2242,7 +2284,7 @@ export function ArrangeEditor({
         />
       )}
       <CanvasBlockControls
-        active={active && tab === 'content' && !busy && !needsSync && !historical}
+        active={active && tab === 'content' && !adding && !busy && !needsSync && !historical}
         epoch={previewEpoch}
         owner={documentInfo}
         lists={canvasLists}
@@ -2314,6 +2356,7 @@ export function ArrangeEditor({
                     ref={heading}
                     tabIndex={-1}
                     title={
+                      (adding?.blockType ? `Place ${adding.label}` : undefined) ||
                       layoutViewNode?.label ||
                       (blockLabel ? humanize(blockLabel) : layoutView?.label)
                     }
@@ -2327,7 +2370,9 @@ export function ArrangeEditor({
                         : tab === 'changes'
                           ? 'Changes'
                           : adding
-                            ? 'Add block'
+                            ? adding.blockType
+                              ? `Place ${adding.label}`
+                              : 'Add block'
                             : tab === 'menu'
                               ? 'Menu'
                               : tab === 'revisions'
@@ -2554,7 +2599,34 @@ export function ArrangeEditor({
                       {layoutView && (selectedBlock || target || adding) && (
                         <p title={layoutView.label}>Shared layout · {layoutView.label}</p>
                       )}
-                      {adding && sessions[adding.key] && (
+                      {adding?.blockType && sessions[adding.key] && (
+                        <BlockPlacement
+                          rows={
+                            canvasLists.find(
+                              (list) => list.key === adding.key && list.path === adding.path,
+                            )?.rows ?? []
+                          }
+                          disabled={
+                            busy ||
+                            needsSync ||
+                            Boolean(
+                              blockLists.find(
+                                (list) => list.key === adding.key && list.path === adding.path,
+                              )?.full,
+                            )
+                          }
+                          onPlace={(beforeId) =>
+                            void addBlock(
+                              adding.key,
+                              adding.path,
+                              adding.blockType!,
+                              undefined,
+                              beforeId,
+                            )
+                          }
+                        />
+                      )}
+                      {adding && !adding.blockType && sessions[adding.key] && (
                         <section aria-label="Add block">
                           {(sessions[adding.key].snapshot.blockTypes?.[adding.path] ?? []).map(
                             (block) => (
@@ -2563,7 +2635,13 @@ export function ArrangeEditor({
                                 className={`${styles.fieldLink} ${styles.blockChoice}`}
                                 disabled={busy || needsSync}
                                 key={block.slug}
-                                onClick={() => addBlock(adding.key, adding.path, block.slug)}
+                                onClick={() =>
+                                  setAdding({
+                                    ...adding,
+                                    blockType: block.slug,
+                                    label: humanize(block.label),
+                                  })
+                                }
                                 title={humanize(block.label)}
                                 type="button"
                               >
