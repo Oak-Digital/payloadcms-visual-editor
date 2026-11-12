@@ -1,10 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import type { PayloadCMSDocument, SubmitAnnotation, DeleteAnnotationTicket } from '../../types.js'
 
+import { documentKey } from '../../utils/field-target.js'
+import { workspaceMemory } from '../../utils/workspace-memory.js'
 import { annotationTicketClient } from '../../annotations/client.js'
 import { SharedContentEditor } from '../shared-content/index.js'
 import type { SharedTarget } from '../../utils/shared-content.js'
@@ -20,15 +22,18 @@ import { useWorkspaceLayout } from './use-workspace-layout.js'
 export type WorkspaceSource = {
   /** Show a native collection creation link with this label. */
   createLabel?: string
+  /** Enable configured page settings and locale discovery. */
+  pageSettings?: boolean
   global?: boolean
   editable?: boolean
   label: string
   /** Sources without a preview resolver or shared editing open in the native admin. */
-  previewURL?: (document: Record<string, unknown>) => string | undefined
+  previewURL?: (document: Record<string, unknown>, locale?: string) => string | undefined
   slug: string
   titleField?: string
 }
-type Entry = { id: string; label: string; url?: string }
+type Entry = { id: string; label: string; url?: string; locale?: string }
+type Language = { code: string; label: string; url: string; status: string }
 type Mode = 'annotate' | 'browse' | 'edit'
 const frameName = 'oak-visual-editor-canvas'
 
@@ -302,6 +307,13 @@ function WorkspaceShell({
     window.history.replaceState(window.history.state, '', url.href)
   }, [documentInfo.id])
   const [current, setCurrent] = useState(documentInfo)
+  const preparePreview = useContext(PreviewRefreshContext)
+  const pageSettingsEnabled = sources.some(
+    (item) => item.slug === current.collection && item.pageSettings,
+  )
+  const [languages, setLanguages] = useState<Language[]>([])
+  const [languageError, setLanguageError] = useState('')
+  const [languageRetry, setLanguageRetry] = useState(0)
   const [currentLabel, setCurrentLabel] = useState('Current page')
   const [sourceSlug, setSourceSlug] = useState(documentInfo.collection)
   const source = sources.find((item) => item.slug === sourceSlug) ?? sources[0]
@@ -488,7 +500,7 @@ function WorkspaceShell({
       if (!entry.url) {
         return
       }
-      if (entry.id === current.id) {
+      if (entry.id === current.id && (!entry.locale || entry.locale === current.locale)) {
         setView('home')
         setPickerOpen(false)
         setNavigation(undefined)
@@ -521,11 +533,12 @@ function WorkspaceShell({
       setStatusBadge('Loading…')
       setStatusError('')
       setSrc(url.href)
+      if (entry.locale) setCurrent((current) => ({ ...current, locale: entry.locale }))
       setPickerOpen(false)
-      setView('home')
+      setView(entry.locale && view === 'editor' ? 'editor' : 'home')
       setNavigation(undefined)
     },
-    [current.id],
+    [current.id, current.locale, view],
   )
 
   useEffect(() => {
@@ -665,7 +678,18 @@ function WorkspaceShell({
     }
     window.addEventListener('message', receive)
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (pending || busy) {
+      if (
+        pending ||
+        busy ||
+        [...workspaceMemory().values()].some((entry) =>
+          Object.values(entry.sessions ?? {}).some(
+            (session: any) =>
+              Object.keys(session.changes ?? {}).length ||
+              Object.keys(session.orders ?? {}).length ||
+              session.operations?.length,
+          ),
+        )
+      ) {
         event.preventDefault()
         event.returnValue = ''
       }
@@ -701,8 +725,8 @@ function WorkspaceShell({
           page: String(page),
           sort: source.titleField ?? 'title',
         })
-        if (documentInfo.locale) {
-          query.set('locale', documentInfo.locale)
+        if (current.locale) {
+          query.set('locale', current.locale)
         }
         if (search.trim()) {
           query.set(`where[${source.titleField ?? 'title'}][like]`, search.trim())
@@ -722,7 +746,7 @@ function WorkspaceShell({
           result.docs.map((doc: Record<string, unknown>) => ({
             id: String(doc.id),
             label: String(doc[source.titleField ?? 'title'] || doc.name || doc.slug || 'Untitled'),
-            url: source.previewURL?.(doc),
+            url: source.previewURL?.(doc, current.locale),
           })),
         )
         setHasNext(Boolean(result.hasNextPage))
@@ -742,7 +766,7 @@ function WorkspaceShell({
       clearTimeout(timer)
       controller.abort()
     }
-  }, [source, search, page, pickerOpen, apiRoute, documentInfo.locale])
+  }, [source, search, page, pickerOpen, apiRoute, current.locale])
 
   function changeMode(next: Mode) {
     setMode(next)
@@ -751,8 +775,95 @@ function WorkspaceShell({
       window.location.origin,
     )
   }
+  useEffect(() => {
+    if (!pageSettingsEnabled) {
+      setLanguages([])
+      setLanguageError('')
+      return
+    }
+    const controller = new AbortController()
+    void fetch(`${apiRoute}/payload-visual-editor/workspace`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection: current.collection, id: current.id }),
+    })
+      .then(async (response) => {
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error)
+        setLanguages(result.languages)
+        setLanguageError('')
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setLanguageError(error.message || 'Unable to load languages')
+      })
+    return () => controller.abort()
+  }, [apiRoute, current.id, current.collection, statusBadge, languageRetry, pageSettingsEnabled])
+  async function switchLanguage(code: string) {
+    const language = languages.find((item) => item.code === code)
+    if (!language || code === current.locale || busy || !ready) return
+    setSwitching(true)
+    setLanguageError('')
+    try {
+      const url = new URL(language.url, window.location.origin)
+      if (url.origin !== window.location.origin) throw new Error('Preview must be on this site.')
+      url.searchParams.set('visual-editor-document', String(current.id))
+      url.searchParams.set('visual-editor-canvas', '1')
+      const signal = AbortSignal.timeout(20000)
+      await preparePreview?.(signal)
+      const response = await fetch(url, { credentials: 'same-origin', signal })
+      if (!response.ok)
+        throw new Error('Unable to load this language. Your current edits are kept.')
+      const memory = workspaceMemory()
+      const previous = memory.get(`page:${apiRoute}:${documentKey(current)}`)
+      const nextKey = `page:${apiRoute}:${documentKey({ ...current, locale: code })}`
+      memory.set(nextKey, {
+        ...memory.get(nextKey),
+        navigationTab: previous?.tab === 'settings' ? 'settings' : undefined,
+      })
+      navigate({ id: String(current.id), label: currentLabel, url: url.href, locale: code })
+    } catch (error) {
+      setLanguageError(error instanceof Error ? error.message : 'Unable to switch language')
+    } finally {
+      setSwitching(false)
+    }
+  }
+  const languageControl = languages.length > 0 && (
+    <label className={styles.languageControl}>
+      <span>Language</span>
+      <select
+        aria-label="Page language"
+        value={current.locale || ''}
+        disabled={busy || !ready}
+        onChange={(event) => void switchLanguage(event.target.value)}
+      >
+        {languages.map((language) => {
+          const unsaved =
+            language.code === current.locale
+              ? pending
+              : [...workspaceMemory().values()].some((entry) =>
+                  Object.values(entry.sessions ?? {}).some(
+                    (session: any) =>
+                      session.owner?.collection === current.collection &&
+                      String(session.owner?.id) === String(current.id) &&
+                      session.owner?.locale === language.code &&
+                      (Object.keys(session.changes ?? {}).length ||
+                        Object.keys(session.orders ?? {}).length),
+                  ),
+                )
+          return (
+            <option key={language.code} value={language.code}>
+              {language.label} · {unsaved ? 'Unsaved changes' : language.status}
+            </option>
+          )
+        })}
+      </select>
+    </label>
+  )
   const adminURL = `${adminRoute}/collections/${encodeURIComponent(current.collection)}/${encodeURIComponent(current.id)}`
-  function editorView(destination: 'blocks' | 'revisions' | 'changes' = 'blocks') {
+  function editorView(destination: 'blocks' | 'revisions' | 'changes' | 'settings' = 'blocks') {
     changeMode('edit')
     setView('editor')
     setPickerOpen(false)
@@ -897,6 +1008,15 @@ function WorkspaceShell({
             hidden={view !== 'editor'}
             key={`heading:${src}`}
           />
+          {view === 'editor' && languageControl}
+          {languageError && (
+            <div role="alert" className={styles.languageControl}>
+              {languageError}
+              <button type="button" onClick={() => setLanguageRetry((value) => value + 1)}>
+                Retry languages
+              </button>
+            </div>
+          )}
           <div className={styles.views}>
             {view === 'home' && (
               <section className={styles.view} key="home">
@@ -915,6 +1035,7 @@ function WorkspaceShell({
                     <span className={styles.tag}>Draft preview</span>
                   </div>
                 </div>
+                {languageControl}
                 <div className={styles.tools}>
                   <nav
                     aria-label="Editor tools"
@@ -949,7 +1070,9 @@ function WorkspaceShell({
                     >
                       <EditorIcon name="layers" />
                       <strong>Page blocks</strong>
-                      <small>{blockCount} sections</small>
+                      <small>
+                        {blockCount} {blockCount === 1 ? 'section' : 'sections'}
+                      </small>
                     </button>
                     <button
                       className={styles.card}
@@ -989,6 +1112,20 @@ function WorkspaceShell({
                     </button>
                   </div>
                 </div>
+                {pageSettingsEnabled && (
+                  <button
+                    className={styles.sharedLink}
+                    type="button"
+                    disabled={!ready || busy}
+                    onClick={() => editorView('settings')}
+                  >
+                    <span className={styles.grow}>
+                      <strong>Page settings</strong>
+                      <small>Title, URL, SEO & publication</small>
+                    </span>
+                    <EditorIcon name="chevron" />
+                  </button>
+                )}
                 <button
                   className={styles.sharedLink}
                   onClick={() => setView('shared')}

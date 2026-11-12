@@ -11,6 +11,7 @@ export type SharedContentConfig = Record<
   }
 >
 export type SharedOperation =
+  | { type: 'duplicate'; path: string; id: string; sourceId: string }
   | { type: 'set'; path: string; value: unknown }
   | { type: 'add'; path: string; id: string; blockType?: string }
   | { type: 'remove' | 'move'; path: string; id: string; to?: number }

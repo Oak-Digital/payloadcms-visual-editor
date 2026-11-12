@@ -1463,3 +1463,16 @@
     outline: none;
   }
 }
+
+.languageControl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px;
+  color: #aaa;
+  select {
+    flex: 1;
+    min-width: 0;
+    color: #eee;
+  }
+}

@@ -78,8 +78,8 @@ function addEditableFields({
       continue
     switch (field.type) {
       case 'array': {
-        // Empty relationship arrays still need their add control before any rows exist.
-        if (controls && typeof field.custom?.visualEditorRelationship === 'string') {
+        // Empty lists still need their add control before any rows exist.
+        if (controls) {
           sourceMap[appendPath(path, field.name)] = { type: 'control' }
         }
         const rows = getNamedValue(source, field.name)
@@ -96,6 +96,7 @@ function addEditableFields({
         break
       }
       case 'blocks': {
+        if (controls) sourceMap[appendPath(path, field.name)] = { type: 'control' }
         const rows = getNamedValue(source, field.name)
         if (Array.isArray(rows))
           rows.forEach((row, index) => {
@@ -144,7 +145,9 @@ function addEditableFields({
             addEditableFields({
               fields: tab.fields,
               path: appendPath(path, tab.name),
-              source: getNamedValue(source, tab.name),
+              source: controls
+                ? (getNamedValue(source, tab.name) ?? {})
+                : getNamedValue(source, tab.name),
               controls,
               sourceMap,
             })

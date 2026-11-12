@@ -361,7 +361,7 @@ it('reports distinct save/publish states to the footer without duplicating them 
     await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
     expect(reveal).toHaveBeenCalledOnce()
     expect(panel.textContent).toContain('Compare with published')
-    expect(actions.textContent).toContain('Publish now')
+    expect(actions.textContent).toContain('Publish changes')
     await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
     expect(pending.mock.lastCall?.[5]).toBe('Publishing…')
     publicationStatus = 'published'
@@ -420,7 +420,7 @@ it('reports distinct save/publish states to the footer without duplicating them 
         .click(),
     )
     expect(panel.querySelector('[aria-label="Publish review"]')).toBeNull()
-    expect(actions.textContent).toContain('Publish all')
+    expect(actions.textContent).toContain('Review & publish')
     expect(document.querySelector('h1')?.textContent).toBe('Still pending')
     expect(pending.mock.lastCall?.[0]).toBe(true)
   } finally {
@@ -1067,7 +1067,7 @@ it.each(['blocks', 'changes', 'revisions'])(
         })),
       )
       const title = panel.querySelector('h2')!.textContent
-      await click('Publish all')
+      await click('Review & publish')
       expect(panel.querySelector('h2')!.textContent).toBe('Review publish')
       await click('Refresh review')
       await click('Back')

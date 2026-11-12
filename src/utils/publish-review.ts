@@ -58,6 +58,9 @@ export function publishedChanges(
 }
 
 export type PublishReviewData = {
+  availability?: import('./page-settings.js').Availability
+  previousAvailability?: import('./page-settings.js').Availability
+  sharedFields?: string[]
   changes: RevisionChange[]
   draft: boolean
   label: string

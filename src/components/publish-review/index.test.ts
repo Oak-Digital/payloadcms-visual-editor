@@ -98,3 +98,37 @@ it('groups fields by section identity even when sections share the same name', (
   expect(rows[1].querySelector('summary')?.textContent).not.toContain('Description')
   expect([...rows].every((row) => !row.open)).toBe(true)
 })
+
+it.each([
+  [false, false, 'Will remain unavailable to visitors'],
+  [true, false, 'Will become unavailable to visitors'],
+  [false, true, 'Will become public in this language'],
+  [true, true, 'Will update the public page'],
+])('explains the public outcome (%s to %s)', (before, after, message) => {
+  const html = renderToStaticMarkup(
+    createElement(PublishReview, {
+      loading: false,
+      onEdit: () => {},
+      items: [
+        {
+          key: 'page',
+          collection: 'pages',
+          pending: true,
+          status: 'ready',
+          draft: true,
+          label: 'Home',
+          published: true,
+          revision: '1',
+          locale: 'da',
+          changes: [],
+          availability: { public: after, label: after ? 'Public' : 'Not public', url: '/da/home' },
+          previousAvailability: { public: before, label: before ? 'Public' : 'Not public' },
+          sharedFields: ['Page name'],
+        },
+      ],
+    }),
+  )
+  expect(html).toContain(message)
+  expect(html).toContain('/da/home')
+  expect(html).toContain('All languages: Page name')
+})

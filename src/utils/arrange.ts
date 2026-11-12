@@ -23,7 +23,12 @@ export type ArrangeArrayField = {
   choices: { id: string; label: string }[]
   labels: Record<string, string>
 }
-export type ArrangeField = { label?: string; hidden?: boolean; conditional?: boolean } & (
+export type ArrangeField = {
+  label?: string
+  hidden?: boolean
+  conditional?: boolean
+  localized?: boolean
+} & (
   | { type: 'richText' | 'text' | 'textarea' | 'upload'; value: unknown; schemaPath?: string }
   | {
       type: 'relationship'
@@ -40,6 +45,7 @@ export type ArrangeField = { label?: string; hidden?: boolean; conditional?: boo
       options: { label: string; value: string }[]
     }
   | { type: 'reference'; value: unknown; choices: { label: string; value: unknown }[] }
+  | { type: 'list'; value: unknown; label: string }
   | ArrangeArrayField
 )
 
@@ -74,6 +80,10 @@ export function arrangeArrayRows(
   })
 }
 export type ArrangeSnapshot = {
+  settings?: string[]
+  settingsSections?: { label: string; fields: string[] }[]
+  searchPreview?: { title: string; description: string; url: string }
+  availability?: { label: string; public: boolean; url?: string }
   publicationStatus?: 'draft' | 'published'
   layout?: FieldLayout[]
   label?: string

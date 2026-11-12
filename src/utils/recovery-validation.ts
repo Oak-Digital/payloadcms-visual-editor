@@ -25,7 +25,9 @@ const field = (value: unknown): boolean => {
   if (value.type === 'relationship')
     return text(value.collection) && safePath(value.layoutPath) && list(value.choices, row)
   if (
-    ['text', 'textarea', 'upload', 'richText', 'checkbox', 'number', 'email'].includes(value.type)
+    ['text', 'textarea', 'upload', 'richText', 'checkbox', 'number', 'email', 'list'].includes(
+      value.type,
+    )
   )
     return true
   if (['radio', 'select'].includes(value.type))
@@ -92,6 +94,7 @@ function operation(value: unknown): boolean {
   if (!record(value) || !safePath(value.path)) return false
   return (
     value.type === 'set' ||
+    (value.type === 'duplicate' && text(value.id) && text(value.sourceId)) ||
     (['add', 'remove', 'move'].includes(value.type) &&
       text(value.id) &&
       (value.blockType === undefined || text(value.blockType)) &&

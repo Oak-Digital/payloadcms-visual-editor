@@ -118,9 +118,13 @@ export function buildFieldLayout(
             typeof d.value === 'string' &&
             d.value,
         )
+        const localCandidates = candidates.filter(
+          ([path]) => !path.slice(rowPath.length + 1).includes('.'),
+        )
+        const labelCandidates = localCandidates.length ? localCandidates : candidates
         const preferred =
-          candidates.find(([p]) => /\.(?:title|name|label|heading|eyebrow)$/.test(p)) ??
-          candidates[0]
+          labelCandidates.find(([p]) => /\.(?:title|name|label|heading|eyebrow)$/.test(p)) ??
+          labelCandidates[0]
         const descriptor = preferred?.[1]
         const title =
           descriptor?.options?.find((o) => o.value === descriptor.value)?.label ?? descriptor?.value

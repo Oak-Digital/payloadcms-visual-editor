@@ -211,7 +211,7 @@ it('reviews earlier saved shared drafts and retries only documents that did not 
   try {
     await render('first')
     await render('second')
-    await act(async () => button('Publish all').click())
+    await act(async () => button('Review & publish').click())
     expect(attempts).toEqual([])
     expect(container.textContent).toContain('Review changes across 2 documents.')
     await act(async () => button('Publish shared changes').click())
@@ -224,7 +224,7 @@ it('reviews earlier saved shared drafts and retries only documents that did not 
     await act(async () => button('Edit content').click())
     expect(props.onOpen).toHaveBeenCalledWith({ slug: 'navigation', id: 'second', label: 'second' })
     expect(container.querySelector('[aria-label="Publish review"]')).toBeNull()
-    await act(async () => button('Publish all').click())
+    await act(async () => button('Review & publish').click())
     fail = false
     await act(async () => button('Refresh review').click())
     expect(container.querySelectorAll('[data-publish-status]')).toHaveLength(1)

@@ -19,6 +19,7 @@ export function fieldPresentation(
     ...('label' in resolved.field && typeof resolved.field.label === 'string'
       ? { label: resolved.field.label }
       : {}),
+    localized: resolved.ancestors.some(({ field }) => 'localized' in field && field.localized === true),
     conditional: resolved.ancestors.some(({ field }) => Boolean(field.admin?.condition)),
     hidden: resolved.ancestors.some(({ field, siblingData }) => {
       if (field.admin && 'hidden' in field.admin && field.admin.hidden) return true

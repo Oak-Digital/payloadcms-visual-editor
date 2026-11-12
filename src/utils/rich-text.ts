@@ -63,6 +63,15 @@ export function resolveField(
           parentSchemaPath: schemaPath,
         })
         const named = 'name' in tab && tab.name
+        if (named && path === named) {
+          const group = { ...tab, name: named, type: 'group' as const }
+          return {
+            field: group,
+            value: doc?.[named],
+            schemaPath: tabPaths.schemaPath,
+            ancestors: [...chain, { field: group, siblingData: doc }],
+          }
+        }
         if (named && !path.startsWith(`${named}.`)) continue
         const found = resolveField(
           tab.fields,

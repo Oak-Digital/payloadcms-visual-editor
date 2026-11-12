@@ -1,3 +1,5 @@
+import { createWorkspaceHandler } from './endpoints/workspaceHandler.js'
+import type { PageSettingsConfig } from './utils/page-settings.js'
 import { createAnnotationSettings, type AnnotationSettingsAccess } from './annotations/config.js'
 import {
   createAnnotationHandler,
@@ -35,6 +37,7 @@ export type PayloadVisualEditorConfig = {
    */
   collections?: Partial<Record<CollectionSlug, true>>
   sharedContent?: SharedContentConfig
+  pageSettings?: PageSettingsConfig
   /** Register reusable Oak OS annotation settings and endpoints. */
   annotations?: boolean | { settingsAccess?: AnnotationSettingsAccess }
   disabled?: boolean
@@ -137,6 +140,12 @@ const payloadVisualEditor =
       path: '/visual-rich-text',
     }
     config.endpoints.push({
+      handler: createWorkspaceHandler(pluginOptions.pageSettings ?? {}),
+      method: 'post',
+      path: '/payload-visual-editor/workspace',
+    })
+
+    config.endpoints.push({
       handler: createSharedContentHandler(pluginOptions.sharedContent ?? {}),
       method: 'post',
       path: '/payload-visual-editor/shared-content',
@@ -149,7 +158,7 @@ const payloadVisualEditor =
     })
 
     config.endpoints.push({
-      handler: createArrangeHandler(pluginOptions.collections ?? {}),
+      handler: createArrangeHandler(pluginOptions.collections ?? {}, pluginOptions.pageSettings),
       method: 'post',
       path: '/payload-visual-editor/arrange',
     })

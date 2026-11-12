@@ -282,7 +282,8 @@
   flex-shrink: 0;
   padding: 0;
 }
-.panel .blockSelect {
+.panel .blockSelect,
+.nestedList .blockSelect {
   flex: 1;
   min-width: 0;
   text-align: left;
@@ -731,7 +732,8 @@
 .removeBlock .blockActionIcon {
   background: rgb(255 178 168 / 12%);
 }
-.panel .addBlock {
+.panel .addBlock,
+.nestedList .addBlock {
   width: 100%;
   margin-top: 8px;
   display: flex;
@@ -1189,4 +1191,38 @@
 }
 .actions:has(.reviewScope) {
   flex-wrap: wrap;
+}
+
+.searchPreview {
+  padding: 16px;
+  border: 1px solid #414144;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+  small,
+  strong {
+    display: block;
+  }
+  strong {
+    margin-top: 8px;
+    color: #b2b99d;
+  }
+  p {
+    margin-bottom: 0;
+  }
+}
+
+.nestedList {
+  button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  button:focus-visible {
+    outline: 2px solid #8ccdea;
+    outline-offset: 2px;
+  }
 }

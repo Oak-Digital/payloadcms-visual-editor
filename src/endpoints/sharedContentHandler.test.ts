@@ -275,3 +275,29 @@ it('uses schema sections and validated multi-selects in collections and globals'
     expect(f.getDoc().items[0].channels).toEqual(['web', 'print'])
   }
 })
+
+it('duplicates pending nested content with fresh IDs and enforces protected fields and limits', async () => {
+  const f = fixture()
+  const id = '0123456789abcdef01234567'
+  const base = await (await f.call()).json()
+  const duplicate = { type: 'duplicate', path: 'items', sourceId: 'a', id }
+  expect(
+    (await f.call({ action: 'save', revision: base.revision, operations: [duplicate] })).status,
+  ).toBe(400)
+  delete f.getDoc().items[0].secret
+  const { revision } = await (await f.call()).json()
+  const operations = [
+    { type: 'set', path: 'items.0.children.0.label', value: 'Pending child' },
+    duplicate,
+  ]
+  const response = await f.call({ action: 'preview', revision, operations })
+  expect(response.status).toBe(200)
+  const result = await response.json()
+  expect(result.document.items[1].children[0].label).toBe('Pending child')
+  expect(result.document.items[1].id).toBe(id)
+  expect(result.document.items[1].children[0].id).not.toBe('child')
+  expect(f.update).not.toHaveBeenCalled()
+  f.cfg.fields[1].maxRows = 1
+  expect((await f.call({ action: 'save', revision, operations })).status).toBe(400)
+  expect(f.update).not.toHaveBeenCalled()
+})

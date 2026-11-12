@@ -7,6 +7,8 @@ import type {
   SharedSnapshot,
   SharedTarget,
 } from '../../utils/shared-content.js'
+import { workspaceMemory } from '../../utils/workspace-memory.js'
+import { NestedList } from '../arrange-editor/nested-list.js'
 import { validSharedRecovery } from '../../utils/recovery-validation.js'
 import {
   clearRecovery,
@@ -72,6 +74,7 @@ export function SharedContentEditor({
   navigationActions?: RefObject<{ save: () => Promise<boolean>; discard: () => boolean } | null>
   hidden?: boolean
 }) {
+  const memoryKey = `shared:${apiRoute}:${locale || ''}`
   const [sessions, setSessions] = useState<Record<string, Session>>({})
   const [recoveries, setRecoveries] = useState<
     Record<string, { record: RecoveryRecord<Session>; conflict: boolean }>
@@ -109,6 +112,14 @@ export function SharedContentEditor({
   useEffect(() => {
     onStateChange(dirty.length > 0 || Object.keys(recoveries).length > 0, busy)
   }, [dirty.length, busy, recoveries])
+  useEffect(() => {
+    if (!busy && !saving && !Object.keys(recoveries).length && Object.keys(sessions).length)
+      workspaceMemory().set(memoryKey, {
+        sessions: { ...workspaceMemory().get(memoryKey)?.sessions, ...sessions },
+        layers,
+        savedAt: Date.now(),
+      })
+  })
   const recoveryScope = (s: Session) => ({
     api: apiRoute,
     user: s.base.recoveryUser || '',
@@ -162,13 +173,23 @@ export function SharedContentEditor({
     request(target, { action: 'read' })
       .then((snapshot: SharedSnapshot) => {
         if (active) {
-          const loaded: Session = {
+          let loaded: Session = {
             target,
             base: snapshot,
             snapshot,
             operations: [],
             undo: [],
             redo: [],
+          }
+          const retained = workspaceMemory().get(memoryKey)?.sessions?.[key] as Session | undefined
+          const resumed =
+            retained &&
+            retained.base.recoveryUser === snapshot.recoveryUser &&
+            (retained.base.revision === snapshot.revision ||
+              JSON.stringify(retained.base.document) === JSON.stringify(snapshot.document))
+          if (resumed) {
+            loaded = { ...retained, base: snapshot }
+            setLayers(workspaceMemory().get(memoryKey)?.layers ?? [])
           }
           if (snapshot.recoveryUser) {
             try {
@@ -178,7 +199,17 @@ export function SharedContentEditor({
                 snapshot.revision,
                 isRecoverySession,
               )
-              if (result.status === 'available' && keyOf(result.record.value.target) === key) {
+              if (
+                resumed &&
+                (result.status === 'empty' ||
+                  (result.status === 'available' &&
+                    JSON.stringify(result.record.value) === JSON.stringify(retained)))
+              ) {
+                // The retained session matches the storage value observed in this iframe.
+              } else if (
+                result.status === 'available' &&
+                keyOf(result.record.value.target) === key
+              ) {
                 setRecoveries((all) => ({ ...all, [key]: result }))
               } else if (result.status !== 'empty') {
                 unreadRecovery.current.add(key)
@@ -612,7 +643,9 @@ export function SharedContentEditor({
                             ? 'Added item'
                             : op.type === 'remove'
                               ? 'Removed item'
-                              : 'Moved item'}
+                              : op.type === 'duplicate'
+                                ? 'Duplicated item'
+                                : 'Moved item'}
                       </li>
                     ))}
                   </ul>
@@ -766,57 +799,31 @@ export function SharedContentEditor({
             </div>
           </>
         ) : node?.rows && !current?.row ? (
-          <>
-            {node.rows.map((r, i) => (
-              <div className={styles.item} key={r.id}>
-                <button
-                  className={styles.row}
-                  title={r.label}
-                  onClick={() =>
-                    setLayers((l) => [...l, { path: node.path, row: r.id, label: r.label }])
-                  }
-                >
-                  <strong>{r.label}</strong>
-                  <EditorIcon name="chevron" />
-                </button>
-                <div>
-                  <button
-                    disabled={busy || i === 0}
-                    aria-label={`Move ${r.label} up`}
-                    onClick={() => change({ type: 'move', path: node.path, id: r.id, to: i - 1 })}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    disabled={busy || i === node.rows!.length - 1}
-                    aria-label={`Move ${r.label} down`}
-                    onClick={() => change({ type: 'move', path: node.path, id: r.id, to: i + 1 })}
-                  >
-                    ↓
-                  </button>
-                </div>
-              </div>
-            ))}
-            {(node.blocks ?? [{ value: undefined, label: 'item' }]).map((b) => (
-              <button
-                className={styles.row}
-                key={b.value ?? 'row'}
-                disabled={busy || (node.maxRows !== undefined && node.rows!.length >= node.maxRows)}
-                onClick={() =>
-                  change({
-                    type: 'add',
-                    path: node.path,
-                    id: Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) =>
-                      x.toString(16).padStart(2, '0'),
-                    ).join(''),
-                    blockType: b.value,
-                  })
-                }
-              >
-                + Add {b.label}
-              </button>
-            ))}
-          </>
+          <NestedList
+            label={node.label}
+            rows={node.rows}
+            ids={node.rows.map((row) => row.id)}
+            types={(node.blocks ?? [{ value: '', label: 'Item' }]).map((block) => ({
+              slug: block.value,
+              label: block.label,
+            }))}
+            max={node.maxRows}
+            disabled={busy}
+            onOpen={(id) =>
+              setLayers((layers) => [
+                ...layers,
+                { path: node.path, row: id, label: node.rows!.find((row) => row.id === id)!.label },
+              ])
+            }
+            onMove={(id, to) => change({ type: 'move', path: node.path, id, to })}
+            onAdd={(blockType) => {
+              const id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) =>
+                x.toString(16).padStart(2, '0'),
+              ).join('')
+              change({ type: 'add', path: node.path, id, ...(blockType ? { blockType } : {}) })
+              setLayers((layers) => [...layers, { path: node.path, row: id, label: 'New item' }])
+            }}
+          />
         ) : (
           <>
             {session && (
@@ -834,6 +841,23 @@ export function SharedContentEditor({
                   return field ? fields([field]) : null
                 }}
               />
+            )}
+            {current?.row && node?.rows && (
+              <button
+                disabled={busy || (node.maxRows !== undefined && node.rows.length >= node.maxRows)}
+                onClick={() => {
+                  const id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) =>
+                    x.toString(16).padStart(2, '0'),
+                  ).join('')
+                  change({ type: 'duplicate', path: node.path, id, sourceId: current.row! })
+                  setLayers((layers) => [
+                    ...layers.slice(0, -1),
+                    { path: node.path, row: id, label: current.label },
+                  ])
+                }}
+              >
+                Duplicate item
+              </button>
             )}
             {current?.row && node?.rows && (
               <button
@@ -898,7 +922,7 @@ export function SharedContentEditor({
             }
             onClick={() => void (review ? save('publish') : preparePublish())}
           >
-            {review ? 'Publish shared changes' : 'Publish all'}
+            {review ? 'Publish shared changes' : 'Review & publish'}
           </button>
         </div>
       </footer>
