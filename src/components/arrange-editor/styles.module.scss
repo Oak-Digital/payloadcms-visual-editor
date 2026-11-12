@@ -282,7 +282,8 @@
   flex-shrink: 0;
   padding: 0;
 }
-.panel .blockSelect {
+.panel .blockSelect,
+.nestedList .blockSelect {
   flex: 1;
   min-width: 0;
   text-align: left;
@@ -731,7 +732,8 @@
 .removeBlock .blockActionIcon {
   background: rgb(255 178 168 / 12%);
 }
-.panel .addBlock {
+.panel .addBlock,
+.nestedList .addBlock {
   width: 100%;
   margin-top: 8px;
   display: flex;
@@ -762,6 +764,63 @@
   height: 26px;
   border-radius: 8px;
   background: rgb(178 185 157 / 12%) url('./add-block.svg') center / 16px 16px no-repeat;
+}
+.placement {
+  display: grid;
+  min-width: 0;
+}
+.placementBlock {
+  min-width: 0;
+  padding: 22px 14px;
+  border-radius: 16px;
+  background: #303032;
+  font-weight: 600;
+  line-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.panel .placeBlock {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #b2b99d;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #55584d;
+  }
+  span {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    opacity: 0;
+  }
+  &:not(:disabled):hover,
+  &:focus-visible,
+  &:only-child {
+    span {
+      opacity: 1;
+      background: #30342b;
+    }
+    &::before,
+    &::after {
+      background: currentColor;
+    }
+  }
 }
 .blocks:has(.blockSelect) li {
   padding: 0;
@@ -1132,4 +1191,38 @@
 }
 .actions:has(.reviewScope) {
   flex-wrap: wrap;
+}
+
+.searchPreview {
+  padding: 16px;
+  border: 1px solid #414144;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+  small,
+  strong {
+    display: block;
+  }
+  strong {
+    margin-top: 8px;
+    color: #b2b99d;
+  }
+  p {
+    margin-bottom: 0;
+  }
+}
+
+.nestedList {
+  button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  button:focus-visible {
+    outline: 2px solid #8ccdea;
+    outline-offset: 2px;
+  }
 }

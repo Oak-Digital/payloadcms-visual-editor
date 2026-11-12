@@ -21,11 +21,20 @@ Enable `versions: { drafts: true }` on each canvas-editable collection. Existing
 | Option          | Purpose                                                                                                                  |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `collections`   | Collection slugs mapped to `true`; enables source maps and canvas endpoint access.                                       |
+| `pageSettings` | Per-collection settings roots, sections, SEO preview and language/publication policy callbacks; see below. |
 | `sharedContent` | Opts collection/global roots into the separate shared-content editor; see below.                                         |
 | `annotations`   | `true` or `{ settingsAccess }` to register Oak OS settings and endpoints. See [annotation setup](README.annotations.md). |
 | `disabled`      | Skips endpoint/admin-view/annotation registration. Configured collection source-map fields and hooks are still added.    |
 
 The plugin preserves existing fields, hooks, endpoints and admin configuration. It adds the virtual `_sourceMap` field to enabled collections and the `visualRichText` admin view at `<admin route>/visual-rich-text`. With annotations enabled, `visual-editor-settings` is a plugin-owned Global.
+
+## Page settings and languages
+
+Opt a workspace source into `pageSettings: true`, then configure the matching server `pageSettings[collection]`. `fields` lists editable field roots, `sections` groups them, and optional `searchPreview(document, locale, req)` (sync or async) produces the SEO preview. Fields use the existing schema controls and access checks; nonlocalized fields show **All languages**.
+
+Provide `previewURL(document, locale)` to enable the single-preview language selector. The authenticated `/payload-visual-editor/workspace` endpoint discovers configured, offered locales by document ID with fallback disabled. Optional `hasContent(document)` marks untranslated locales. `availability({ document, locale, published, req })` returns `{ public, label, url? }` using the host's actual publication policy. The editor shows current availability and the expected public outcome in publish review. Review and language discovery do not write content or versions.
+
+The host must support authenticated preview resolution by document identity, including empty translations and changed slugs.
 
 ## Authenticate preview reads
 
@@ -83,7 +92,7 @@ Adapt that example's URL resolver to the host's actual locale and preview routes
 | Workspace prop                               | Purpose                                                                                                                               |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `documentInfo`                               | `{ id, collection, hasDrafts, locale? }` for the current page. IDs can be strings or numbers.                                         |
-| `sources`                                    | Navigation sources with `slug`, `label`, optional `titleField`, `previewURL`, `createLabel`, `global` and `editable`.                 |
+| `sources`                                    | Navigation sources with `slug`, `label`, optional `titleField`, `previewURL`, `createLabel`, `pageSettings`, `global` and `editable`.                 |
 | `adminRoute`, `apiRoute`                     | Host routes; default to `/admin` and `/api`.                                                                                          |
 | `preparePreview`                             | Async `(signal: AbortSignal) => Promise<void>` callback to renew the authenticated preview session before refresh. Reject on failure. |
 | `annotationTickets`                          | Enables the built-in annotation client; requires server annotation configuration.                                                     |
@@ -138,7 +147,7 @@ For canvas block selection and rearrangement, mark the list with its owning bloc
 
 Render all rows in source order. Use a column flex/grid layout for the plugin's pending-order preview. Bind before filtering or transforming rows, and omit these wrappers/attributes from public rendering. The plugin never derives ownership from matching text, media IDs or URLs.
 
-Relationship-backed arrays can opt into add/remove/reorder controls with `custom: { visualEditorRelationship: 'product' }` on the array field. The value names a direct, single-value, single-collection relationship field in each row. Choices and updates enforce the relationship's access and filters. Ordinary arrays in block forms support editing existing rows; shared-content arrays have their own structural controls.
+Relationship-backed arrays can opt into add/remove/reorder controls with `custom: { visualEditorRelationship: 'product' }` on the array field. The value names a direct, single-value, single-collection relationship field in each row. Choices and updates enforce the relationship's access and filters. Ordinary arrays and nested blocks also support add, duplicate, remove and reorder through their schema controls, with row limits and field access enforced.
 
 ## Host-rendered pending content
 
@@ -171,7 +180,7 @@ payloadVisualEditor({
 
 The workspace reads Payload field schemas for text, textarea, email, numbers, checkboxes, select/radio (including multiple selection), single relationships, groups, arrays and blocks. Arrays use schema limits and stable row IDs. Conditional fields and field permissions are evaluated on the server. Rich text and uploads are not controls in this separate shared-content editor. Unsupported fields remain in Payload; updates preserve other document fields. Relationship pickers search accessible documents with pagination; enabled related content opens another retained editor session.
 
-Shared edits have their own persistent footer and undo/redo history. Save draft saves dirty shared documents; Publish all reviews and publishes the full drafts of the listed shared documents. Page edits remain separate. Saves are transactional per document; if a later document fails, earlier successful saves remain saved and remaining edits stay available. Revision checks reject stale edits. A database with transaction support is required. Sources without drafts expose publication only.
+Shared edits have their own persistent footer and undo/redo history. Save draft saves dirty shared documents; Review & publish reviews and publishes the full drafts of the listed shared documents. Page edits remain separate. Saves are transactional per document; if a later document fails, earlier successful saves remain saved and remaining edits stay available. Revision checks reject stale edits. A database with transaction support is required. Sources without drafts expose publication only.
 
 Host renderers subscribe with `useSharedContentPreview` from `@oak-digital/payload-visual-editor/preview`. It returns an array of the latest `{ target, document, focusPath }` entries received from the same-origin parent workspace, one per target. Documents include accessible populated relationships; the host chooses how to render them and reveal the selected region. No REC schema or storefront styling is built into the plugin. The standalone preview export avoids pulling editor controls into public storefront bundles. Shared-content persistence uses `<api route>/payload-visual-editor/shared-content` with Payload access checks, validation and hooks.
 
@@ -189,6 +198,7 @@ Paths below are relative to the configured Payload API route (normally `/api`). 
 
 | Method        | Path                                    | Responsibility                                                                |
 | ------------- | --------------------------------------- | ----------------------------------------------------------------------------- |
+| POST          | `/payload-visual-editor/workspace`      | Read offered locales and public availability by document identity.           |
 | POST          | `/payload-visual-editor/arrange`        | Field/block preparation, pending preview, review, draft save and publication. |
 | POST          | `/payload-visual-editor/shared-content` | Opted-in collections/globals, choices, review and persistence.                |
 | POST          | `/payload-visual-editor/rich-text`      | Native Lexical editor context, validation and standalone persistence.         |

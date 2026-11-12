@@ -28,7 +28,15 @@ const paths = {
   link: 'm10 13 4-4M8 15l-2 2a3 3 0 0 1-4-4l5-5a3 3 0 0 1 4 0m2 5a3 3 0 0 0 4 0l5-5a3 3 0 0 0-4-4l-2 2',
 } as const
 
-export function EditorIcon({ name }: { name: keyof typeof paths }) {
+type ContentIcon =
+  | 'contentBack'
+  | 'contentDown'
+  | 'contentExternal'
+  | 'contentMinus'
+  | 'contentPage'
+  | 'contentSearch'
+
+export function EditorIcon({ name }: { name: ContentIcon | keyof typeof paths }) {
   if (name in styles) {
     return <span aria-hidden="true" className={styles[name]} />
   }
@@ -44,7 +52,7 @@ export function EditorIcon({ name }: { name: keyof typeof paths }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d={paths[name]} />
+      <path d={paths[name as keyof typeof paths]} />
     </svg>
   )
 }

@@ -58,6 +58,6 @@
 
 ## Submodule workflow
 
-- In REC, this directory is a separate Git repository on `codex/rec-integration`. Check both repositories' status and preserve unrelated changes.
+- In REC, this directory is a separate Git repository on `main`. Check both repositories' status and preserve unrelated changes.
 - Commit plugin changes here first, then commit the updated submodule pointer and any related host changes in REC. Use REC's commit-message standards when working in that host.
 - When publishing the work, push the plugin commit before the parent commit so the submodule reference is fetchable. Do not change upstream remotes or publish the package as part of routine implementation.

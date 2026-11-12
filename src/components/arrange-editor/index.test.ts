@@ -11,7 +11,10 @@ vi.mock('../media-picker/index.js', () => ({ MediaPicker: () => null }))
 vi.mock('../rich-text-editor/dialog.js', () => ({ RichTextDialog: () => null }))
 vi.mock('../revision-history/index.js', () => ({ RevisionHistory: () => null }))
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-beforeEach(() => vi.stubGlobal('matchMedia', () => ({ matches: false })))
+beforeEach(() => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false }))
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+})
 
 it('separates rearranging from editing and locates the selected block after moving it', async () => {
   document.body.innerHTML =
@@ -110,6 +113,7 @@ it('separates rearranging from editing and locates the selected block after movi
     await click('Add block')
     expect(container.querySelector('[aria-label="Add block"]')).toBeTruthy()
     await click('Add Section')
+    await click('Place here at end')
     expect(container.textContent).not.toContain('Save draft to edit this block.')
     expect(document.querySelector('[data-draft-block] h2')?.textContent).toBe('Section')
     expect(document.querySelector('[data-draft-block] img')?.getAttribute('src')).toContain(
@@ -357,7 +361,7 @@ it('reports distinct save/publish states to the footer without duplicating them 
     await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
     expect(reveal).toHaveBeenCalledOnce()
     expect(panel.textContent).toContain('Compare with published')
-    expect(actions.textContent).toContain('Publish now')
+    expect(actions.textContent).toContain('Publish changes')
     await act(async () => (actions.querySelector('button:last-child') as HTMLButtonElement).click())
     expect(pending.mock.lastCall?.[5]).toBe('Publishing…')
     publicationStatus = 'published'
@@ -416,7 +420,7 @@ it('reports distinct save/publish states to the footer without duplicating them 
         .click(),
     )
     expect(panel.querySelector('[aria-label="Publish review"]')).toBeNull()
-    expect(actions.textContent).toContain('Publish all')
+    expect(actions.textContent).toContain('Review & publish')
     expect(document.querySelector('h1')?.textContent).toBe('Still pending')
     expect(pending.mock.lastCall?.[0]).toBe(true)
   } finally {
@@ -1063,7 +1067,7 @@ it.each(['blocks', 'changes', 'revisions'])(
         })),
       )
       const title = panel.querySelector('h2')!.textContent
-      await click('Publish all')
+      await click('Review & publish')
       expect(panel.querySelector('h2')!.textContent).toBe('Review publish')
       await click('Refresh review')
       await click('Back')

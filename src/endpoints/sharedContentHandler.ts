@@ -1,3 +1,4 @@
+import { duplicateBlock } from '../utils/duplicate-block.js'
 import { buildFieldLayout } from '../utils/field-layout.js'
 import { validateSelectValue } from '../utils/block-fields.js'
 import { relationshipFilter, checkRelationship } from '../utils/relationship-fields.js'
@@ -93,7 +94,29 @@ export async function applySharedOperations(
       if (field.type !== 'array' && field.type !== 'blocks') throw new Error('Expected rows')
       const rows = resolved.value ?? []
       if (!Array.isArray(rows)) throw new Error('Invalid rows')
-      if (op.type === 'add') {
+      if (op.type === 'duplicate') {
+        const index = rows.findIndex((row) => row.id === op.sourceId)
+        if (index < 0 || !/^[a-f0-9]{24}$/.test(op.id) || rows.some((row) => row.id === op.id))
+          throw new Error('Invalid duplicate source')
+        if (field.maxRows !== undefined && rows.length >= field.maxRows)
+          throw new Error('Maximum rows reached')
+        const schema =
+          field.type === 'array'
+            ? field.fields
+            : field.blocks.find((block) => block.slug === rows[index].blockType)?.fields
+        if (!schema) throw new Error('Invalid block')
+        const check = async (value: any, path: string): Promise<void> => {
+          if (!value || typeof value !== 'object') return
+          for (const [key, child] of Object.entries(value)) {
+            if (key === 'id' || key === 'blockType') continue
+            const resolved = resolveField(fields, next, `${path}.${key}`)
+            if (resolved) await assertFieldAccess(resolved, document, req, next)
+            await check(child, `${path}.${key}`)
+          }
+        }
+        await check(rows[index], `${op.path}.${index}`)
+        rows.splice(index + 1, 0, duplicateBlock(schema, rows[index], op.id))
+      } else if (op.type === 'add') {
         if (!/^[a-f0-9]{24}$/.test(op.id) || rows.some((r) => r.id === op.id))
           throw new Error('Invalid new row')
         if (field.maxRows !== undefined && rows.length >= field.maxRows)

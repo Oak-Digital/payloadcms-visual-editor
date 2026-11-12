@@ -1,4 +1,5 @@
-import { buildFieldLayout } from '../utils/field-layout.js'
+import type { PageSettingsConfig } from '../utils/page-settings.js'
+import { buildFieldLayout, findFieldLayout } from '../utils/field-layout.js'
 import {
   blockControl,
   fieldPresentation,
@@ -41,7 +42,10 @@ import { buildSourceMap } from '../utils/source-map.js'
 import { uploadTargets, validateMedia } from '../utils/upload-fields.js'
 
 export const createArrangeHandler =
-  (collections: Partial<Record<CollectionSlug, true>>): PayloadHandler =>
+  (
+    collections: Partial<Record<CollectionSlug, true>>,
+    settings: PageSettingsConfig = {},
+  ): PayloadHandler =>
   async (req) => {
     if (!req.user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
@@ -124,7 +128,23 @@ export const createArrangeHandler =
         blockLimits: {},
         revision,
       }
+      const settingsConfig = settings[collection.slug]
       const paths = new Set<string>(body.paths as string[])
+      const orderPaths = new Set<string>(body.orderPaths as string[])
+      snapshot.searchPreview = await settingsConfig?.searchPreview?.(visible, body.locale, req)
+      snapshot.settingsSections = settingsConfig?.sections
+      snapshot.settings = Object.keys(sourceMap).filter((path) =>
+        settingsConfig?.fields.some((root) => path === root || path.startsWith(`${root}.`)),
+      )
+      for (const path of snapshot.settings) paths.add(path)
+      // Include empty nested containers as well as rendered fields.
+      for (const path of Object.keys(sourceMap)) {
+        if (![...orderPaths].some((root) => path === root || path.startsWith(`${root}.`))) continue
+        paths.add(path)
+        const resolved = resolveField(collection.fields, visible, path)
+        if (resolved && (resolved.field.type === 'blocks' || resolved.field.type === 'array'))
+          orderPaths.add(path)
+      }
       for (const orderPath of body.orderPaths as string[]) {
         for (const path of Object.keys(sourceMap)) {
           if (path.startsWith(`${orderPath}.`)) {
@@ -157,8 +177,15 @@ export const createArrangeHandler =
               related.type !== 'relationship' ||
               related.hasMany ||
               typeof related.relationTo !== 'string'
-            )
+            ) {
+              snapshot.fields[path] = {
+                type: 'list',
+                value: resolved.value ?? [],
+                label: typeof array.label === 'string' ? array.label : array.name,
+              }
+              Object.assign(snapshot.fields[path], fieldPresentation(resolved, visible, req, path))
               continue
+            }
             const rows = resolved.value ?? []
             if (!Array.isArray(rows) || rows.some((row) => !row.id)) continue
             for (let index = 0; index < rows.length; index++) {
@@ -233,6 +260,15 @@ export const createArrangeHandler =
               })),
             }
           }
+          if (resolved.field.type === 'blocks')
+            snapshot.fields[path] = {
+              type: 'list',
+              value: resolved.value ?? [],
+              label:
+                typeof resolved.field.label === 'string'
+                  ? resolved.field.label
+                  : resolved.field.name,
+            }
           const control = await blockControl(resolved, visible, req)
           if (control) snapshot.fields[path] = control
           if (type === 'richText') {
@@ -255,9 +291,13 @@ export const createArrangeHandler =
           /* Unsupported or protected fields remain unavailable in this mode. */
         }
       }
-      for (const path of body.orderPaths as string[]) {
+      for (const path of orderPaths) {
         const resolved = resolveField(collection.fields, visible, path)
-        if (!resolved || resolved.field.type !== 'blocks' || !Array.isArray(resolved.value ?? [])) {
+        if (
+          !resolved ||
+          (resolved.field.type !== 'blocks' && resolved.field.type !== 'array') ||
+          !Array.isArray(resolved.value ?? [])
+        ) {
           continue
         }
         try {
@@ -267,15 +307,34 @@ export const createArrangeHandler =
             rows,
             rows.map((row) => String(row.id)),
           )
-          snapshot.orders[path] = rows.map((row) => ({
+          const layout = buildFieldLayout(collection.fields, visible, snapshot.fields)
+          snapshot.orders[path] = rows.map((row, index) => ({
             id: String(row.id),
-            label: String(row.blockName || row.blockType),
-            blockType: String(row.blockType),
+            label: String(
+              row.blockName ||
+                (resolved.field.type === 'array'
+                  ? findFieldLayout(layout, `${path}.${index}`)?.label
+                  : row.blockType) ||
+                'Item',
+            ),
+            blockType: String(row.blockType || ''),
           }))
-          snapshot.blockTypes![path] = resolved.field.blocks.map((block) => ({
-            slug: block.slug,
-            label: typeof block.labels?.singular === 'string' ? block.labels.singular : block.slug,
-          }))
+          snapshot.blockTypes![path] =
+            resolved.field.type === 'array'
+              ? [
+                  {
+                    slug: '',
+                    label:
+                      typeof resolved.field.labels?.singular === 'string'
+                        ? resolved.field.labels.singular
+                        : 'Item',
+                  },
+                ]
+              : resolved.field.blocks.map((block) => ({
+                  slug: block.slug,
+                  label:
+                    typeof block.labels?.singular === 'string' ? block.labels.singular : block.slug,
+                }))
           snapshot.blockLimits![path] = {
             min: resolved.field.minRows ?? (resolved.field.required ? 1 : 0),
             max: resolved.field.maxRows,
@@ -287,6 +346,21 @@ export const createArrangeHandler =
       if (body.action === 'read') {
         snapshot.layout = buildFieldLayout(collection.fields, visible, snapshot.fields)
         const usage = await layoutUsages(req, collections, collection.slug, body.id)
+        if (settingsConfig?.availability) {
+          const published = await req.payload.find({
+            ...options,
+            draft: false,
+            overrideAccess: false,
+            limit: 1,
+            where: { and: [{ id: { equals: body.id } }, { _status: { equals: 'published' } }] },
+          })
+          snapshot.availability = await settingsConfig.availability({
+            document: published.docs[0] || visible,
+            locale: body.locale,
+            published: Boolean(published.docs[0]),
+            req,
+          })
+        }
         await commitTransaction(req)
         transaction = false
         return Response.json({
@@ -376,6 +450,7 @@ export const createArrangeHandler =
         ) {
           throw new Error('Field contains protected content')
         }
+        if (field.type === 'list') throw new Error('Use list operations to edit rows')
         if (field.type === 'array') {
           continue // Apply row edits after child field edits, at their original paths.
         }
@@ -444,7 +519,10 @@ export const createArrangeHandler =
         )
         await commitTransaction(req)
         transaction = false
-        return Response.json({ presentation })
+        return Response.json({
+          presentation,
+          searchPreview: await settingsConfig?.searchPreview?.(proposed, body.locale, req),
+        })
       }
       for (const change of body.changes as ArrangeChange[]) {
         const field = snapshot.fields[change.path]
@@ -483,7 +561,11 @@ export const createArrangeHandler =
           throw new Error('Block field is unavailable')
         }
         const resolved = resolveField(collection.fields, proposed, order.path)!
-        if (!resolved || resolved.field.type !== 'blocks' || !Array.isArray(resolved.value ?? []))
+        if (
+          !resolved ||
+          (resolved.field.type !== 'blocks' && resolved.field.type !== 'array') ||
+          !Array.isArray(resolved.value ?? [])
+        )
           throw new Error('Block field is unavailable')
         const field = resolved.field
         const rows = (resolved.value ?? []) as Record<string, unknown>[]
@@ -538,6 +620,23 @@ export const createArrangeHandler =
           where: { and: [{ id: { equals: body.id } }, { _status: { equals: 'published' } }] },
         })
         const published = publishedResult.docs[0]
+        const availability = settingsConfig?.availability
+          ? await settingsConfig.availability({
+              document: proposed,
+              locale: body.locale,
+              published: true,
+              req,
+            })
+          : undefined
+        const previousAvailability =
+          settingsConfig?.availability && published
+            ? await settingsConfig.availability({
+                document: published,
+                locale: body.locale,
+                published: true,
+                req,
+              })
+            : undefined
         const usage = await layoutUsages(req, collections, collection.slug, body.id)
         await commitTransaction(req)
         transaction = false
@@ -546,7 +645,24 @@ export const createArrangeHandler =
           revision,
           published: Boolean(published),
           draft: visible._status === 'draft',
-          changes: publishedChanges(published || {}, proposed),
+          changes: publishedChanges(published || {}, proposed).map((change) => {
+            const root = settingsConfig?.fields.find(
+              (root) => change.path === root || change.path.startsWith(`${root}.`),
+            )
+            if (!root) return change
+            return {
+              ...change,
+              label:
+                snapshot.fields[change.path]?.label ||
+                settingsConfig?.sections?.find((section) => section.fields.includes(root))?.label ||
+                change.label,
+            }
+          }),
+          availability,
+          previousAvailability,
+          sharedFields: (body.changes as ArrangeChange[])
+            .filter(({ path }) => snapshot.fields[path]?.localized === false)
+            .map(({ path }) => snapshot.fields[path]?.label || path),
           usage,
         })
       }

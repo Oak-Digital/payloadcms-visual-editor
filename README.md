@@ -7,7 +7,8 @@ This is Oak Digital's development fork of [omaroubari/payloadcms-visual-editor](
 ## What it does
 
 - Edit text, schema-driven scalar fields, native Lexical rich text and image selections from the canvas or sidebar.
-- Add, duplicate, remove and rearrange blocks with shared pending values and undo/redo.
+- Add, duplicate, remove and rearrange blocks and nested lists with shared pending values and undo/redo.
+- Switch languages in one preview, edit page settings and SEO, and review public availability before publishing.
 - Save drafts separately from publication; review pending changes and saved drafts against published content.
 - Retain pending workspace edits across drawer navigation and offer browser recovery after reload, with stale-revision checks.
 - Edit opted-in shared collections/globals and reusable layouts while preserving each document's ownership.

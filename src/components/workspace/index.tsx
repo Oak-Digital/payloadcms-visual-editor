@@ -1,10 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import type { PayloadCMSDocument, SubmitAnnotation, DeleteAnnotationTicket } from '../../types.js'
 
+import { documentKey } from '../../utils/field-target.js'
+import { workspaceMemory } from '../../utils/workspace-memory.js'
 import { annotationTicketClient } from '../../annotations/client.js'
 import { SharedContentEditor } from '../shared-content/index.js'
 import type { SharedTarget } from '../../utils/shared-content.js'
@@ -15,19 +17,23 @@ import styles from './styles.module.scss'
 import { useDotPosition } from './use-dot-position.js'
 import { useDotDrag } from './use-dot-drag.js'
 import { useStatusCollapse } from './use-status-collapse.js'
+import { useWorkspaceLayout } from './use-workspace-layout.js'
 
 export type WorkspaceSource = {
   /** Show a native collection creation link with this label. */
   createLabel?: string
+  /** Enable configured page settings and locale discovery. */
+  pageSettings?: boolean
   global?: boolean
   editable?: boolean
   label: string
   /** Sources without a preview resolver or shared editing open in the native admin. */
-  previewURL?: (document: Record<string, unknown>) => string | undefined
+  previewURL?: (document: Record<string, unknown>, locale?: string) => string | undefined
   slug: string
   titleField?: string
 }
-type Entry = { id: string; label: string; url?: string }
+type Entry = { id: string; label: string; url?: string; locale?: string }
+type Language = { code: string; label: string; url: string; status: string }
 type Mode = 'annotate' | 'browse' | 'edit'
 const frameName = 'oak-visual-editor-canvas'
 
@@ -301,6 +307,13 @@ function WorkspaceShell({
     window.history.replaceState(window.history.state, '', url.href)
   }, [documentInfo.id])
   const [current, setCurrent] = useState(documentInfo)
+  const preparePreview = useContext(PreviewRefreshContext)
+  const pageSettingsEnabled = sources.some(
+    (item) => item.slug === current.collection && item.pageSettings,
+  )
+  const [languages, setLanguages] = useState<Language[]>([])
+  const [languageError, setLanguageError] = useState('')
+  const [languageRetry, setLanguageRetry] = useState(0)
   const [currentLabel, setCurrentLabel] = useState('Current page')
   const [sourceSlug, setSourceSlug] = useState(documentInfo.collection)
   const source = sources.find((item) => item.slug === sourceSlug) ?? sources[0]
@@ -308,6 +321,7 @@ function WorkspaceShell({
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [hasNext, setHasNext] = useState(false)
+  const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const navigationActions = useRef<{ save: () => Promise<boolean>; discard: () => boolean } | null>(
@@ -333,6 +347,7 @@ function WorkspaceShell({
     'home' | 'content' | 'shared' | 'editor' | 'annotations' | 'settings'
   >('home')
   const [dotPosition, setDotPosition] = useDotPosition()
+  const [{ layout, framed }, setWorkspaceLayout] = useWorkspaceLayout()
   const [size, setSize] = useState('standard')
   const [fullHeight, setFullHeight] = useState(false)
   const [reduceMotion, setReduceMotion] = useState(false)
@@ -485,7 +500,7 @@ function WorkspaceShell({
       if (!entry.url) {
         return
       }
-      if (entry.id === current.id) {
+      if (entry.id === current.id && (!entry.locale || entry.locale === current.locale)) {
         setView('home')
         setPickerOpen(false)
         setNavigation(undefined)
@@ -518,11 +533,12 @@ function WorkspaceShell({
       setStatusBadge('Loading…')
       setStatusError('')
       setSrc(url.href)
+      if (entry.locale) setCurrent((current) => ({ ...current, locale: entry.locale }))
       setPickerOpen(false)
-      setView('home')
+      setView(entry.locale && view === 'editor' ? 'editor' : 'home')
       setNavigation(undefined)
     },
-    [current.id],
+    [current.id, current.locale, view],
   )
 
   useEffect(() => {
@@ -662,7 +678,18 @@ function WorkspaceShell({
     }
     window.addEventListener('message', receive)
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (pending || busy) {
+      if (
+        pending ||
+        busy ||
+        [...workspaceMemory().values()].some((entry) =>
+          Object.values(entry.sessions ?? {}).some(
+            (session: any) =>
+              Object.keys(session.changes ?? {}).length ||
+              Object.keys(session.orders ?? {}).length ||
+              session.operations?.length,
+          ),
+        )
+      ) {
         event.preventDefault()
         event.returnValue = ''
       }
@@ -698,8 +725,8 @@ function WorkspaceShell({
           page: String(page),
           sort: source.titleField ?? 'title',
         })
-        if (documentInfo.locale) {
-          query.set('locale', documentInfo.locale)
+        if (current.locale) {
+          query.set('locale', current.locale)
         }
         if (search.trim()) {
           query.set(`where[${source.titleField ?? 'title'}][like]`, search.trim())
@@ -718,11 +745,12 @@ function WorkspaceShell({
         setEntries(
           result.docs.map((doc: Record<string, unknown>) => ({
             id: String(doc.id),
-            label: String(doc[source.titleField ?? 'title'] || doc.name || doc.slug || doc.id),
-            url: source.previewURL?.(doc),
+            label: String(doc[source.titleField ?? 'title'] || doc.name || doc.slug || 'Untitled'),
+            url: source.previewURL?.(doc, current.locale),
           })),
         )
         setHasNext(Boolean(result.hasNextPage))
+        setTotalPages(Math.max(1, result.totalPages))
       } catch (err) {
         if (!controller.signal.aborted) {
           setError(err instanceof Error ? err.message : 'Unable to load content.')
@@ -738,7 +766,7 @@ function WorkspaceShell({
       clearTimeout(timer)
       controller.abort()
     }
-  }, [source, search, page, pickerOpen, apiRoute, documentInfo.locale])
+  }, [source, search, page, pickerOpen, apiRoute, current.locale])
 
   function changeMode(next: Mode) {
     setMode(next)
@@ -747,8 +775,95 @@ function WorkspaceShell({
       window.location.origin,
     )
   }
+  useEffect(() => {
+    if (!pageSettingsEnabled) {
+      setLanguages([])
+      setLanguageError('')
+      return
+    }
+    const controller = new AbortController()
+    void fetch(`${apiRoute}/payload-visual-editor/workspace`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection: current.collection, id: current.id }),
+    })
+      .then(async (response) => {
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error)
+        setLanguages(result.languages)
+        setLanguageError('')
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setLanguageError(error.message || 'Unable to load languages')
+      })
+    return () => controller.abort()
+  }, [apiRoute, current.id, current.collection, statusBadge, languageRetry, pageSettingsEnabled])
+  async function switchLanguage(code: string) {
+    const language = languages.find((item) => item.code === code)
+    if (!language || code === current.locale || busy || !ready) return
+    setSwitching(true)
+    setLanguageError('')
+    try {
+      const url = new URL(language.url, window.location.origin)
+      if (url.origin !== window.location.origin) throw new Error('Preview must be on this site.')
+      url.searchParams.set('visual-editor-document', String(current.id))
+      url.searchParams.set('visual-editor-canvas', '1')
+      const signal = AbortSignal.timeout(20000)
+      await preparePreview?.(signal)
+      const response = await fetch(url, { credentials: 'same-origin', signal })
+      if (!response.ok)
+        throw new Error('Unable to load this language. Your current edits are kept.')
+      const memory = workspaceMemory()
+      const previous = memory.get(`page:${apiRoute}:${documentKey(current)}`)
+      const nextKey = `page:${apiRoute}:${documentKey({ ...current, locale: code })}`
+      memory.set(nextKey, {
+        ...memory.get(nextKey),
+        navigationTab: previous?.tab === 'settings' ? 'settings' : undefined,
+      })
+      navigate({ id: String(current.id), label: currentLabel, url: url.href, locale: code })
+    } catch (error) {
+      setLanguageError(error instanceof Error ? error.message : 'Unable to switch language')
+    } finally {
+      setSwitching(false)
+    }
+  }
+  const languageControl = languages.length > 0 && (
+    <label className={styles.languageControl}>
+      <span>Language</span>
+      <select
+        aria-label="Page language"
+        value={current.locale || ''}
+        disabled={busy || !ready}
+        onChange={(event) => void switchLanguage(event.target.value)}
+      >
+        {languages.map((language) => {
+          const unsaved =
+            language.code === current.locale
+              ? pending
+              : [...workspaceMemory().values()].some((entry) =>
+                  Object.values(entry.sessions ?? {}).some(
+                    (session: any) =>
+                      session.owner?.collection === current.collection &&
+                      String(session.owner?.id) === String(current.id) &&
+                      session.owner?.locale === language.code &&
+                      (Object.keys(session.changes ?? {}).length ||
+                        Object.keys(session.orders ?? {}).length),
+                  ),
+                )
+          return (
+            <option key={language.code} value={language.code}>
+              {language.label} · {unsaved ? 'Unsaved changes' : language.status}
+            </option>
+          )
+        })}
+      </select>
+    </label>
+  )
   const adminURL = `${adminRoute}/collections/${encodeURIComponent(current.collection)}/${encodeURIComponent(current.id)}`
-  function editorView(destination: 'blocks' | 'revisions' | 'changes' = 'blocks') {
+  function editorView(destination: 'blocks' | 'revisions' | 'changes' | 'settings' = 'blocks') {
     changeMode('edit')
     setView('editor')
     setPickerOpen(false)
@@ -775,6 +890,11 @@ function WorkspaceShell({
       className={styles.workspace}
       data-mode={mode}
       data-view={view}
+      data-layout={layout}
+      data-framed={framed}
+      data-open={open}
+      data-size={size}
+      data-reduce-motion={reduceMotion}
       data-visual-editor-workspace
       ref={root}
     >
@@ -797,7 +917,9 @@ function WorkspaceShell({
         )}
       </main>
       <aside
-        aria-label="Floating visual editor"
+        aria-label={
+          layout === 'sidebar' && open ? 'Sidebar visual editor' : 'Floating visual editor'
+        }
         ref={floating}
         className={styles.floating}
         data-dot-position={dotPosition}
@@ -853,7 +975,7 @@ function WorkspaceShell({
                 }}
                 type="button"
               >
-                <EditorIcon name="back" />
+                <EditorIcon name={view === 'content' ? 'contentBack' : 'back'} />
               </button>
             )}
             <div className={styles.headerCopy}>
@@ -877,7 +999,7 @@ function WorkspaceShell({
               onClick={collapse}
               type="button"
             >
-              <EditorIcon name="minus" />
+              <EditorIcon name={view === 'content' ? 'contentMinus' : 'minus'} />
             </button>
           </header>
           <div
@@ -886,6 +1008,15 @@ function WorkspaceShell({
             hidden={view !== 'editor'}
             key={`heading:${src}`}
           />
+          {view === 'editor' && languageControl}
+          {languageError && (
+            <div role="alert" className={styles.languageControl}>
+              {languageError}
+              <button type="button" onClick={() => setLanguageRetry((value) => value + 1)}>
+                Retry languages
+              </button>
+            </div>
+          )}
           <div className={styles.views}>
             {view === 'home' && (
               <section className={styles.view} key="home">
@@ -904,6 +1035,7 @@ function WorkspaceShell({
                     <span className={styles.tag}>Draft preview</span>
                   </div>
                 </div>
+                {languageControl}
                 <div className={styles.tools}>
                   <nav
                     aria-label="Editor tools"
@@ -938,7 +1070,9 @@ function WorkspaceShell({
                     >
                       <EditorIcon name="layers" />
                       <strong>Page blocks</strong>
-                      <small>{blockCount} sections</small>
+                      <small>
+                        {blockCount} {blockCount === 1 ? 'section' : 'sections'}
+                      </small>
                     </button>
                     <button
                       className={styles.card}
@@ -978,6 +1112,20 @@ function WorkspaceShell({
                     </button>
                   </div>
                 </div>
+                {pageSettingsEnabled && (
+                  <button
+                    className={styles.sharedLink}
+                    type="button"
+                    disabled={!ready || busy}
+                    onClick={() => editorView('settings')}
+                  >
+                    <span className={styles.grow}>
+                      <strong>Page settings</strong>
+                      <small>Title, URL, SEO & publication</small>
+                    </span>
+                    <EditorIcon name="chevron" />
+                  </button>
+                )}
                 <button
                   className={styles.sharedLink}
                   onClick={() => setView('shared')}
@@ -1010,24 +1158,52 @@ function WorkspaceShell({
             {view === 'content' && (
               <section
                 aria-label="Content navigation"
+                className={`${styles.view} ${styles.contentView}`}
                 id="visual-editor-navigation"
-                className={styles.view}
                 key="content"
               >
-                <label className={styles.field}>
-                  Content source
-                  <select
-                    aria-label="Content source"
-                    value={sourceSlug}
-                    onChange={(event) => contentView(event.target.value)}
+                <div className={styles.contentControls}>
+                  <label
+                    className={styles.contentSourceLabel}
+                    htmlFor="visual-editor-content-source"
                   >
-                    {sources.map((item) => (
-                      <option key={item.slug} value={item.slug}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    Content source
+                  </label>
+                  <div className={styles.contentToolbar}>
+                    <div className={styles.contentSelect}>
+                      <select
+                        aria-label="Content source"
+                        id="visual-editor-content-source"
+                        onChange={(event) => contentView(event.target.value)}
+                        value={sourceSlug}
+                      >
+                        {sources.map((item) => (
+                          <option key={item.slug} value={item.slug}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                      <EditorIcon name="contentDown" />
+                    </div>
+                    {!source?.global && source?.createLabel && (
+                      <a
+                        className={styles.createContent}
+                        href={`${adminRoute}/collections/${encodeURIComponent(source.slug)}/create${
+                          current.locale
+                            ? `?${new URLSearchParams({ locale: current.locale })}`
+                            : ''
+                        }`}
+                        rel="noreferrer"
+                        target="_blank"
+                        title={`${source.createLabel} in Payload (opens in a new tab)`}
+                      >
+                        <span aria-hidden="true">+</span>
+                        <span>{source.createLabel}</span>
+                        <EditorIcon name="contentExternal" />
+                      </a>
+                    )}
+                  </div>
+                </div>
                 {source?.global && source.editable ? (
                   <button
                     className={styles.row}
@@ -1045,20 +1221,23 @@ function WorkspaceShell({
                     rel="noreferrer"
                     target="_blank"
                   >
-                    Open {source.label} in Payload ↗
+                    <span className={styles.grow}>Open {source.label} in Payload</span>
+                    <EditorIcon name="contentExternal" />
                   </a>
                 ) : (
                   <>
-                    <input
-                      aria-label="Search content"
-                      placeholder="Search content…"
-                      className={styles.search}
-                      value={search}
-                      onChange={(event) => {
-                        setSearch(event.target.value)
-                        setPage(1)
-                      }}
-                    />
+                    <div className={styles.contentSearch}>
+                      <EditorIcon name="contentSearch" />
+                      <input
+                        aria-label="Search content"
+                        onChange={(event) => {
+                          setSearch(event.target.value)
+                          setPage(1)
+                        }}
+                        placeholder={`Search ${source?.label.toLowerCase() ?? 'content'}…`}
+                        value={search}
+                      />
+                    </div>
                     {loading ? (
                       <p role="status">Loading content…</p>
                     ) : (
@@ -1076,7 +1255,9 @@ function WorkspaceShell({
                                     label: entry.label,
                                   })
                                 }
+                                type="button"
                               >
+                                <EditorIcon name="contentPage" />
                                 <span className={styles.grow}>
                                   <strong>{entry.label}</strong>
                                 </span>
@@ -1091,7 +1272,7 @@ function WorkspaceShell({
                                 onClick={() => (pending ? setNavigation(entry) : navigate(entry))}
                                 type="button"
                               >
-                                <EditorIcon name="page" />
+                                <EditorIcon name="contentPage" />
                                 <span className={styles.grow}>
                                   <strong>{entry.label}</strong>
                                 </span>
@@ -1100,11 +1281,16 @@ function WorkspaceShell({
                             ) : (
                               <a
                                 className={styles.row}
+                                title={entry.label}
                                 href={`${adminRoute}/collections/${source?.slug}/${encodeURIComponent(entry.id)}`}
                                 rel="noreferrer"
                                 target="_blank"
                               >
-                                {entry.label} ↗
+                                <EditorIcon name="contentPage" />
+                                <span className={styles.grow}>
+                                  <strong>{entry.label}</strong>
+                                </span>
+                                <EditorIcon name="contentExternal" />
                               </a>
                             )}
                           </li>
@@ -1121,7 +1307,9 @@ function WorkspaceShell({
                       >
                         Previous
                       </button>
-                      <span>Page {page}</span>
+                      <span>
+                        Page {page} of {totalPages}
+                      </span>
                       <button
                         disabled={!hasNext || loading}
                         onClick={() => setPage(page + 1)}
@@ -1159,6 +1347,27 @@ function WorkspaceShell({
             )}
             {view === 'settings' && (
               <section className={styles.view} key="settings">
+                <div className={styles.sectionLabel}>LAYOUT</div>
+                <div aria-label="Editor layout" className={styles.segmented} role="group">
+                  {(['floating', 'sidebar'] as const).map((value) => (
+                    <button
+                      key={value}
+                      aria-pressed={layout === value}
+                      onClick={() => setWorkspaceLayout({ layout: value })}
+                      type="button"
+                    >
+                      {value === 'floating' ? 'Floating' : 'Sidebar'}
+                    </button>
+                  ))}
+                </div>
+                <label className={styles.toggle}>
+                  Container frame
+                  <input
+                    type="checkbox"
+                    checked={framed}
+                    onChange={(event) => setWorkspaceLayout({ framed: event.target.checked })}
+                  />
+                </label>
                 <div className={styles.sectionLabel}>DOT PLACEMENT</div>
                 <div className={`${styles.segmented} ${styles.placement}`}>
                   {(
@@ -1201,7 +1410,8 @@ function WorkspaceShell({
                   Full-screen height
                   <input
                     type="checkbox"
-                    checked={fullHeight}
+                    checked={layout === 'sidebar' || fullHeight}
+                    disabled={layout === 'sidebar'}
                     onChange={(event) => setFullHeight(event.target.checked)}
                   />
                 </label>
@@ -1234,25 +1444,6 @@ function WorkspaceShell({
               key={`annotations:${src}`}
             />
           </div>
-          {view === 'content' && !source?.global && source?.createLabel && (
-            <div className={styles.contextActions} role="group" aria-label="Content actions">
-              <a
-                className={styles.row}
-                href={`${adminRoute}/collections/${encodeURIComponent(source.slug)}/create${
-                  current.locale ? `?${new URLSearchParams({ locale: current.locale })}` : ''
-                }`}
-                rel="noreferrer"
-                target="_blank"
-                title={`${source.createLabel} in Payload (opens in a new tab)`}
-              >
-                <EditorIcon name="plus" />
-                <span className={styles.grow}>
-                  <strong>{source.createLabel}</strong>
-                </span>
-                <span aria-hidden="true">↗</span>
-              </a>
-            </div>
-          )}
           <footer
             className={styles.footer}
             data-collapsed={statusPanel.collapsed}

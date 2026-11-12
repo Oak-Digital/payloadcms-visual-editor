@@ -10,9 +10,17 @@ Open an authenticated draft preview and expand the Oak dot, or press **E**. The 
 
 Use **Desktop** and **Mobile** to change the website iframe width. The editor itself is desktop-only. Settings control Standard/Large sidebar size, reduced motion and placement in any of the four corners. Drag or throw the collapsed dot to reposition it; the chosen corner is remembered in this browser.
 
-Content search opens configured preview routes. Sources without preview URLs open their native Payload editor. An optional **New page** action opens native creation in a new tab with the current locale.
+Content search opens configured preview routes. Sources without preview URLs open their native Payload editor. An optional **New page** action beside the source selector opens native creation in a new tab with the current locale.
 
 Switching pages with pending changes offers **Save and switch**, **Keep editing** and **Discard and switch**. Saving waits for page and shared-content saves; failure keeps the current page open. Discard clears the affected recovery records. Navigation is blocked while saving.
+
+Settings also offer **Layout → Sidebar** to dock the editor on the right without reloading the preview, or **Floating** to restore corner placement. **Container frame** adds borders and spacing. Both preferences are remembered; collapsing restores the full preview area.
+
+## Page settings and languages
+
+Where enabled by the host, the language selector switches a single preview while retaining pending edits, selection and undo history per language. Returning checks the user and edited base values before resuming; conflicts require recovery review. A reload uses the existing browser recovery.
+
+**Page settings** groups page details, SEO and publication controls using the host schema. Fields marked **All languages** are shared; their pending values carry across languages. Publish review shows whether the selected language will become public, update an existing public page or remain unavailable. Saving and publication remain explicit.
 
 ## Edit content
 
@@ -24,17 +32,17 @@ Block forms follow the host schema, including groups, rows, tabs, scalar control
 
 ## Arrange blocks
 
-The Blocks list starts in Edit mode. Selecting a block reveals its controls and scrolls its section into view. **Add block** opens the allowed block picker for that list. With a block selected, **Duplicate block** and **Remove block** appear in the contextual actions. Schema row limits and allowed types still apply.
+The Blocks list starts in Edit mode. Selecting a block reveals its controls and scrolls its section into view. **Add block** opens the allowed block picker for that list. After choosing a type, select an insertion line before, between or after blocks. Tab or Up/Down moves between positions; Enter or Space places the block. Back returns to the picker and Escape cancels. Placement creates one undoable change and opens the new block. With a block selected, **Duplicate block** and **Remove block** appear in the contextual actions. Schema row limits and allowed types still apply.
 
 Added blocks receive stable row IDs and can be edited before saving. Without a host pending-preview renderer, they appear as neutral draft cards with starter text and image placeholders; those placeholders are never saved as media. A duplicate carries pending field edits, regenerates nested row IDs and retains media/relationship references. Removing a block hides it immediately. These operations stay pending and participate in undo/redo.
 
 Switch to **Rearrange** for drag handles and move buttons. On the canvas, drag within a block or use its contextual controls; the handle also accepts Up/Down keys. Content selection is suspended while rearranging. Returning to Edit retains the pending order and field values.
 
-Ordinary arrays inside block forms support editing existing items. Arrays explicitly configured with a relationship field support add/remove/reorder. Shared-content arrays have their own structural controls. See [host integration](README.integration.md#mark-block-lists) for the required bindings and schema options.
+Arrays and nested blocks share Edit/Rearrange views with shared-content lists. Add, duplicate, remove and move actions respect schema limits and field permissions. Copies include pending child edits and receive independent nested row IDs. See [host integration](README.integration.md#mark-block-lists) for the required bindings and schema options.
 
 ## Save and publish
 
-**Save draft** persists pending field and block changes together, then refreshes the preview. **Publish all** opens a comparison with published content, including both pending changes and earlier saved drafts. **Publish now** publishes the reviewed locale and nonlocalized fields through the host's normal validation and hooks.
+**Save draft** persists pending field and block changes together, then refreshes the preview. **Review & publish** opens a comparison with published content, including both pending changes and earlier saved drafts. **Publish [language]** publishes the reviewed locale and nonlocalized fields through the host's normal validation and hooks.
 
 Review shows the proposed content first, with the published value in a collapsed comparison. Rich-text edits are grouped as one change; removals are explicit. Review itself does not save documents or versions. The proposed operations are frozen during review, and stale revisions are rejected at persistence.
 
@@ -50,7 +58,7 @@ Leaving or reloading warns about pending work. Storage failures keep edits in me
 
 ## Shared content and layouts
 
-Opted-in shared collections and globals open in a retained editor session with their own footer and undo/redo. **Save draft** saves dirty shared documents; **Publish all** reviews the full drafts of the listed shared documents. Sources without drafts expose publication only. Page edits remain separate.
+Opted-in shared collections and globals open in a retained editor session with their own footer and undo/redo. **Save draft** saves dirty shared documents; **Review & publish** reviews the full drafts of the listed shared documents. Sources without drafts expose publication only. Page edits remain separate.
 
 A reusable-layout relationship offers source selection, **Edit shared layout** and **Make independent**. Editing the source changes the source document. Making it independent prepares a page-owned copy with fresh row IDs and carries over pending source edits. Preparation does not write documents; save or publish persists the copy. Usage information is filtered by access and indicates incomplete results.
 

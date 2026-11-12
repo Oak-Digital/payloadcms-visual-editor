@@ -94,7 +94,9 @@ export async function appendDraftBlocks(
     throw new Error('Invalid block layout')
   }
   const paths = new Set<string>()
-  for (const order of orders as ArrangeOrder[]) {
+  for (const order of [...(orders as ArrangeOrder[])].sort(
+    (a, b) => a.path.split('.').length - b.path.split('.').length,
+  )) {
     if (!order || !safePath(order.path) || paths.has(order.path)) {
       throw new Error('Invalid block path')
     }
@@ -106,7 +108,11 @@ export async function appendDraftBlocks(
       throw new Error('Too many new blocks')
     }
     const resolved = resolveField(fields, document, order.path)
-    if (!resolved || resolved.field.type !== 'blocks' || !Array.isArray(resolved.value ?? [])) {
+    if (
+      !resolved ||
+      (resolved.field.type !== 'blocks' && resolved.field.type !== 'array') ||
+      !Array.isArray(resolved.value ?? [])
+    ) {
       throw new Error('Block field is unavailable')
     }
     await assertFieldAccess(resolved, document, req)
@@ -121,7 +127,12 @@ export async function appendDraftBlocks(
       ) {
         throw new Error('Invalid new block')
       }
-      const block = resolved.field.blocks.find((block) => block.slug === addition.blockType)
+      const block =
+        resolved.field.type === 'blocks'
+          ? resolved.field.blocks.find((block) => block.slug === addition.blockType)
+          : resolved.field.type === 'array' && addition.blockType === ''
+            ? { slug: '', fields: resolved.field.fields, labels: resolved.field.labels }
+            : undefined
       if (!block) {
         throw new Error('Invalid block type')
       }
@@ -129,7 +140,11 @@ export async function appendDraftBlocks(
       if (addition.sourceId !== undefined) {
         const sourceIndex = rows.findIndex((row) => row.id === addition.sourceId)
         const source = rows[sourceIndex]
-        if (typeof addition.sourceId !== 'string' || !source || source.blockType !== block.slug) {
+        if (
+          typeof addition.sourceId !== 'string' ||
+          !source ||
+          (block.slug && source.blockType !== block.slug)
+        ) {
           throw new Error('Duplicate source is unavailable')
         }
         const check = async (value: unknown, path: string): Promise<void> => {
@@ -146,7 +161,8 @@ export async function appendDraftBlocks(
         cloned = duplicateBlock(block.fields, source, addition.id)
       }
       if (addition.layoutSource !== undefined) {
-        if (addition.sourceId !== undefined) throw new Error('Choose one copy source')
+        if (!block.slug || addition.sourceId !== undefined)
+          throw new Error('Choose one copy source')
         const source = addition.layoutSource
         if (
           !source ||
@@ -217,7 +233,7 @@ export async function appendDraftBlocks(
             typeof block.labels?.singular === 'string' ? block.labels.singular : block.slug,
           )),
         id: addition.id,
-        blockType: block.slug,
+        ...(block.slug ? { blockType: block.slug } : {}),
       })
     }
     if (

@@ -2,7 +2,7 @@
 
 [Back to README](README.md) · [Editor guide](README.editing.md) · [Host integration](README.integration.md)
 
-In the workspace's **Edit content** mode, select a marked image on the canvas or its field in the sidebar. Search filenames, browse pages, select a thumbnail and choose **Use image**. The replacement remains pending alongside text, rich-text and block edits, with shared undo/redo and recovery. **Save draft** persists it; **Publish all** opens review before publication. Existing media files are never overwritten.
+In the workspace's **Edit content** mode, select a marked image on the canvas or its field in the sidebar. Search filenames, browse pages, select a thumbnail and choose **Use image**. The replacement remains pending alongside text, rich-text and block edits, with shared undo/redo and recovery. **Save draft** persists it; **Review & publish** opens review before publication. Existing media files are never overwritten.
 
 The standalone toolbar's older inline mode keeps replacements as local edit annotations. There, **Save** stores a draft and **Publish** publishes through Payload validation/hooks; clearing the edit restores the original preview. Feedback comments never become CMS mutations. This legacy text/image path does not have the workspace arrange flow's revision/transaction checks.
 

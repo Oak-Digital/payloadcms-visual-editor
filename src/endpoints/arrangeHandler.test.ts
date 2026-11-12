@@ -877,3 +877,146 @@ it('keeps different block schemas isolated and saves multi-select edits at origi
     heading: 'First',
   })
 })
+
+it('edits empty nested arrays and blocks before saving and keeps edits with reordered row IDs', async () => {
+  const { call, block, doc, payload } = fixture()
+  block.blocks[0].fields.push({
+    name: 'items',
+    type: 'array',
+    minRows: 0,
+    maxRows: 3,
+    fields: [
+      { name: 'title', type: 'text' },
+      {
+        name: 'children',
+        type: 'blocks',
+        blocks: [{ slug: 'note', fields: [{ name: 'text', type: 'text' }] }],
+      },
+    ],
+  })
+  ;(doc.layout[0] as any).items = []
+  const id = 'a'.repeat(24),
+    child = 'b'.repeat(24)
+  const original = await (await call()).json()
+  expect(original.orders['layout.0.items']).toEqual([])
+  const orders = [
+    { path: 'layout.0.items', ids: [id], additions: [{ id, blockType: '' }] },
+    {
+      path: 'layout.0.items.0.children',
+      ids: [child],
+      additions: [{ id: child, blockType: 'note' }],
+    },
+    { path: 'layout', ids: ['b', 'a'] },
+  ]
+  const prepared = await (await call({ orders })).json()
+  expect(prepared.fields['layout.0.items.0.title']).toBeTruthy()
+  expect(prepared.fields['layout.0.items.0.children.0.text']).toBeTruthy()
+  expect(payload.update).not.toHaveBeenCalled()
+  const result = await call({
+    action: 'save',
+    revision: prepared.revision,
+    orders,
+    changes: [
+      { path: 'layout.0.items.0.title', value: 'New item' },
+      { path: 'layout.0.items.0.children.0.text', value: 'Nested text' },
+    ],
+  })
+  expect(await result.json()).toMatchObject({ success: true })
+  expect(payload.update.mock.calls[0][0].data.layout[1].items[0]).toMatchObject({
+    id,
+    title: 'New item',
+    children: [{ id: child, text: 'Nested text' }],
+  })
+})
+
+it('enforces nested list limits, access and unique row identity', async () => {
+  const { call, block, doc, payload } = fixture()
+  const items: any = {
+    name: 'items',
+    type: 'array',
+    minRows: 1,
+    maxRows: 2,
+    fields: [{ name: 'title', type: 'text' }],
+  }
+  block.blocks[0].fields.push(items)
+  ;(doc.layout[0] as any).items = [{ id: 'original', title: 'Keep' }]
+  const original = await (await call()).json()
+  const base = { action: 'save', revision: original.revision, changes: [] }
+  expect((await call({ ...base, orders: [{ path: 'layout.0.items', ids: [] }] })).status).toBe(400)
+  expect(
+    (await call({ ...base, orders: [{ path: 'layout.0.items', ids: ['original', 'original'] }] }))
+      .status,
+  ).toBe(400)
+  items.access = { update: () => false }
+  expect(
+    (await call({ ...base, orders: [{ path: 'layout.0.items', ids: ['original'] }] })).status,
+  ).toBe(400)
+  expect(payload.update).not.toHaveBeenCalled()
+})
+
+it('stages optional named-tab settings and evaluates visibility without publishing', async () => {
+  const { call, collection, payload, doc, latest } = fixture()
+  collection.fields.push(
+    { name: 'name', type: 'text' },
+    { name: 'publishStatus', type: 'select', localized: true, options: ['draft', 'public'] },
+    {
+      type: 'tabs',
+      tabs: [
+        { name: 'meta', label: 'SEO', fields: [{ name: 'title', type: 'text', localized: true }] },
+      ],
+    },
+  )
+  Object.assign(doc, { name: 'Page', publishStatus: 'draft' })
+  const handler = createArrangeHandler(
+    { pages: true },
+    {
+      pages: {
+        fields: ['name', 'meta', 'publishStatus'],
+        sections: [{ label: 'SEO', fields: ['meta'] }],
+        searchPreview: async (doc) => ({
+          title: doc.meta?.title || doc.name,
+          description: '',
+          url: '/page',
+        }),
+        availability: ({ document, published }) => ({
+          label: 'Availability',
+          public: published && document.publishStatus === 'public',
+        }),
+      },
+    },
+  )
+  const req: any = {
+    payload,
+    user: { id: 'editor', collection: 'users' },
+    json: async () => ({
+      id: 'page',
+      collection: 'pages',
+      locale: 'en',
+      action: 'read',
+      paths: [],
+      orderPaths: ['layout'],
+    }),
+  }
+  const read = await (await handler(req)).json()
+  expect(read.fields['meta.title']).toMatchObject({ type: 'text', localized: true })
+  expect(read.fields.name.localized).toBe(false)
+  expect(read.searchPreview.title).toBe('Page')
+  req.json = async () => ({
+    id: 'page',
+    collection: 'pages',
+    locale: 'en',
+    action: 'review',
+    paths: [],
+    orderPaths: ['layout'],
+    revision: read.revision,
+    orders: [],
+    changes: [{ path: 'meta.title', value: 'Search title' }],
+  })
+  const review = await (await handler(req)).json()
+  expect(review.availability.public).toBe(false)
+  expect(review.changes).toContainEqual(
+    expect.objectContaining({ path: 'meta', label: 'SEO', after: { title: 'Search title' } }),
+  )
+  expect(payload.update).not.toHaveBeenCalled()
+  expect(payload.db.updateVersion).not.toHaveBeenCalled()
+})

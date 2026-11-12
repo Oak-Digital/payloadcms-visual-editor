@@ -97,3 +97,29 @@ it('isolates block schemas and does not use inaccessible or hidden content as it
   expect(JSON.stringify(layout)).not.toContain('Private')
   expect(JSON.stringify(layout)).not.toContain('Stale data')
 })
+
+it('uses the row own label instead of a heading in a nested list', () => {
+  const schema: Field[] = [
+    {
+      name: 'tracks',
+      type: 'array',
+      fields: [
+        { name: 'label', type: 'text' },
+        { name: 'entries', type: 'array', fields: [{ name: 'heading', type: 'text' }] },
+      ],
+    },
+  ]
+  const layout = buildFieldLayout(
+    schema,
+    {
+      tracks: [
+        { id: 'track', label: 'Our story', entries: [{ id: 'entry', heading: 'Nested chapter' }] },
+      ],
+    },
+    {
+      'tracks.0.entries.0.heading': { type: 'text', value: 'Nested chapter' },
+      'tracks.0.label': { type: 'text', value: 'Our story' },
+    },
+  )
+  expect(findFieldLayout(layout, 'tracks.0')?.label).toBe('Our story')
+})

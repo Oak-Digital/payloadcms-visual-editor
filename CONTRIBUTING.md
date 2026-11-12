@@ -64,6 +64,6 @@ Restart the watcher after build configuration or dependency changes. [Watcher me
 
 ## Repository and submodule workflow
 
-A standalone checkout is independent of REC. In REC, the plugin is a separate Git repository (the integration branch is `codex/rec-integration`); check both statuses and preserve unrelated work. Commit plugin changes first, then the updated REC submodule pointer and related host changes. Push the plugin commit before the parent commit so the pointer is fetchable. Follow REC's commit-message standards when working there.
+A standalone checkout is independent of REC. In REC, the plugin is a separate Git repository (the integration branch is `main`); check both statuses and preserve unrelated work. Commit plugin changes first, then the updated REC submodule pointer and related host changes. Push the plugin commit before the parent commit so the pointer is fetchable. Follow REC's commit-message standards when working there.
 
 Do not publish the package, change upstream remotes, or commit credentials, local database content or generated output as part of routine changes. Preserve upstream attribution in [README.upstream.md](README.upstream.md).

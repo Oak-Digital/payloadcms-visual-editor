@@ -103,6 +103,30 @@ export function PublishReview({
                         : 'First publication'}
                   </span>
                 </div>
+                {item.availability && (
+                  <p role="status">
+                    {item.status === 'published'
+                      ? item.availability.public
+                        ? 'Public in this language'
+                        : 'Published · Not public'
+                      : item.availability.public
+                        ? item.previousAvailability?.public
+                          ? 'Will update the public page'
+                          : 'Will become public in this language'
+                        : item.previousAvailability?.public
+                          ? 'Will become unavailable to visitors'
+                          : 'Will remain unavailable to visitors'}
+                    {item.availability.url && (
+                      <>
+                        <br />
+                        <span>{item.availability.url}</span>
+                      </>
+                    )}
+                  </p>
+                )}
+                {!!item.sharedFields?.length && (
+                  <p>All languages: {item.sharedFields.join(', ')}</p>
+                )}
                 {item.pending && <p>Includes unsaved edits</p>}
                 {item.collection !== 'pages' && (
                   <p>Shared content · applies wherever this document is used.</p>
